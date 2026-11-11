@@ -17,7 +17,6 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -147,9 +146,8 @@ class DriveFlowTest {
         SystemClock.sleep(500)
         onMain { setState(PlaybackState.STATE_PAUSED) }  // user pauses again
         waitFor("second pause logged", 5_000) { log().contains("!!! PAUSE #2") }
-        // The "deliberate" rule only applies when nothing else explains the pause (e.g. emulator offline).
         val pauseLine = log().lines().last { it.contains("PAUSE #2") }
-        assertTrue("TEMP: emulator reported other clues: $pauseLine\n${log()}", pauseLine.contains("no clues"))
+        assertTrue("pause should have no clues: $pauseLine\n${log()}", pauseLine.contains("no clues"))
         assertTrue(log().contains("looks deliberate"))
         SystemClock.sleep(6_000)
         assertEquals(PlaybackState.STATE_PAUSED, currentState)

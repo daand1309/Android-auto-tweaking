@@ -72,8 +72,8 @@ dependencies {
         exclude(group = "org.robolectric", module = "nativeruntime-dist-compat")
     }
     testImplementation("androidx.test:core:1.6.1")
-    // Android 14 runtime used by Robolectric (must match robolectric.properties sdk=34).
-    robolectricRuntime("org.robolectric:android-all-instrumented:14-robolectric-10818077-i7")
+    // Android 15 runtime used by Robolectric (matches targetSdk 35).
+    robolectricRuntime("org.robolectric:android-all-instrumented:15-robolectric-12650502-i7")
 
     androidTestImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:core:1.6.1")
