@@ -107,7 +107,7 @@ class DriveMonitorService : NotificationListenerService() {
     /** Announce "Now playing ..." once music starts (when the song wasn't known before the greeting). */
     private var announceSongAfterStart = false
     /** Our own speech can briefly pause the music; pauses before this time are attributed to it. */
-    private var ownAnnouncementUntil = 0L
+    private var suppressPauseUntil = 0L  // ignore stops we/the greeting cause until this time
     private val resumeTimes = ArrayDeque<Long>()
 
     private var startRunnable: Runnable? = null
@@ -254,7 +254,18 @@ class DriveMonitorService : NotificationListenerService() {
                         val song = currentSong()
                         announceSongAfterStart = song == null && prefs.announceSong && prefs.autoStart && other == null
                         if (song != null) DriveLog.log("Queued song: ${song.title} - ${song.artist}")
-                        WelcomeAnnouncer.run(this, song) { if (carConnected) startAction() }
+                        // If Android Auto auto-started music, pause it so the welcome is heard clearly,
+                        // and don't count that stop as a pause.
+                        suppressPauseUntil = SystemClock.elapsedRealtime() + 90_000L
+                        val c = ytm?.takeIf { it.packageName == musicPkg } ?: findYtm()
+                        if (c?.playbackState?.state == PlaybackState.STATE_PLAYING) {
+                            DriveLog.log("GREETING: music already playing (Android Auto auto-start?) - pausing it for the welcome")
+                            c.transportControls.pause()
+                        }
+                        WelcomeAnnouncer.run(this, song) {
+                            suppressPauseUntil = 0L
+                            if (carConnected) startAction()
+                        }
                     }
                 }, prefs.startDelaySec * 1000L)
             }
@@ -430,7 +441,7 @@ class DriveMonitorService : NotificationListenerService() {
                     handler.postDelayed({
                         val song = currentSong()
                         if (song != null && carConnected) {
-                            ownAnnouncementUntil = SystemClock.elapsedRealtime() + 15_000
+                            suppressPauseUntil = SystemClock.elapsedRealtime() + 15_000
                             SongAnnouncer.announce(this@DriveMonitorService, song, prefs.greetingDutch)
                         }
                     }, 2_500)
@@ -456,7 +467,8 @@ class DriveMonitorService : NotificationListenerService() {
                 PlaybackState.STATE_PAUSED, PlaybackState.STATE_STOPPED, PlaybackState.STATE_ERROR,
                 PlaybackState.STATE_NONE -> {
                     if ((prev == PlaybackState.STATE_PLAYING || prev == PlaybackState.STATE_BUFFERING) &&
-                        pendingPauseRunnable == null && resumeRunnable == null
+                        pendingPauseRunnable == null && resumeRunnable == null &&
+                        SystemClock.elapsedRealtime() >= suppressPauseUntil
                     ) {
                         // Wait out a possible self-recovering blip before treating it as a real pause.
                         val r = Runnable {
@@ -592,7 +604,7 @@ class DriveMonitorService : NotificationListenerService() {
     private fun diagnose(): List<String> {
         val now = SystemClock.elapsedRealtime()
         val clues = mutableListOf<String>()
-        if (now < ownAnnouncementUntil) clues += "Drive Music's own song announcement"
+        if (now < suppressPauseUntil) clues += "Drive Music's own song announcement"
         when (audio.mode) {
             AudioManager.MODE_IN_CALL, AudioManager.MODE_IN_COMMUNICATION -> clues += "CALL in progress"
             AudioManager.MODE_RINGTONE -> clues += "PHONE RINGING"

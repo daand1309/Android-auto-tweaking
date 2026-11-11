@@ -455,7 +455,7 @@ class Greeter(private val context: Context) {
     private var finished = false
     private var focus: AudioFocusRequest? = null
 
-    fun speak(text: String, dutch: Boolean, onDone: () -> Unit) {
+    fun speak(text: String, dutch: Boolean, pauseOthers: Boolean = false, onDone: () -> Unit) {
         val prefs = Prefs(context)
         val audio = context.getSystemService(AudioManager::class.java)
         val attrs = AudioAttributes.Builder()
@@ -506,7 +506,9 @@ class Greeter(private val context: Context) {
                     override fun onError(id: String?) { handler.post { finish("speech failed") } }
                     override fun onError(id: String?, code: Int) { handler.post { finish("speech failed ($code)") } }
                 })
-                focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                val gain = if (pauseOthers) AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+                    else AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+                focus = AudioFocusRequest.Builder(gain)
                     .setAudioAttributes(attrs).build().also { audio.requestAudioFocus(it) }
 
                 // One sentence at a time with a short natural pause in between.
@@ -549,7 +551,7 @@ object WelcomeAnnouncer {
             p.lastGreetingAt = System.currentTimeMillis()
             main.post {
                 DriveLog.log("GREETING: \"$text\"")
-                Greeter(ctx).speak(text, p.greetingDutch, then)
+                Greeter(ctx).speak(text, p.greetingDutch, pauseOthers = true, onDone = then)
             }
         }.start()
     }
