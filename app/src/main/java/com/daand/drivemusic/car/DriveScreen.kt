@@ -100,7 +100,7 @@ class DriveScreen(carContext: CarContext) : Screen(carContext), DefaultLifecycle
                 Action.Builder()
                     .setTitle("Welcome")
                     .setOnClickListener {
-                        WelcomeAnnouncer.run(carContext, DriveMonitorService.instance?.currentSong())
+                        WelcomeAnnouncer.run(carContext, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false)
                     }
                     .build()
             )

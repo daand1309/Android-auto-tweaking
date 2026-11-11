@@ -227,7 +227,7 @@ class MainActivity : Activity() {
 
             button("🔊 Test greeting now", accent = true) {
                 toast("Speaking... turn up the media volume")
-                WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong())
+                WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false)
             }
             text("The greeting plays before your music starts (not again if you reconnect within 10 minutes).")
         }

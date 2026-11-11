@@ -728,7 +728,7 @@ class Greeter(private val context: Context) {
 
 /** Fetches the weather (if enabled), builds the welcome text and speaks it, then calls [then]. */
 object WelcomeAnnouncer {
-    fun run(context: Context, song: GreetingText.Song? = null, then: () -> Unit = {}) {
+    fun run(context: Context, song: GreetingText.Song? = null, recordAsGreeted: Boolean = true, then: () -> Unit = {}) {
         val ctx = context.applicationContext
         val p = Prefs(ctx)
         val main = Handler(Looper.getMainLooper())
@@ -753,7 +753,7 @@ object WelcomeAnnouncer {
                 p.namePronunciation.ifBlank { p.greetingName }, p.greetingDutch, Calendar.getInstance(), weather, p.weatherPlace,
                 roads = p.roadConditionsEnabled, song = song.takeIf { p.announceSong }, birthday = p.birthday,
             )
-            p.lastGreetingAt = System.currentTimeMillis()
+            if (recordAsGreeted) p.lastGreetingAt = System.currentTimeMillis()
             main.post {
                 DriveLog.log("GREETING: \"$text\"")
                 Greeter(ctx).speak(text, p.greetingDutch, pauseOthers = true, onDone = then)

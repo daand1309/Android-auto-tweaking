@@ -148,7 +148,7 @@ class DriveModeActivity : Activity() {
         // Bottom row
         val bottom = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
         bottom.addView(smallButton("🔊 Welcome") {
-            WelcomeAnnouncer.run(this, svc()?.currentSong())
+            WelcomeAnnouncer.run(this, svc()?.currentSong(), recordAsGreeted = false)
         }, hLp(1f))
         resumeBtn = smallButton("") {
             val p = Prefs(this)

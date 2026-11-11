@@ -50,6 +50,11 @@
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />
 
+        <!-- Required: without it Android Auto won't list the car app in its launcher. -->
+        <meta-data
+            android:name="androidx.car.app.minCarApiLevel"
+            android:value="1" />
+
         <!-- The screen shown on the car display (Android Auto). Runs in Android Auto's
              developer mode ("Unknown sources"); it uses only safety-approved templates. -->
         <service
