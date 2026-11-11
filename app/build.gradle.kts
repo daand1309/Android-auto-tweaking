@@ -3,6 +3,13 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val robolectricRuntime: Configuration by configurations.creating
+val robolectricDir = layout.buildDirectory.dir("robolectric-runtime")
+val syncRobolectricRuntime = tasks.register<Sync>("syncRobolectricRuntime") {
+    from(robolectricRuntime)
+    into(robolectricDir)
+}
+
 android {
     namespace = "com.daand.drivemusic"
     compileSdk = 35
@@ -42,6 +49,13 @@ android {
     }
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        unitTests.all { test ->
+            // Use the Android runtime jar Gradle downloaded (cached + retried) instead of letting
+            // Robolectric fetch it itself at test time, which is flaky on rate-limited networks.
+            test.dependsOn(syncRobolectricRuntime)
+            test.systemProperty("robolectric.offline", "true")
+            test.systemProperty("robolectric.dependency.dir", robolectricDir.get().asFile.absolutePath)
+        }
     }
     kotlinOptions {
         jvmTarget = "17"
@@ -58,6 +72,8 @@ dependencies {
         exclude(group = "org.robolectric", module = "nativeruntime-dist-compat")
     }
     testImplementation("androidx.test:core:1.6.1")
+    // Android 14 runtime used by Robolectric (must match robolectric.properties sdk=34).
+    robolectricRuntime("org.robolectric:android-all-instrumented:14-robolectric-10818077-i7")
 
     androidTestImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:core:1.6.1")

@@ -149,7 +149,7 @@ class DriveFlowTest {
         waitFor("second pause logged", 5_000) { log().contains("!!! PAUSE #2") }
         // The "deliberate" rule only applies when nothing else explains the pause (e.g. emulator offline).
         val pauseLine = log().lines().last { it.contains("PAUSE #2") }
-        assumeTrue("emulator reported other clues: $pauseLine\n${log()}", pauseLine.contains("no clues"))
+        assertTrue("TEMP: emulator reported other clues: $pauseLine\n${log()}", pauseLine.contains("no clues"))
         assertTrue(log().contains("looks deliberate"))
         SystemClock.sleep(6_000)
         assertEquals(PlaybackState.STATE_PAUSED, currentState)
