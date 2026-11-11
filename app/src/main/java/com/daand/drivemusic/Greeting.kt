@@ -27,9 +27,23 @@ object GreetingText {
         val tempMin: Double,
         val tempMax: Double,
         val rainChance: Int,
+        // Road-condition details (defaults = "nothing to report").
+        val precipMm: Double = 0.0,
+        val snowfallCm: Double = 0.0,
+        val gustsKmh: Double = 0.0,
+        val visibilityM: Double? = null,
+        val isDay: Boolean = true,
+        val nowTime: String = "",   // local "HH:mm" at the weather location
+        val sunset: String = "",    // local "HH:mm"
     )
 
-    fun build(name: String, dutch: Boolean, cal: Calendar, weather: WeatherNow?, place: String, random: Random = Random.Default): String {
+    /** Song to announce: "Up first: <title> by <artist>". */
+    data class Song(val title: String, val artist: String)
+
+    fun build(
+        name: String, dutch: Boolean, cal: Calendar, weather: WeatherNow?, place: String,
+        random: Random = Random.Default, roads: Boolean = false, song: Song? = null,
+    ): String {
         val hour = cal.get(Calendar.HOUR_OF_DAY)
         val day = cal.get(Calendar.DAY_OF_WEEK)
         val parts = mutableListOf<String>()
@@ -42,7 +56,11 @@ object GreetingText {
         val pool = if (dutch) LINES_NL else LINES_EN
         pool.shuffled(random).take(2).forEach { parts += it }
 
-        if (weather != null) parts += weatherSentence(weather, place, dutch)
+        if (weather != null) {
+            parts += weatherSentence(weather, place, dutch, withAdvice = !roads)
+            if (roads) parts += roadSentence(weather, dutch)
+        }
+        if (song != null) parts += songSentence(song, dutch, upFirst = true)
         parts += if (dutch) "Ik zet je muziek aan. Goede reis!" else "Starting your music. Have a great drive!"
         return parts.joinToString(" ")
     }
@@ -80,7 +98,68 @@ object GreetingText {
         else -> if (dutch) "wisselend weer" else "mixed weather"
     }
 
-    fun weatherSentence(w: WeatherNow, place: String, dutch: Boolean): String {
+    fun songSentence(song: Song, dutch: Boolean, upFirst: Boolean): String {
+        val t = song.title.trim()
+        val a = song.artist.trim()
+        val what = when {
+            a.isEmpty() -> t
+            dutch -> "$t van $a"
+            else -> "$t by $a"
+        }
+        return if (dutch) (if (upFirst) "Als eerste: $what." else "Nu speelt: $what.")
+        else (if (upFirst) "Up first: $what." else "Now playing: $what.")
+    }
+
+    /** Road conditions derived from live weather: ice, snow, fog, heavy rain, gusts and daylight. */
+    fun roadSentence(w: WeatherNow, dutch: Boolean): String {
+        val issues = mutableListOf<String>()
+        val wet = w.precipMm > 0.0 || w.code in 51..67 || w.code in 80..82
+        when {
+            w.snowfallCm > 0.0 || w.code in 71..77 || w.code in 85..86 ->
+                issues += if (dutch) "Er ligt mogelijk sneeuw op de weg, rij rustig" else "there may be snow on the roads, so take it slow"
+            w.code in setOf(56, 57, 66, 67) || (w.tempNow <= 1.0 && wet) ->
+                issues += if (dutch) "er is kans op ijzel, vooral op bruggen" else "black ice is possible, especially on bridges"
+            w.tempNow <= 1.0 ->
+                issues += if (dutch) "het vriest bijna, pas op voor gladheid" else "it's close to freezing, so watch out for slippery patches"
+        }
+        val vis = w.visibilityM
+        if ((vis != null && vis < 1000) || w.code in setOf(45, 48)) {
+            issues += if (vis != null && vis < 1000) {
+                val m = ((vis / 50).roundToInt() * 50).coerceAtLeast(50)
+                if (dutch) "het zicht is maar $m meter" else "visibility is only $m metres"
+            } else if (dutch) "het is mistig" else "it's foggy"
+        }
+        if (w.precipMm >= 4.0 || w.code in setOf(65, 82)) {
+            issues += if (dutch) "het regent hard, let op voor aquaplaning" else "it's raining hard, so watch out for aquaplaning"
+        } else if (wet && issues.isEmpty()) {
+            issues += if (dutch) "de wegen zijn nat" else "the roads are wet"
+        }
+        if (w.gustsKmh >= 60) {
+            issues += if (dutch) "er staan windstoten tot ${w.gustsKmh.roundToInt()} kilometer per uur" else "there are gusts up to ${w.gustsKmh.roundToInt()} kilometres per hour"
+        }
+        val lights = when {
+            !w.isDay -> if (dutch) "Het is donker, dus lichten aan." else "It's dark out, so lights on."
+            minutesUntil(w.nowTime, w.sunset)?.let { it in 0..90 } == true ->
+                if (dutch) "De zon gaat om ${w.sunset} onder." else "The sun sets at ${w.sunset}, so you'll need your lights soon."
+            else -> null
+        }
+        val head = if (issues.isEmpty()) {
+            if (dutch) "Wegcondities: droog en goed zicht." else "Road conditions look good: dry with good visibility."
+        } else {
+            (if (dutch) "Wegcondities: " else "Road conditions: ") + issues.joinToString(", ") + "."
+        }
+        return if (lights != null) "$head $lights" else head
+    }
+
+    /** Minutes from "HH:mm" a to "HH:mm" b on the same day, or null if unparseable. */
+    fun minutesUntil(a: String, b: String): Int? {
+        fun mins(t: String) = Regex("""(\d{1,2}):(\d{2})""").find(t)?.destructured?.let { (h, m) -> h.toInt() * 60 + m.toInt() }
+        val x = mins(a) ?: return null
+        val y = mins(b) ?: return null
+        return y - x
+    }
+
+    fun weatherSentence(w: WeatherNow, place: String, dutch: Boolean, withAdvice: Boolean = true): String {
         val now = w.tempNow.roundToInt()
         val lo = w.tempMin.roundToInt()
         val hi = w.tempMax.roundToInt()
@@ -93,7 +172,7 @@ object GreetingText {
             sb.append(if (place.isNotBlank()) "In $place it's currently $now degrees with $desc. " else "It's currently $now degrees with $desc. ")
             sb.append("Today between $lo and $hi degrees, with a ${w.rainChance} percent chance of rain.")
         }
-        advice(w, dutch)?.let { sb.append(' ').append(it) }
+        if (withAdvice) advice(w, dutch)?.let { sb.append(' ').append(it) }
         return sb.toString()
     }
 
@@ -172,8 +251,8 @@ object Weather {
 
     fun url(lat: Double, lon: Double) =
         "https://api.open-meteo.com/v1/forecast?latitude=${round(lat)}&longitude=${round(lon)}" +
-            "&current=temperature_2m,weather_code,wind_speed_10m" +
-            "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
+            "&current=temperature_2m,weather_code,wind_speed_10m,wind_gusts_10m,precipitation,snowfall,visibility,is_day" +
+            "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunset" +
             "&forecast_days=1&timezone=auto"
 
     fun parse(json: String): GreetingText.WeatherNow {
@@ -187,6 +266,13 @@ object Weather {
             tempMin = daily.getJSONArray("temperature_2m_min").getDouble(0),
             tempMax = daily.getJSONArray("temperature_2m_max").getDouble(0),
             rainChance = daily.getJSONArray("precipitation_probability_max").optInt(0, 0),
+            precipMm = cur.optDouble("precipitation", 0.0),
+            snowfallCm = cur.optDouble("snowfall", 0.0),
+            gustsKmh = cur.optDouble("wind_gusts_10m", 0.0),
+            visibilityM = cur.optDouble("visibility").takeIf { !it.isNaN() },
+            isDay = cur.optInt("is_day", 1) == 1,
+            nowTime = cur.optString("time").substringAfter('T', ""),
+            sunset = daily.optJSONArray("sunset")?.optString(0)?.substringAfter('T', "") ?: "",
         )
     }
 
@@ -276,7 +362,7 @@ class Greeter(private val context: Context) {
 
 /** Fetches the weather (if enabled), builds the welcome text and speaks it, then calls [then]. */
 object WelcomeAnnouncer {
-    fun run(context: Context, then: () -> Unit = {}) {
+    fun run(context: Context, song: GreetingText.Song? = null, then: () -> Unit = {}) {
         val ctx = context.applicationContext
         val p = Prefs(ctx)
         val main = Handler(Looper.getMainLooper())
@@ -293,12 +379,24 @@ object WelcomeAnnouncer {
                     DriveLog.log("GREETING: weather unavailable (${e.message})"); null
                 }
             }
-            val text = GreetingText.build(p.greetingName, p.greetingDutch, Calendar.getInstance(), weather, p.weatherPlace)
+            val text = GreetingText.build(
+                p.greetingName, p.greetingDutch, Calendar.getInstance(), weather, p.weatherPlace,
+                roads = p.roadConditionsEnabled, song = song.takeIf { p.announceSong },
+            )
             p.lastGreetingAt = System.currentTimeMillis()
             main.post {
                 DriveLog.log("GREETING: \"$text\"")
                 Greeter(ctx).speak(text, p.greetingDutch, then)
             }
         }.start()
+    }
+}
+
+/** Short "Now playing: X by Y" announcement (used when the song wasn't known before the music started). */
+object SongAnnouncer {
+    fun announce(context: Context, song: GreetingText.Song, dutch: Boolean) {
+        val text = GreetingText.songSentence(song, dutch, upFirst = false)
+        DriveLog.log("GREETING: \"$text\"")
+        Greeter(context.applicationContext).speak(text, dutch) {}
     }
 }

@@ -87,6 +87,10 @@ class DriveMonitorService : NotificationListenerService() {
     /** Set when you pause again right after an auto-resume: we take the hint for the rest of the drive. */
     var resumeOffThisDrive = false
     private var firstCarEvent = true
+    /** Announce "Now playing ..." once music starts (when the song wasn't known before the greeting). */
+    private var announceSongAfterStart = false
+    /** Our own speech can briefly pause the music; pauses before this time are attributed to it. */
+    private var ownAnnouncementUntil = 0L
     private val resumeTimes = ArrayDeque<Long>()
 
     private var startRunnable: Runnable? = null
@@ -225,7 +229,12 @@ class DriveMonitorService : NotificationListenerService() {
                 }
                 else -> handler.postDelayed({
                     // Greeting first, then the music (startMusic checks we're still in the car).
-                    if (carConnected) WelcomeAnnouncer.run(this) { if (carConnected) startAction() }
+                    if (carConnected) {
+                        val song = currentSong()
+                        announceSongAfterStart = song == null && prefs.announceSong && prefs.autoStart && other == null
+                        if (song != null) DriveLog.log("Queued song: ${song.title} - ${song.artist}")
+                        WelcomeAnnouncer.run(this, song) { if (carConnected) startAction() }
+                    }
                 }, prefs.startDelaySec * 1000L)
             }
         } else {
@@ -349,6 +358,16 @@ class DriveMonitorService : NotificationListenerService() {
         }
     }
 
+    /** The song YouTube Music has loaded (playing or queued), if it tells us. */
+    fun currentSong(): GreetingText.Song? {
+        val md = (ytm?.takeIf { it.packageName == musicPkg } ?: findYtm())?.metadata ?: return null
+        val title = md.getString(android.media.MediaMetadata.METADATA_KEY_TITLE)
+            ?: md.getString(android.media.MediaMetadata.METADATA_KEY_DISPLAY_TITLE) ?: return null
+        val artist = md.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST)
+            ?: md.getString(android.media.MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE) ?: ""
+        return GreetingText.Song(title, artist).takeIf { title.isNotBlank() }
+    }
+
     private fun findYtm(): MediaController? = try {
         sessions.getActiveSessions(listenerComponent).firstOrNull { it.packageName == musicPkg }
     } catch (e: SecurityException) {
@@ -380,6 +399,17 @@ class DriveMonitorService : NotificationListenerService() {
                 // "fight" a pause that happens right after (pause handling deals with that).
                 DriveLog.log("START: success - YouTube Music is playing")
                 cancelStart()
+                if (announceSongAfterStart) {
+                    announceSongAfterStart = false
+                    // Give the player a moment to publish the track info, then announce it.
+                    handler.postDelayed({
+                        val song = currentSong()
+                        if (song != null && carConnected) {
+                            ownAnnouncementUntil = SystemClock.elapsedRealtime() + 15_000
+                            SongAnnouncer.announce(this@DriveMonitorService, song, prefs.greetingDutch)
+                        }
+                    }, 2_500)
+                }
             }
             if (!carConnected) return
 
@@ -511,6 +541,7 @@ class DriveMonitorService : NotificationListenerService() {
     private fun diagnose(): List<String> {
         val now = SystemClock.elapsedRealtime()
         val clues = mutableListOf<String>()
+        if (now < ownAnnouncementUntil) clues += "Drive Music's own song announcement"
         when (audio.mode) {
             AudioManager.MODE_IN_CALL, AudioManager.MODE_IN_COMMUNICATION -> clues += "CALL in progress"
             AudioManager.MODE_RINGTONE -> clues += "PHONE RINGING"

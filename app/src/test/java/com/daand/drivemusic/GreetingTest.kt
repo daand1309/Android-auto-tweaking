@@ -77,6 +77,81 @@ class GreetingTest {
         assertTrue(GreetingText.weatherSentence(w, "", false).contains("light rain"))
     }
 
+    // ---------------- road conditions
+
+    private val clearDay = sunny.copy(visibilityM = 30_000.0, nowTime = "11:00", sunset = "17:05")
+
+    @Test fun goodRoads() {
+        assertEquals("Road conditions look good: dry with good visibility.", GreetingText.roadSentence(clearDay, false))
+    }
+
+    @Test fun blackIceWhenWetAndFreezing() {
+        val t = GreetingText.roadSentence(clearDay.copy(tempNow = 0.5, code = 61, precipMm = 0.4), false)
+        assertTrue(t, t.contains("black ice is possible"))
+    }
+
+    @Test fun snow() {
+        val t = GreetingText.roadSentence(clearDay.copy(tempNow = -1.0, code = 73, snowfallCm = 0.6), false)
+        assertTrue(t, t.contains("snow on the roads"))
+    }
+
+    @Test fun fogWithVisibility() {
+        val t = GreetingText.roadSentence(clearDay.copy(code = 45, visibilityM = 180.0), false)
+        assertTrue(t, t.contains("visibility is only 200 metres"))
+    }
+
+    @Test fun heavyRainAndGusts() {
+        val t = GreetingText.roadSentence(clearDay.copy(code = 65, precipMm = 6.0, gustsKmh = 72.4), false)
+        assertTrue(t, t.contains("aquaplaning"))
+        assertTrue(t, t.contains("gusts up to 72 kilometres per hour"))
+    }
+
+    @Test fun lightsWhenDarkOrSunsetSoon() {
+        assertTrue(GreetingText.roadSentence(clearDay.copy(isDay = false), false).contains("It's dark out, so lights on."))
+        assertTrue(GreetingText.roadSentence(clearDay.copy(nowTime = "16:20"), false).contains("The sun sets at 17:05"))
+        assertFalse(GreetingText.roadSentence(clearDay, false).contains("sun sets"))
+    }
+
+    @Test fun dutchRoads() {
+        val t = GreetingText.roadSentence(clearDay.copy(tempNow = 0.0, code = 61, precipMm = 1.0, isDay = false), true)
+        assertTrue(t, t.startsWith("Wegcondities: er is kans op ijzel"))
+        assertTrue(t, t.endsWith("Het is donker, dus lichten aan."))
+    }
+
+    @Test fun roadsReplaceGenericAdviceInGreeting() {
+        val t = GreetingText.build("X", false, at(10), clearDay, "", Random(1), roads = true)
+        assertTrue(t, t.contains("Road conditions look good"))
+        assertFalse(t, t.contains("Sunglasses on"))  // no duplicate advice
+    }
+
+    @Test fun parsesRoadFieldsFromOpenMeteo() {
+        val json = """
+            {"current":{"time":"2026-11-11T16:30","temperature_2m":0.4,"weather_code":61,"wind_speed_10m":20,
+                        "wind_gusts_10m":65.0,"precipitation":0.6,"snowfall":0.0,"visibility":800.0,"is_day":1},
+             "daily":{"temperature_2m_max":[3.0],"temperature_2m_min":[-1.0],"precipitation_probability_max":[90],
+                      "sunset":["2026-11-11T16:58"]}}
+        """.trimIndent()
+        val w = Weather.parse(json)
+        assertEquals("16:30", w.nowTime)
+        assertEquals("16:58", w.sunset)
+        val t = GreetingText.roadSentence(w, false)
+        assertTrue(t, t.contains("black ice"))
+        assertTrue(t, t.contains("visibility is only 800 metres"))
+        assertTrue(t, t.contains("gusts up to 65"))
+        assertTrue(t, t.contains("sun sets at 16:58"))
+    }
+
+    // ---------------- song
+
+    @Test fun announcesSong() {
+        val song = GreetingText.Song("Bohemian Rhapsody", "Queen")
+        assertEquals("Up first: Bohemian Rhapsody by Queen.", GreetingText.songSentence(song, false, upFirst = true))
+        assertEquals("Nu speelt: Bohemian Rhapsody van Queen.", GreetingText.songSentence(song, true, upFirst = false))
+        assertEquals("Up first: Intro.", GreetingText.songSentence(GreetingText.Song("Intro", ""), false, true))
+        val t = GreetingText.build("X", false, at(10), null, "", Random(1), song = song)
+        assertTrue(t, t.endsWith("Up first: Bohemian Rhapsody by Queen. Starting your music. Have a great drive!"))
+    }
+
     @Test fun locationIsRoundedForPrivacy() {
         assertEquals(52.1, Weather.round(52.0907), 0.0001)
         assertTrue(Weather.url(52.0907, 5.1214).contains("latitude=52.1&longitude=5.1"))

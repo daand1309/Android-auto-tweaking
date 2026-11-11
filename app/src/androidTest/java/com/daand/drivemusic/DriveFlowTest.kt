@@ -169,13 +169,24 @@ class DriveFlowTest {
         prefs.greetingEnabled = true
         prefs.weatherEnabled = false
         prefs.greetingName = "Mr. Test"
+        prefs.announceSong = true
         prefs.lastGreetingAt = 0L
+        onMain {
+            session.setMetadata(
+                android.media.MediaMetadata.Builder()
+                    .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, "Test Song")
+                    .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, "Test Artist")
+                    .build()
+            )
+        }
+        waitFor("song info to reach the service", 5_000) { service().currentSong()?.title == "Test Song" }
         onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_PROJECTION) }
         // Whether or not the emulator has a voice installed, music must start after the greeting.
         waitFor("music to start after the greeting", 60_000) { currentState == PlaybackState.STATE_PLAYING }
         val log = log()
         assertTrue(log, log.contains("GREETING: \"Good"))
         assertTrue(log, log.contains("Mr. Test"))
+        assertTrue(log, log.contains("Up first: Test Song by Test Artist."))
         assertTrue(log, Regex("GREETING: (spoken|no text-to-speech|speech|timed out)").containsMatchIn(log))
     }
 

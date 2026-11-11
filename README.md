@@ -19,7 +19,10 @@ A small Android app (built for a Samsung phone + Android Auto + YouTube Music) t
 
 ## Welcome greeting
 
-When Android Auto connects, a voice welcomes you by name (e.g. "Good morning, Mr. Smith. Welcome back."), adds two random lines from a list of 25 (plus day/time-specific ones), reads the weather, and then starts your music. English or Dutch.
+When Android Auto connects, a voice welcomes you by name (e.g. "Good morning, Mr. Smith. Welcome back."), adds two random lines from a list of 25 (plus day/time-specific ones), reads the weather and road conditions, says which song is up first, and then starts your music. English or Dutch.
+
+- **Road conditions** come from live weather data: black ice / near-freezing, snow, fog and visibility, heavy rain (aquaplaning), strong gusts, and whether it's dark or the sun sets soon. (Traffic jams aren't included: there's no free Dutch traffic feed apps may use without a key.)
+- **Song**: "Up first: <title> by <artist>" when YouTube Music already has a song queued; otherwise "Now playing: ..." is announced a few seconds after the music starts.
 
 - Set your name, language and weather location under **Welcome greeting** in the app, and tap **Test greeting now** to hear it.
 - Weather comes from [Open-Meteo](https://open-meteo.com) (free, no account). Only an approximate location (rounded to ~10 km) is sent. Location is set from the app ("Use my location" or "Type a city") and is never tracked in the background.

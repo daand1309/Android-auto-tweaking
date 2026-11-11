@@ -168,6 +168,7 @@ class MainActivity : Activity() {
             val name = prefs.greetingName.ifBlank { "(not set)" }
             stepperLike("Name: $name", "Change") { askName() }
             switch("Speak in Dutch (Nederlands)", prefs.greetingDutch) { prefs.greetingDutch = it }
+            switch("Say which song will play", prefs.announceSong) { prefs.announceSong = it }
             switch("Include the weather", prefs.weatherEnabled) { prefs.weatherEnabled = it; render() }
             if (prefs.weatherEnabled) {
                 val place = when {
@@ -175,6 +176,7 @@ class MainActivity : Activity() {
                     !prefs.weatherLat.isNaN() -> "your location"
                     else -> "(not set)"
                 }
+                switch("Include road conditions (ice, fog, rain, wind, darkness)", prefs.roadConditionsEnabled) { prefs.roadConditionsEnabled = it }
                 text("Weather for: $place")
                 row(
                     Button(this).apply { text = "📍 Use my location"; isAllCaps = false; setOnClickListener { useMyLocation() } },
@@ -183,7 +185,7 @@ class MainActivity : Activity() {
             }
             button("🔊 Test greeting now") {
                 toast("Speaking... turn up the media volume")
-                WelcomeAnnouncer.run(this)
+                WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong())
             }
             text("The greeting plays before your music starts (not again if you reconnect within 10 minutes).")
         }

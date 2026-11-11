@@ -98,6 +98,15 @@ class Prefs(context: Context) {
         get() = sp.getString("weather_place", "") ?: ""
         set(v) = sp.edit().putString("weather_place", v).apply()
 
+    var roadConditionsEnabled: Boolean
+        get() = sp.getBoolean("road_conditions", true)
+        set(v) = sp.edit().putBoolean("road_conditions", v).apply()
+
+    /** Say which song is about to play. */
+    var announceSong: Boolean
+        get() = sp.getBoolean("announce_song", true)
+        set(v) = sp.edit().putBoolean("announce_song", v).apply()
+
     var lastGreetingAt: Long
         get() = sp.getLong("last_greeting", 0L)
         set(v) = sp.edit().putLong("last_greeting", v).apply()
