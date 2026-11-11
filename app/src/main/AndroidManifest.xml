@@ -9,6 +9,9 @@
          verified update to Android, which always asks you to confirm. POST_NOTIFICATIONS is for
          the optional "update available" notification. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Optional: only used (while the app is open) to set the weather location for the greeting.
+         Approximate location only; never tracked in the background. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
@@ -21,6 +24,10 @@
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- Needed to find the phone's text-to-speech voice for the welcome greeting. -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
         <package android:name="com.google.android.apps.youtube.music" />
         <package android:name="app.revanced.android.gms" />

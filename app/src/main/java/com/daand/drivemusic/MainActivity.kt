@@ -161,6 +161,33 @@ class MainActivity : Activity() {
             text("Note: with some cars the car's own volume knob is used and this has no effect.")
         }
 
+        // ---------------- greeting
+        header("Welcome greeting")
+        switch("Say a welcome when Android Auto connects", prefs.greetingEnabled) { prefs.greetingEnabled = it; render() }
+        if (prefs.greetingEnabled) {
+            val name = prefs.greetingName.ifBlank { "(not set)" }
+            stepperLike("Name: $name", "Change") { askName() }
+            switch("Speak in Dutch (Nederlands)", prefs.greetingDutch) { prefs.greetingDutch = it }
+            switch("Include the weather", prefs.weatherEnabled) { prefs.weatherEnabled = it; render() }
+            if (prefs.weatherEnabled) {
+                val place = when {
+                    prefs.weatherPlace.isNotBlank() -> prefs.weatherPlace
+                    !prefs.weatherLat.isNaN() -> "your location"
+                    else -> "(not set)"
+                }
+                text("Weather for: $place")
+                row(
+                    Button(this).apply { text = "📍 Use my location"; isAllCaps = false; setOnClickListener { useMyLocation() } },
+                    Button(this).apply { text = "🔎 Type a city"; isAllCaps = false; setOnClickListener { askCity() } },
+                )
+            }
+            button("🔊 Test greeting now") {
+                toast("Speaking... turn up the media volume")
+                WelcomeAnnouncer.run(this)
+            }
+            text("The greeting plays before your music starts (not again if you reconnect within 10 minutes).")
+        }
+
         // ---------------- actions
         header("Test & logs")
         button("▶ Test: start YouTube Music now") {
@@ -192,6 +219,8 @@ class MainActivity : Activity() {
             "No data about you, your music or your logs is ever sent.\n" +
             "• Updates are only installed after a checksum and signature check, and Android always asks you first.\n" +
             "• It never reads your notifications; notification access is only needed to press play/pause.\n" +
+            "• Weather: only your approximate location (rounded to ~10 km) is sent to Open-Meteo, a free weather service, " +
+            "when the greeting plays. Your location is never tracked in the background.\n" +
             "• Logs stay on your phone and are only shared when you tap Share.\n" +
             "• No overlay, accessibility, location, contacts, SMS or storage permissions.")
 
@@ -218,6 +247,90 @@ class MainActivity : Activity() {
                 ?: toast("Music app not installed")
         }
         scroll.post { scroll.scrollTo(0, y) }
+    }
+
+    // ---------------------------------------------------------------- greeting settings
+
+    private fun stepperLike(label: String, action: String, onClick: () -> Unit) = row(
+        TextView(this).apply {
+            text = label; textSize = 15f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        },
+        Button(this).apply { text = action; isAllCaps = false; setOnClickListener { onClick() } },
+    )
+
+    private fun askText(title: String, hint: String, initial: String, onOk: (String) -> Unit) {
+        val input = android.widget.EditText(this).apply {
+            setText(initial); this.hint = hint; setSingleLine()
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+        }
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(input)
+            .setPositiveButton("OK") { _, _ -> onOk(input.text.toString().trim()) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun askName() = askText("How should the voice call you?", "e.g. Mr. Smith", prefs.greetingName) {
+        prefs.greetingName = it
+        render()
+    }
+
+    private fun askCity() = askText("Weather for which city?", "e.g. Utrecht", prefs.weatherPlace) { city ->
+        if (city.isBlank()) return@askText
+        Thread {
+            val place = try { Weather.findPlace(city, prefs.greetingDutch) } catch (e: Exception) { null }
+            runOnUiThread {
+                if (place == null) toast("Couldn't find '$city'") else {
+                    saveWeatherLocation(place.lat, place.lon, place.name)
+                    toast("Weather location: ${place.name}")
+                }
+            }
+        }.start()
+    }
+
+    private fun saveWeatherLocation(lat: Double, lon: Double, name: String) {
+        prefs.weatherLat = Weather.round(lat)
+        prefs.weatherLon = Weather.round(lon)
+        prefs.weatherPlace = name
+        DriveLog.log("Setting changed: weather location = ${name.ifBlank { "current location" }}")
+        render()
+    }
+
+    private fun useMyLocation() {
+        if (checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION), REQ_LOCATION)
+            return
+        }
+        val lm = getSystemService(android.location.LocationManager::class.java)
+        val provider = if (Build.VERSION.SDK_INT >= 31 && lm.hasProvider(android.location.LocationManager.FUSED_PROVIDER))
+            android.location.LocationManager.FUSED_PROVIDER else android.location.LocationManager.NETWORK_PROVIDER
+        toast("Finding your location...")
+        val onLocation = { loc: android.location.Location? ->
+            val l = loc ?: lm.getLastKnownLocation(android.location.LocationManager.PASSIVE_PROVIDER)
+            if (l == null) toast("Couldn't get your location - try 'Type a city'") else Thread {
+                val name = try {
+                    @Suppress("DEPRECATION")
+                    android.location.Geocoder(this).getFromLocation(l.latitude, l.longitude, 1)?.firstOrNull()?.locality ?: ""
+                } catch (e: Exception) { "" }
+                runOnUiThread { saveWeatherLocation(l.latitude, l.longitude, name); toast("Weather location saved") }
+            }.start()
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= 30) lm.getCurrentLocation(provider, null, mainExecutor) { onLocation(it) }
+            else onLocation(null)  // Android 10: last known location
+        } catch (e: Exception) {
+            toast("Location unavailable: ${e.message}")
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_LOCATION) {
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) useMyLocation()
+            else toast("No problem - use 'Type a city' instead")
+        } else render()
     }
 
     // ---------------------------------------------------------------- updates
@@ -352,6 +465,10 @@ class MainActivity : Activity() {
         setPadding(0, dp(8), 0, dp(8))
         setOnCheckedChangeListener { _, v -> onChange(v); DriveLog.log("Setting changed: $label = $v") }
     })
+
+    companion object {
+        private const val REQ_LOCATION = 3
+    }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
 }

@@ -209,10 +209,24 @@ class DriveMonitorService : NotificationListenerService() {
             }
             applyConnectVolume()
             val other = otherAppPlaying()
+            val startAction: () -> Unit = {
+                when {
+                    !prefs.autoStart -> DriveLog.log("Auto-start is turned off in settings")
+                    other != null -> DriveLog.log("START: skipped - $other is already playing, not taking over")
+                    else -> startMusic("Android Auto connected")
+                }
+            }
+            val recentlyGreeted = System.currentTimeMillis() - prefs.lastGreetingAt < 10 * 60 * 1000L
             when {
-                !prefs.autoStart -> DriveLog.log("Auto-start is turned off in settings")
-                other != null -> DriveLog.log("START: skipped - $other is already playing, not taking over")
-                else -> startMusic("Android Auto connected", prefs.startDelaySec * 1000L)
+                !prefs.greetingEnabled -> handler.postDelayed(startAction, prefs.startDelaySec * 1000L)
+                recentlyGreeted -> {
+                    DriveLog.log("GREETING: skipped (already greeted in the last 10 min)")
+                    handler.postDelayed(startAction, prefs.startDelaySec * 1000L)
+                }
+                else -> handler.postDelayed({
+                    // Greeting first, then the music (startMusic checks we're still in the car).
+                    if (carConnected) WelcomeAnnouncer.run(this) { if (carConnected) startAction() }
+                }, prefs.startDelaySec * 1000L)
             }
         } else {
             val mins = (SystemClock.elapsedRealtime() - carConnectedAt) / 60000

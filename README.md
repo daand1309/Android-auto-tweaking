@@ -17,6 +17,15 @@ A small Android app (built for a Samsung phone + Android Auto + YouTube Music) t
 - **Last drive summary** on the main screen (duration, pauses, auto-resumes, last pause reason).
 - **Log viewer**: colour-coded (red = problems, green = success, blue = drive start/end) with a "Problems only" filter.
 
+## Welcome greeting
+
+When Android Auto connects, a voice welcomes you by name (e.g. "Good morning, Mr. Smith. Welcome back."), adds two random lines from a list of 25 (plus day/time-specific ones), reads the weather, and then starts your music. English or Dutch.
+
+- Set your name, language and weather location under **Welcome greeting** in the app, and tap **Test greeting now** to hear it.
+- Weather comes from [Open-Meteo](https://open-meteo.com) (free, no account). Only an approximate location (rounded to ~10 km) is sent. Location is set from the app ("Use my location" or "Type a city") and is never tracked in the background.
+- Uses the phone's own text-to-speech voice and plays through the car like a navigation prompt. If the voice isn't available, music still starts.
+- Not repeated if Android Auto reconnects within 10 minutes.
+
 ## Patched YouTube Music (Morphe / ReVanced)
 
 Supported. Patched builds use a different package name than the official app, so Drive Music finds them automatically (patched builds are preferred over the official one if both are installed). You can check or change the app under **Settings → Change music app**. If MicroG (GmsCore) is installed, it gets its own battery item on the checklist: if Samsung puts MicroG to sleep, the patched app can lose sign-in and stop streaming.

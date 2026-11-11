@@ -67,6 +67,41 @@ class Prefs(context: Context) {
         get() = sp.getString("update_status", "") ?: ""
         set(v) = sp.edit().putString("update_status", v).apply()
 
+    // ---- welcome greeting
+    var greetingEnabled: Boolean
+        get() = sp.getBoolean("greeting", true)
+        set(v) = sp.edit().putBoolean("greeting", v).apply()
+
+    /** How the voice addresses you, e.g. "Mr. Smith". Stored only on the phone. */
+    var greetingName: String
+        get() = sp.getString("greeting_name", "") ?: ""
+        set(v) = sp.edit().putString("greeting_name", v).apply()
+
+    var greetingDutch: Boolean
+        get() = sp.getBoolean("greeting_dutch", false)
+        set(v) = sp.edit().putBoolean("greeting_dutch", v).apply()
+
+    var weatherEnabled: Boolean
+        get() = sp.getBoolean("weather", true)
+        set(v) = sp.edit().putBoolean("weather", v).apply()
+
+    /** Weather location (already rounded to ~10 km). NaN = not set. */
+    var weatherLat: Double
+        get() = sp.getFloat("weather_lat", Float.NaN).toDouble()
+        set(v) = sp.edit().putFloat("weather_lat", v.toFloat()).apply()
+
+    var weatherLon: Double
+        get() = sp.getFloat("weather_lon", Float.NaN).toDouble()
+        set(v) = sp.edit().putFloat("weather_lon", v.toFloat()).apply()
+
+    var weatherPlace: String
+        get() = sp.getString("weather_place", "") ?: ""
+        set(v) = sp.edit().putString("weather_place", v).apply()
+
+    var lastGreetingAt: Long
+        get() = sp.getLong("last_greeting", 0L)
+        set(v) = sp.edit().putLong("last_greeting", v).apply()
+
     var lastCarState: String
         get() = sp.getString("last_car_state", "unknown") ?: "unknown"
         set(v) = sp.edit().putString("last_car_state", v).apply()

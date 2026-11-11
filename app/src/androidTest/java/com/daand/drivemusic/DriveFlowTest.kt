@@ -53,6 +53,7 @@ class DriveFlowTest {
             startDelaySec = 0
             pauseOnDisconnect = true
             setVolumeOnConnect = false
+            greetingEnabled = false
         }
 
         val component = ComponentName(ctx, DriveMonitorService::class.java)
@@ -161,6 +162,30 @@ class DriveFlowTest {
         assertTrue(pauseCalls >= 1)
         assertTrue(log().contains("Paused music because you left the car"))
         assertTrue(prefs.lastDrive.contains("pause(s)"))
+    }
+
+    @Test
+    fun greetingPlaysThenMusicStarts() {
+        prefs.greetingEnabled = true
+        prefs.weatherEnabled = false
+        prefs.greetingName = "Mr. Test"
+        prefs.lastGreetingAt = 0L
+        onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_PROJECTION) }
+        // Whether or not the emulator has a voice installed, music must start after the greeting.
+        waitFor("music to start after the greeting", 60_000) { currentState == PlaybackState.STATE_PLAYING }
+        val log = log()
+        assertTrue(log, log.contains("GREETING: \"Good"))
+        assertTrue(log, log.contains("Mr. Test"))
+        assertTrue(log, Regex("GREETING: (spoken|no text-to-speech|speech|timed out)").containsMatchIn(log))
+    }
+
+    @Test
+    fun noSecondGreetingOnQuickReconnect() {
+        prefs.greetingEnabled = true
+        prefs.weatherEnabled = false
+        prefs.lastGreetingAt = System.currentTimeMillis()  // greeted a minute ago
+        connectCar()
+        assertTrue(log().contains("GREETING: skipped"))
     }
 
     @Test
