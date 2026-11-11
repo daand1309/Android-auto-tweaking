@@ -5,16 +5,43 @@ import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 
-/** Shared dark-theme palette and simple rounded backgrounds (no external UI library). */
+/** Shared palette and simple rounded backgrounds (no external UI library). Switchable theme. */
 object Style {
-    const val BG = 0xFF0E1116.toInt()        // page background
-    const val SURFACE = 0xFF171C24.toInt()   // cards
-    const val SURFACE2 = 0xFF232B36.toInt()  // inputs / secondary buttons
-    const val PRIMARY = 0xFF4F8CFF.toInt()   // accent
+    /** Theme ids stored in settings. */
+    const val THEME_RED = "red"
+    const val THEME_BLUE = "blue"
+    val THEMES = linkedMapOf(THEME_RED to "Red & silver", THEME_BLUE to "Classic blue")
+
+    var BG = 0; private set          // page background
+    var SURFACE = 0; private set     // cards
+    var SURFACE2 = 0; private set    // inputs / secondary buttons
+    var PRIMARY = 0; private set     // accent (buttons, section labels, switches)
+    var HIGHLIGHT = 0; private set   // "update available" card
+    var TEXT = 0; private set
+    var TEXT2 = 0; private set       // secondary text
     const val GREEN = 0xFF32D74B.toInt()
     const val AMBER = 0xFFFFB020.toInt()
-    const val TEXT = 0xFFF2F4F8.toInt()
-    const val TEXT2 = 0xFF9AA6B2.toInt()
+    const val WARN_BG = 0xFF4A3510.toInt()
+
+    init {
+        apply(THEME_RED)
+    }
+
+    fun apply(theme: String) {
+        if (theme == THEME_BLUE) {
+            BG = 0xFF0E1116.toInt(); SURFACE = 0xFF171C24.toInt(); SURFACE2 = 0xFF232B36.toInt()
+            PRIMARY = 0xFF4F8CFF.toInt(); HIGHLIGHT = 0xFF1D3A6B.toInt()
+            TEXT = 0xFFF2F4F8.toInt(); TEXT2 = 0xFF9AA6B2.toInt()
+        } else {
+            // Red, black and silver.
+            BG = 0xFF0A0A0B.toInt(); SURFACE = 0xFF17171A.toInt(); SURFACE2 = 0xFF26262B.toInt()
+            PRIMARY = 0xFFE60012.toInt(); HIGHLIGHT = 0xFF4A1015.toInt()
+            TEXT = 0xFFF4F4F6.toInt(); TEXT2 = 0xFFA7A9AC.toInt()
+        }
+    }
+
+    /** The accent at ~40% opacity (switch tracks). */
+    fun primarySoft() = (PRIMARY and 0x00FFFFFF) or 0x66000000
 
     fun rounded(color: Int, radiusPx: Float) = GradientDrawable().apply {
         setColor(color); cornerRadius = radiusPx

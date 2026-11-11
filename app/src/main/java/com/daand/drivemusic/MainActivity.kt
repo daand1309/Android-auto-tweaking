@@ -189,6 +189,7 @@ class MainActivity : Activity() {
         navRow("Welcome greeting", if (prefs.greetingEnabled) "On · ${prefs.greetingName.ifBlank { "no name set" }}" else "Off") { go(Page.GREETING) }
         navRow("Drive Mode", if (prefs.autoOpenDriveMode) "Opens when the car connects" else "Big buttons for your phone holder") { go(Page.DRIVE_MODE) }
         navRow("Sound", "Equalizer and sound settings") { go(Page.SOUND) }
+        navRow("Theme", Style.THEMES[prefs.theme] ?: "") { pickTheme() }
         navRow("Car screen", "Show Drive Music in Android Auto") { go(Page.CAR) }
         if (missing == 0) navRow("Setup", "All done ✓") { go(Page.SETUP) }
 
@@ -439,7 +440,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
             background = Style.button(
-                when { highlight -> 0xFF1D3A6B.toInt(); warn -> 0xFF4A3510.toInt(); else -> Style.SURFACE }, dp(14).toFloat()
+                when { highlight -> Style.HIGHLIGHT; warn -> Style.WARN_BG; else -> Style.SURFACE }, dp(14).toFloat()
             )
             setPadding(dp(16), dp(14), dp(14), dp(14))
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also {
@@ -695,6 +696,18 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- helpers
 
+    private fun pickTheme() {
+        val ids = Style.THEMES.keys.toList()
+        AlertDialog.Builder(this)
+            .setTitle("Theme")
+            .setItems(Style.THEMES.values.toTypedArray()) { _, i ->
+                prefs.theme = ids[i]
+                Style.apply(prefs.theme)
+                recreate()  // redraw everything, including the status bar colours
+            }
+            .show()
+    }
+
     private fun pickMusicApp() {
         val candidates = MusicApps.youtubeMusicCandidates(this)
         val others = MusicApps.launchableApps(this).filter { a -> candidates.none { it.pkg == a.pkg } }
@@ -821,14 +834,14 @@ class MainActivity : Activity() {
         background = Style.rounded(Style.SURFACE, dp(14).toFloat())
         setPadding(dp(14), dp(14), dp(14), dp(14))
         thumbTintList = Style.tint(if (value) Style.PRIMARY else Style.TEXT2)
-        trackTintList = Style.tint(if (value) 0x66_4F8CFF else Style.SURFACE2)
+        trackTintList = Style.tint(if (value) Style.primarySoft() else Style.SURFACE2)
         (LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)).also {
             it.topMargin = dp(8); layoutParams = it
         }
         setOnCheckedChangeListener { sw, v ->
             // Keep the colours in step with the new state.
             (sw as Switch).thumbTintList = Style.tint(if (v) Style.PRIMARY else Style.TEXT2)
-            sw.trackTintList = Style.tint(if (v) 0x66_4F8CFF else Style.SURFACE2)
+            sw.trackTintList = Style.tint(if (v) Style.primarySoft() else Style.SURFACE2)
             onChange(v); DriveLog.log("Setting changed: $label = $v")
         }
     })

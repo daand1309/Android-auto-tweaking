@@ -148,7 +148,7 @@ class DriveModeActivity : Activity() {
             gravity = Gravity.CENTER; maxLines = 3
         }
         status = TextView(this).apply {
-            setTextColor(Color.parseColor("#9E9E9E")); textSize = 16f; gravity = Gravity.CENTER
+            setTextColor(Style.TEXT2); textSize = 16f; gravity = Gravity.CENTER
         }
         root.addView(nowPlaying, vLp(weight = 2f))
         root.addView(status, vLp())

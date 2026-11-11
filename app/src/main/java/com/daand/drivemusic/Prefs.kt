@@ -172,6 +172,11 @@ class Prefs(context: Context) {
         get() = sp.getLong("last_music_change_at", 0L)
         set(v) = sp.edit().putLong("last_music_change_at", v).apply()
 
+    /** UI theme id (see Style.THEMES). */
+    var theme: String
+        get() = sp.getString("theme", Style.THEME_RED) ?: Style.THEME_RED
+        set(v) = sp.edit().putString("theme", v).apply()
+
     var lastCarState: String
         get() = sp.getString("last_car_state", "unknown") ?: "unknown"
         set(v) = sp.edit().putString("last_car_state", v).apply()
