@@ -410,6 +410,11 @@ class MainActivity : Activity() {
                     toast("Settings saved")
                     DriveLog.log("Settings backed up")
                 }
+                REQ_CAR_PHOTO -> {
+                    IntroImage.save(this, uri, IntroImage.HERO)
+                    toast("Car photo set")
+                    render()
+                }
                 REQ_INTRO_IMAGE -> {
                     IntroImage.save(this, uri)
                     toast("Intro image set")
@@ -424,7 +429,7 @@ class MainActivity : Activity() {
                 }
             }
         } catch (e: Exception) {
-            toast("Couldn't ${when (requestCode) { REQ_EXPORT -> "save"; REQ_INTRO_IMAGE -> "use that image"; else -> "restore" }}: ${e.message}")
+            toast("Couldn't ${when (requestCode) { REQ_EXPORT -> "save"; REQ_INTRO_IMAGE, REQ_CAR_PHOTO -> "use that image"; else -> "restore" }}: ${e.message}")
         }
     }
 
@@ -464,11 +469,21 @@ class MainActivity : Activity() {
             setTextColor(when { svc == null -> Style.AMBER; driving -> Style.GREEN; else -> Style.TEXT2 })
             setPadding(dp(4), dp(2), 0, 0)
         })
-        root.addView(CarHeroView(this).apply {
-            this.driving = driving
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                .apply { topMargin = dp(4) }
-        })
+        val photo = IntroImage.load(this, IntroImage.HERO)
+        if (photo != null) {
+            root.addView(CarPhotoView(this, photo).apply {
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    .apply { topMargin = dp(6) }
+                setOnClickListener {
+                    AlertDialog.Builder(this@MainActivity).setTitle("Car photo")
+                        .setItems(arrayOf("Change photo", "Remove photo")) { _, i ->
+                            if (i == 0) pickCarPhoto() else { IntroImage.clear(this@MainActivity, IntroImage.HERO); render() }
+                        }.show()
+                }
+            })
+        } else {
+            navRow("📷  Add a photo of your car", "Shown here; stays on your phone") { pickCarPhoto() }
+        }
 
         val song = svc?.currentSong()
         val weatherFresh = System.currentTimeMillis() - prefs.lastWeatherAt < 3 * 60 * 60 * 1000L
@@ -482,6 +497,13 @@ class MainActivity : Activity() {
         tiles.chunked(2).forEach { pair ->
             row(*pair.map { (icon, label) -> statusTile(icon, label) }.toTypedArray())
         }
+    }
+
+    private fun pickCarPhoto() {
+        @Suppress("DEPRECATION")
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE); type = "image/*"
+        }, REQ_CAR_PHOTO)
     }
 
     private fun statusTile(icon: String, label: String) = LinearLayout(this).apply {
@@ -925,6 +947,7 @@ class MainActivity : Activity() {
         private const val REQ_EXPORT = 10
         private const val REQ_IMPORT = 11
         private const val REQ_INTRO_IMAGE = 12
+        private const val REQ_CAR_PHOTO = 13
     }
 
     private fun openEqualizer() {

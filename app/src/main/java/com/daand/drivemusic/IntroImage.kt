@@ -12,20 +12,23 @@ import java.io.File
  */
 object IntroImage {
     private const val FILE = "intro_logo.png"
+    /** Photo of your car for the home screen. */
+    const val HERO = "hero_car.png"
     private const val MAX_SIDE = 1200
 
-    fun file(ctx: Context) = File(ctx.filesDir, FILE)
+    fun file(ctx: Context, name: String = FILE) = File(ctx.filesDir, name)
 
-    fun exists(ctx: Context) = file(ctx).exists()
+    fun exists(ctx: Context, name: String = FILE) = file(ctx, name).exists()
 
-    fun load(ctx: Context): Bitmap? = file(ctx).takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.path) }
+    fun load(ctx: Context, name: String = FILE): Bitmap? =
+        file(ctx, name).takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.path) }
 
-    fun clear(ctx: Context) {
-        file(ctx).delete()
+    fun clear(ctx: Context, name: String = FILE) {
+        file(ctx, name).delete()
     }
 
     /** Copies the chosen image, scaled down, and makes a dark background transparent. */
-    fun save(ctx: Context, uri: Uri) {
+    fun save(ctx: Context, uri: Uri, name: String = FILE) {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         ctx.contentResolver.openInputStream(uri)!!.use { BitmapFactory.decodeStream(it, null, bounds) }
         var sample = 1
@@ -40,7 +43,7 @@ object IntroImage {
         src.getPixels(px, 0, w, 0, 0, w, h)
         if (hasDarkBackground(px, w, h)) lightOnTransparent(px)
         val out = Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
-        file(ctx).outputStream().use { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        file(ctx, name).outputStream().use { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
     // ------------------------------------------------------------------ pure pixel logic (unit tested)
