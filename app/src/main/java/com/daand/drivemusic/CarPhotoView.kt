@@ -25,7 +25,9 @@ class CarPhotoView(context: Context, private val photo: Bitmap) : View(context) 
     private val frameRatio = if (photo.height > photo.width) 0.72f else 0.56f
 
     /** Where the car sits vertically (0..1 of the photo height, top of the crop). */
-    private val focusTop: Float by lazy {
+    private val focusTop: Float by lazy { focusCache.getOrPut(photo) { findFocus() } }
+
+    private fun findFocus(): Float {
         val sw = 64
         val sh = (sw * photo.height / photo.width.toFloat()).toInt().coerceAtLeast(1)
         val small = Bitmap.createScaledBitmap(photo, sw, sh, true)
@@ -33,7 +35,12 @@ class CarPhotoView(context: Context, private val photo: Bitmap) : View(context) 
         small.getPixels(px, 0, sw, 0, 0, sw, sh)
         if (small !== photo) small.recycle()
         val top = PhotoFraming.bestWindowTop(px, sw, sh, (sw * frameRatio).toInt())
-        top / sh.toFloat()
+        return top / sh.toFloat()
+    }
+
+    private companion object {
+        /** The photo bitmap is cached, so its framing only needs working out once. */
+        val focusCache = java.util.WeakHashMap<Bitmap, Float>()
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {

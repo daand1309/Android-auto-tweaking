@@ -38,4 +38,13 @@ class IntroImageTest {
         assertEquals(0x80, px[1] ushr 24)               // dark red -> red, half see-through
         assertEquals(0xFF0000, px[1] and 0xFFFFFF)
     }
+
+    @Test fun carPhotoIsSizedByWidthAndNeverUpscaled() {
+        // Tall 1080x2340 phone photo: kept at full width (was shrunk to 540 wide before).
+        assertEquals(1080 to 2340, IntroImage.carPhotoSize(1080, 2340))
+        // Big 4000x3000 camera photo: 1600 wide, aspect kept.
+        assertEquals(1600 to 1200, IntroImage.carPhotoSize(4000, 3000))
+        // Small image is not blown up.
+        assertEquals(400 to 300, IntroImage.carPhotoSize(400, 300))
+    }
 }
