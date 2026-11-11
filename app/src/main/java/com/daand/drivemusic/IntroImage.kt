@@ -54,11 +54,21 @@ object IntroImage {
         return corners.all { (it ushr 24) < 16 || lum(it) < 40 }
     }
 
-    /** Turns brightness into opacity: white stays solid white, black becomes fully transparent. */
+    /**
+     * Removes a black background while keeping the logo's colours: black becomes transparent,
+     * bright colours stay solid, and soft edges/gradients become partly see-through. (The colour is
+     * "un-mixed" from black, so drawn on black it looks exactly like the original.)
+     */
     fun lightOnTransparent(px: IntArray) {
         for (i in px.indices) {
-            val a = (px[i] ushr 24) * lum(px[i]) / 255
-            px[i] = (a shl 24) or 0x00FFFFFF
+            val c = px[i]
+            val l = lum(c)
+            val a = (c ushr 24) * l / 255
+            if (a == 0 || l == 0) { px[i] = 0; continue }
+            val r = ((c shr 16) and 0xFF) * 255 / l
+            val g = ((c shr 8) and 0xFF) * 255 / l
+            val b = (c and 0xFF) * 255 / l
+            px[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
         }
     }
 }
