@@ -52,6 +52,9 @@ class MainActivity : Activity() {
         setContentView(scroll)
         window.statusBarColor = Style.BG
         window.navigationBarColor = Style.BG
+        if (Build.VERSION.SDK_INT >= 33) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { handleBack() }
+        }
         // Android 15+ draws apps edge-to-edge (behind the status/navigation bars): pad the content
         // by the real bar sizes so page titles don't slide under the clock/notch.
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(scroll) { _, insets ->
@@ -79,7 +82,8 @@ class MainActivity : Activity() {
 
     private enum class Page(val title: String) {
         HOME("Drive Music"), SETUP("Setup"), MUSIC("Music & driving"), GREETING("Welcome greeting"),
-        VOICE("Voice"), DRIVE_MODE("Drive Mode"), SOUND("Sound"), UPDATES("Updates"), HELP("Help & privacy")
+        VOICE("Voice"), DRIVE_MODE("Drive Mode"), SOUND("Sound"), UPDATES("Updates"), HELP("Help & privacy"),
+        CAR("Car screen"), BACKUP("Backup & restore")
     }
 
     private var page = Page.HOME
@@ -90,14 +94,16 @@ class MainActivity : Activity() {
         scroll.post { scroll.scrollTo(0, 0) }
     }
 
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
+    private fun handleBack() {
         when (page) {
-            Page.HOME -> @Suppress("DEPRECATION") super.onBackPressed()
+            Page.HOME -> finish()
             Page.VOICE -> go(Page.GREETING)
             else -> go(Page.HOME)
         }
     }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() = handleBack()
 
     private class SetupItem(val label: String, val help: String, val ok: Boolean, val action: String, val onClick: () -> Unit)
 
@@ -148,6 +154,8 @@ class MainActivity : Activity() {
             Page.SOUND -> renderSound()
             Page.UPDATES -> renderUpdates()
             Page.HELP -> renderHelp()
+            Page.CAR -> renderCar()
+            Page.BACKUP -> renderBackup()
         }
         scroll.post { scroll.scrollTo(0, y) }
     }
@@ -178,11 +186,13 @@ class MainActivity : Activity() {
         navRow("Welcome greeting", if (prefs.greetingEnabled) "On · ${prefs.greetingName.ifBlank { "no name set" }}" else "Off") { go(Page.GREETING) }
         navRow("Drive Mode", if (prefs.autoOpenDriveMode) "Opens when the car connects" else "Big buttons for your phone holder") { go(Page.DRIVE_MODE) }
         navRow("Sound", "Equalizer and sound settings") { go(Page.SOUND) }
+        navRow("Car screen", "Show Drive Music in Android Auto") { go(Page.CAR) }
         if (missing == 0) navRow("Setup", "All done ✓") { go(Page.SETUP) }
 
         header("More")
         navRow("Updates", "Version ${packageManager.getPackageInfo(packageName, 0).versionName}") { go(Page.UPDATES) }
         navRow("Logs", "What happened on your drives") { startActivity(Intent(this, LogActivity::class.java)) }
+        navRow("Backup & restore", "Save your settings to a file") { go(Page.BACKUP) }
         navRow("Help & privacy", "Car screen setup, tips, what data is used") { go(Page.HELP) }
         if (prefs.lastDrive.isNotEmpty()) text("Last drive: ${prefs.lastDrive}")
     }
@@ -316,9 +326,7 @@ class MainActivity : Activity() {
 
     private fun renderHelp() {
         pageHeader()
-        header("Car screen")
-        text("Android Auto → Settings → tap Version 10× → ⋮ → Developer settings → Unknown sources on. " +
-            "Then Launcher aanpassen → tick Drive Music.")
+        navRow("Car screen setup", "Show Drive Music in Android Auto") { go(Page.CAR) }
         header("If music pauses")
         text("• Samsung: put YouTube Music, Android Auto, MicroG and Drive Music in 'Never sleeping apps'.\n" +
             "• YouTube Music: turn on Smart downloads; turn off 'Remind me to take a break'.\n" +
@@ -330,6 +338,72 @@ class MainActivity : Activity() {
             "• No overlay, accessibility, contacts, SMS or storage access.")
         button("Open music app") {
             packageManager.getLaunchIntentForPackage(prefs.musicPackage)?.let { startActivity(it) } ?: toast("Music app not installed")
+        }
+    }
+
+    private fun renderCar() {
+        pageHeader()
+        text("Android Auto hides apps that aren't from the Play Store until you allow them once:")
+        button("Open Android Auto settings", accent = true) { openAndroidAutoSettings() }
+        text("1. Scroll down to Version (Versie) and tap it about 10 times → OK.\n" +
+            "2. Tap ⋮ (top right) → Developer settings (Ontwikkelaarsinstellingen).\n" +
+            "3. Tick Unknown sources (Onbekende bronnen).\n" +
+            "4. Back in Android Auto settings → Customise launcher (Launcher aanpassen) → tick Drive Music.\n" +
+            "5. Unplug and reconnect the car.")
+        text("Drive Music then appears in the car's app grid with media controls and the Welcome button.")
+    }
+
+    private fun openAndroidAutoSettings() {
+        val aa = DriveMonitorService.ANDROID_AUTO
+        val launch = packageManager.getLaunchIntentForPackage(aa)
+        try {
+            if (launch != null) startActivity(launch) else openAppSettings(aa)
+        } catch (e: Exception) {
+            toast("Open Settings → Connected devices → Connection preferences → Android Auto")
+        }
+    }
+
+    private fun renderBackup() {
+        pageHeader()
+        text("Keeps your name, voice, location and other choices if you reinstall or change phones.")
+        button("Save settings to a file", accent = true) {
+            @Suppress("DEPRECATION")
+            startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type = "application/json"
+                putExtra(Intent.EXTRA_TITLE, "drive-music-settings.json")
+            }, REQ_EXPORT)
+        }
+        button("Restore settings from a file") {
+            @Suppress("DEPRECATION")
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
+            }, REQ_IMPORT)
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
+        val uri = data?.data ?: return
+        if (resultCode != RESULT_OK) return
+        try {
+            when (requestCode) {
+                REQ_EXPORT -> {
+                    contentResolver.openOutputStream(uri, "wt")!!.use { it.write(prefs.exportJson().toByteArray()) }
+                    toast("Settings saved")
+                    DriveLog.log("Settings backed up")
+                }
+                REQ_IMPORT -> {
+                    val json = contentResolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
+                    val n = prefs.importJson(json)
+                    toast("Restored $n settings")
+                    DriveLog.log("Settings restored ($n)")
+                    render()
+                }
+            }
+        } catch (e: Exception) {
+            toast("Couldn't ${if (requestCode == REQ_EXPORT) "save" else "restore"}: ${e.message}")
         }
     }
 
@@ -742,6 +816,8 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQ_LOCATION = 3
+        private const val REQ_EXPORT = 10
+        private const val REQ_IMPORT = 11
     }
 
     private fun openEqualizer() {

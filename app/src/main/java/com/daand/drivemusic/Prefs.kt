@@ -166,4 +166,50 @@ class Prefs(context: Context) {
     var lastCarState: String
         get() = sp.getString("last_car_state", "unknown") ?: "unknown"
         set(v) = sp.edit().putString("last_car_state", v).apply()
+
+    // ---- backup / restore
+
+    /** Your own choices only - not run-time state like the last drive or update checks. */
+    private val notBackedUp = setOf(
+        "last_car_state", "last_drive", "last_greeting", "last_weather", "last_weather_at",
+        "last_update_check", "notified_update", "update_status",
+    )
+
+    /** All settings as JSON (each value tagged with its type so it restores exactly). */
+    fun exportJson(): String {
+        val o = org.json.JSONObject()
+        for ((k, v) in sp.all) {
+            if (k in notBackedUp || v == null) continue
+            val type = when (v) {
+                is Boolean -> "bool"; is Int -> "int"; is Long -> "long"; is Float -> "float"; is String -> "string"
+                else -> continue
+            }
+            o.put(k, org.json.JSONObject().put("t", type).put("v", if (v is Float) v.toDouble() else v))
+        }
+        return org.json.JSONObject().put("app", "drive-music").put("version", 1).put("settings", o).toString(2)
+    }
+
+    /** Restores settings from [exportJson]. Returns how many were restored; throws if it isn't a backup. */
+    fun importJson(json: String): Int {
+        val root = org.json.JSONObject(json)
+        require(root.optString("app") == "drive-music") { "Not a Drive Music settings file" }
+        val settings = root.getJSONObject("settings")
+        val e = sp.edit()
+        var n = 0
+        for (k in settings.keys()) {
+            if (k in notBackedUp) continue
+            val item = settings.getJSONObject(k)
+            when (item.getString("t")) {
+                "bool" -> e.putBoolean(k, item.getBoolean("v"))
+                "int" -> e.putInt(k, item.getInt("v"))
+                "long" -> e.putLong(k, item.getLong("v"))
+                "float" -> e.putFloat(k, item.getDouble("v").toFloat())
+                "string" -> e.putString(k, item.getString("v"))
+                else -> continue
+            }
+            n++
+        }
+        e.apply()
+        return n
+    }
 }

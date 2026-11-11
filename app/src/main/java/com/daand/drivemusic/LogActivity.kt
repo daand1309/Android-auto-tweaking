@@ -125,7 +125,7 @@ class LogActivity : Activity() {
     }
 
     companion object {
-        private val PROBLEM_MARKERS = listOf("!!!", "FAILED", "ERROR", "LOST", "destroyed", "stopped by the system",
+        private val PROBLEM_MARKERS = listOf("CRASH", "!!!", "FAILED", "ERROR", "LOST", "destroyed", "stopped by the system",
             "not installed", "gave up", "disconnected from", "looks deliberate")
     }
 

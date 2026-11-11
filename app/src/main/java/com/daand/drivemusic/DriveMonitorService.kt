@@ -489,7 +489,7 @@ class DriveMonitorService : NotificationListenerService() {
                 this, 7, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             val n = Notification.Builder(this, "drivemode")
-                .setSmallIcon(android.R.drawable.ic_media_play)
+                .setSmallIcon(R.drawable.ic_stat_note)
                 .setContentTitle("Drive Mode")
                 .setContentText("Tap to open the big controls")
                 .setCategory(Notification.CATEGORY_NAVIGATION)

@@ -28,7 +28,12 @@ A full-screen, high-contrast dashboard for the phone in its holder: large Previo
 Drive Music adds a templated screen to the Android Auto display showing **now playing**, **status** and **last drive**, with **Play**, **Welcome** (replay the greeting) and **Auto-resume on/off** buttons.
 
 - Android Auto only allows safety-approved templates (lists, rows, buttons), so this is an info-and-controls screen, not a custom dashboard, and it can't put text on the map screen.
-- Enable it once: **Android Auto → Settings → tap "Version" 10 times → ⋮ → Developer settings → Unknown sources**. Drive Music then shows in the car's app launcher. This is personal/developer mode; publishing a car app to everyone would need Google's review.
+- Enable it once (the app's **Car screen** page has these steps and a button that opens Android Auto's settings):
+  1. Android Auto settings → tap **Version** about 10 times → OK.
+  2. ⋮ → **Developer settings** → tick **Unknown sources**.
+  3. Back → **Customise launcher** → tick **Drive Music**.
+  4. Reconnect the car.
+- This is personal/developer mode; publishing a car app to everyone would need Google's review.
 - The screen refreshes every few seconds while it's open. It does **not** change the head unit's own boot/splash screen — that's the car kit's firmware, unrelated to this app.
 
 ## Welcome greeting
@@ -43,6 +48,11 @@ When Android Auto connects, a voice welcomes you by name (e.g. "Good morning, Mr
 - Uses the phone's text-to-speech (Google's engine if installed, otherwise the phone default), picks the best installed offline voice for the language automatically, and plays through the car like a navigation prompt. If the voice isn't available, music still starts.
 - **Voice & pronunciation** settings: choose a voice (with preview), speed and pitch, and "Pronounce name as" for a phonetic spelling. Titles are spoken properly ("Mr." → "Mister" / "meneer"), negative temperatures as "minus"/"min", times as "5:05 PM" / "17.05 uur", and YouTube song titles are cleaned ("(Official Video)", "[4K]", "- Topic", "VEVO", emojis, "feat." → "featuring"). Sentences are spoken one at a time with short pauses.
 - Not repeated if Android Auto reconnects within 10 minutes.
+
+## Backup, crashes and maintenance
+
+- **Backup & restore** saves your settings (name, voice, location, toggles) to a JSON file and restores them after a reinstall or on a new phone. Run-time state such as the last drive isn't included.
+- If the app ever crashes, the error is written to the drive log as a `CRASH` line (shown in red under **Problems only**), so it can be shared and fixed.
 
 ## Patched YouTube Music (Morphe / ReVanced)
 
