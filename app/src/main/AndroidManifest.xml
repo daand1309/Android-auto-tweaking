@@ -69,6 +69,13 @@
         </activity>
 
         <activity
+            android:name=".DriveModeActivity"
+            android:exported="false"
+            android:label="Drive mode"
+            android:screenOrientation="fullUser"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
+        <activity
             android:name=".LogActivity"
             android:exported="false"
             android:label="Drive logs" />

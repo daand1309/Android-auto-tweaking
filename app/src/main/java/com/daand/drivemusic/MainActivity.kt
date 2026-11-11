@@ -74,6 +74,7 @@ class MainActivity : Activity() {
         text((if (running) "✅ Monitor running" else "❌ Monitor NOT running - grant Notification access below") +
             "\nCar: ${prefs.lastCarState}" +
             if (prefs.lastDrive.isNotEmpty()) "\nLast drive: ${prefs.lastDrive}" else "")
+        button("🚗 Open Drive Mode (big buttons, full screen)") { startActivity(Intent(this, DriveModeActivity::class.java)) }
         val checklistHeader = TextView(this)
         root.addView(checklistHeader)
 

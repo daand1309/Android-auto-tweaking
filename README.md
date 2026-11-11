@@ -17,6 +17,12 @@ A small Android app (built for a Samsung phone + Android Auto + YouTube Music) t
 - **Last drive summary** on the main screen (duration, pauses, auto-resumes, last pause reason).
 - **Log viewer**: colour-coded (red = problems, green = success, blue = drive start/end) with a "Problems only" filter.
 
+## Drive Mode (phone, big buttons)
+
+A full-screen, high-contrast dashboard for the phone in its holder: large Previous / Play-Pause / Next, now-playing, a Welcome button and the auto-resume toggle. It keeps the screen awake and hides the system bars. Open it from the app's **🚗 Open Drive Mode** button.
+
+> Note on Android Auto's split screen (media left, navigation right): that left pane is Android Auto's media card, owned by the current media app (YouTube Music), so a utility app like this can't dock into it. Our Android Auto screen opens full-screen instead; for side-by-side controls, use the phone's Drive Mode.
+
 ## On the car screen (Android Auto)
 
 Drive Music adds a templated screen to the Android Auto display showing **now playing**, **status** and **last drive**, with **Play**, **Welcome** (replay the greeting) and **Auto-resume on/off** buttons.
