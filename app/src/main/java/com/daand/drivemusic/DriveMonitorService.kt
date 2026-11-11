@@ -251,6 +251,7 @@ class DriveMonitorService : NotificationListenerService() {
             announceSongAfterStart = false
             DriveLog.log("=== CAR: $name ===")
             logEnvironment()
+            Parking.clear(this)  // you're driving: the old parked spot is no longer where the car is
             if (prefs.autoOpenDriveMode) openDriveMode()
             if (wasFirstEvent && findYtm() != null) {
                 // The monitor was (re)started by Android in the middle of a drive. Don't touch playback.

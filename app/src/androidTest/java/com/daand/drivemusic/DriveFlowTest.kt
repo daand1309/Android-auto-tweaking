@@ -296,6 +296,15 @@ class DriveFlowTest {
         }
     }
 
+    @Test
+    fun parkedSpotIsDeletedWhenTheCarDrivesAgain() {
+        prefs.parkedSpot = Parking.Spot(52.09, 5.12, 8f, System.currentTimeMillis()).encode()
+        assertTrue(Parking.spot(ctx) != null)
+        connectCar()
+        assertEquals("", prefs.parkedSpot)
+        assertTrue(log().contains("old spot removed"))
+    }
+
     // ------------------------------------------------------------------ helpers
 
     private fun connectCar() {

@@ -84,9 +84,20 @@ object Parking {
         }
     }
 
+    /** The car is moving again (Android Auto connected): forget the old spot. */
+    fun clear(ctx: Context) {
+        val prefs = Prefs(ctx)
+        if (prefs.parkedSpot.isEmpty()) return
+        prefs.parkedSpot = ""
+        DriveLog.log("PARKING: car is driving - old spot removed")
+    }
+
     private fun miss() = DriveLog.log("PARKING: no location available")
 
     private fun save(ctx: Context, l: Location, how: String) {
+        if (Prefs(ctx).lastCarState in setOf("Android Auto connected", "Android Automotive")) {
+            DriveLog.log("PARKING: location arrived after you drove off - not saved"); return
+        }
         val spot = Spot(l.latitude, l.longitude, if (l.hasAccuracy()) l.accuracy else 0f, System.currentTimeMillis())
         Prefs(ctx).parkedSpot = spot.encode()
         // Position itself stays out of the log (logs may be shared).
