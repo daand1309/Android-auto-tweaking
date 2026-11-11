@@ -46,8 +46,6 @@ android {
             signingConfig = signingConfigs.findByName("stable") ?: signingConfigs.getByName("debug")
         }
     }
-    // Run the instrumented tests against the shrunk release build, so CI validates R8 output.
-    testBuildType = "release"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

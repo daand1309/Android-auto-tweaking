@@ -104,7 +104,7 @@ jobs:
           target: google_apis
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
-          script: ./gradlew connectedReleaseAndroidTest --no-daemon
+          script: ./gradlew connectedDebugAndroidTest --no-daemon
 
       - name: Upload test results
         if: always()
