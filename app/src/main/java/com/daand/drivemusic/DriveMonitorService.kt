@@ -46,6 +46,15 @@ class DriveMonitorService : NotificationListenerService() {
         private const val START_MAX_TICKS = 15
         private const val RESUME_WINDOW_MS = 10 * 60 * 1000L
         private const val RESUME_MAX_IN_WINDOW = 4
+
+        /** Audio that never pauses music: the music itself, and touch/keyboard clicks (which would
+         *  otherwise make every on-screen pause tap look like an "interruption"). */
+        private val NOT_INTERRUPTIONS = setOf(
+            AudioAttributes.USAGE_MEDIA,
+            AudioAttributes.USAGE_UNKNOWN,
+            AudioAttributes.USAGE_ASSISTANCE_SONIFICATION,
+            AudioAttributes.USAGE_GAME,
+        )
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -515,7 +524,7 @@ class DriveMonitorService : NotificationListenerService() {
             if (names == lastAudioUsages) return
             lastAudioUsages = names
             val interrupts = configs.map { it.audioAttributes.usage }
-                .filter { it != AudioAttributes.USAGE_MEDIA && it != AudioAttributes.USAGE_UNKNOWN }
+                .filter { it !in NOT_INTERRUPTIONS }
                 .distinct()
             if (interrupts.isNotEmpty()) {
                 lastInterruption = interrupts.joinToString { usageName(it) }
@@ -527,7 +536,7 @@ class DriveMonitorService : NotificationListenerService() {
 
     private fun activeUsages(): Set<Int> =
         audio.activePlaybackConfigurations.map { it.audioAttributes.usage }
-            .filter { it != AudioAttributes.USAGE_MEDIA && it != AudioAttributes.USAGE_UNKNOWN }
+            .filter { it !in NOT_INTERRUPTIONS }
             .toSet()
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
