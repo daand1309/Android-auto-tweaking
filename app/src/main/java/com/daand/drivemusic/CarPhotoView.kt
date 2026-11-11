@@ -25,9 +25,9 @@ class CarPhotoView(context: Context, private val photo: Bitmap) : View(context) 
     private val frameRatio = if (photo.height > photo.width) 0.72f else 0.56f
 
     /** Where the car sits vertically (0..1 of the photo height, top of the crop). */
-    private val focusTop: Float by lazy { focusCache.getOrPut(photo) { findFocus() } }
+    private val focusTop: Float by lazy { focusCache.getOrPut(photo) { findCarFrame() } }
 
-    private fun findFocus(): Float {
+    private fun findCarFrame(): Float {
         val sw = 64
         val sh = (sw * photo.height / photo.width.toFloat()).toInt().coerceAtLeast(1)
         val small = Bitmap.createScaledBitmap(photo, sw, sh, true)
