@@ -54,6 +54,8 @@ class DriveFlowTest {
             pauseOnDisconnect = true
             setVolumeOnConnect = false
             greetingEnabled = false
+            autoOpenDriveMode = false  // each test starts clean (one test switches this on)
+            showSplash = true
         }
 
         val component = ComponentName(ctx, DriveMonitorService::class.java)

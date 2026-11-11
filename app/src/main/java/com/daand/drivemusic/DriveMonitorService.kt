@@ -47,6 +47,7 @@ class DriveMonitorService : NotificationListenerService() {
             private set
 
         const val DRIVE_MODE_NOTIFICATION = 7
+        private const val DRIVE_MODE_CHANNEL = "drive_mode_silent"
         private const val START_TICK_MS = 1500L
         private const val START_MAX_TICKS = 15
         private const val RESUME_WINDOW_MS = 10 * 60 * 1000L
@@ -482,15 +483,22 @@ class DriveMonitorService : NotificationListenerService() {
     private fun openDriveMode() {
         try {
             val nm = getSystemService(NotificationManager::class.java)
+            // Silent: it still pops up (high importance is what allows that), but no ding in the car -
+            // which also used to show up in the log as a "notification sound" pause clue.
+            // Channel sound can't be changed once created, hence the new channel id.
+            nm.deleteNotificationChannel("drivemode")
             nm.createNotificationChannel(
-                NotificationChannel("drivemode", "Drive Mode", NotificationManager.IMPORTANCE_HIGH)
+                NotificationChannel(DRIVE_MODE_CHANNEL, "Drive Mode", NotificationManager.IMPORTANCE_HIGH).apply {
+                    setSound(null, null)
+                    enableVibration(false)
+                }
             )
             val intent = Intent(this, DriveModeActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             val pi = PendingIntent.getActivity(
                 this, 7, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            val n = Notification.Builder(this, "drivemode")
+            val n = Notification.Builder(this, DRIVE_MODE_CHANNEL)
                 .setSmallIcon(R.drawable.ic_stat_note)
                 .setContentTitle("Drive Mode")
                 .setContentText("Tap to open the big controls")
