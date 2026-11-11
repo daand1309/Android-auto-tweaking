@@ -46,6 +46,7 @@ class DriveMonitorService : NotificationListenerService() {
         @Volatile var instance: DriveMonitorService? = null
             private set
 
+        const val DRIVE_MODE_NOTIFICATION = 7
         private const val START_TICK_MS = 1500L
         private const val START_MAX_TICKS = 15
         private const val RESUME_WINDOW_MS = 10 * 60 * 1000L
@@ -311,6 +312,7 @@ class DriveMonitorService : NotificationListenerService() {
             cancelPendingPause()
             announceSongAfterStart = false
             suppressPauseUntil = 0L
+            getSystemService(NotificationManager::class.java).cancel(DRIVE_MODE_NOTIFICATION)
             if (prefs.pauseOnDisconnect) {
                 val c = findYtm()
                 if (c?.playbackState?.state == PlaybackState.STATE_PLAYING) {
@@ -501,7 +503,10 @@ class DriveMonitorService : NotificationListenerService() {
                 DriveLog.log("Drive Mode: can't open - notifications are off for Drive Music (allow them in the app checklist)")
                 return
             }
-            nm.notify(7, n)
+            // Android only fires a full-screen pop-up for a NEW notification, never for an update.
+            // If last drive's banner is still in the shade, remove it first so this one is new.
+            nm.cancel(DRIVE_MODE_NOTIFICATION)
+            nm.notify(DRIVE_MODE_NOTIFICATION, n)
             val fullScreenOk = android.os.Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent()
             DriveLog.log(if (fullScreenOk) "Drive Mode: opening on connect"
                 else "Drive Mode: shown as a tap notification - allow 'full-screen notifications' to make it pop up by itself")

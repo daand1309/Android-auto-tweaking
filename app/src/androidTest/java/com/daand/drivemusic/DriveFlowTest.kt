@@ -214,6 +214,62 @@ class DriveFlowTest {
         assertTrue(log().contains("GREETING: skipped"))
     }
 
+    /** The real-world case: phone locked with the screen off in the holder, then the car connects. */
+    @Test
+    fun driveModePopsUpOverTheLockScreenWhenTheCarConnects() {
+        prefs.autoOpenDriveMode = true
+        prefs.showSplash = false
+        prefs.autoStart = false
+        shell("pm grant ${ctx.packageName} android.permission.POST_NOTIFICATIONS")
+        if (android.os.Build.VERSION.SDK_INT >= 34) shell("appops set ${ctx.packageName} USE_FULL_SCREEN_INTENT allow")
+        val power = ctx.getSystemService(android.os.PowerManager::class.java)
+        val keyguard = ctx.getSystemService(android.app.KeyguardManager::class.java)
+        try {
+            // Twice: the second time a banner from the first drive may still exist (the stale-banner bug).
+            for (drive in 1..2) {
+                onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_NOT_CONNECTED) }
+                closeDriveMode()
+                shell("input keyevent KEYCODE_SLEEP")
+                waitFor("screen to switch off (drive $drive)", 10_000) { !power.isInteractive }
+                SystemClock.sleep(1_500)
+                val lockedBefore = keyguard.isKeyguardLocked
+                DriveLog.clear()
+
+                onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_PROJECTION) }
+
+                waitFor("Drive Mode to appear over the lock screen (drive $drive)", 20_000) { driveModeResumed() }
+                assertTrue("screen should be woken by Drive Mode", power.isInteractive)
+                val log = log()
+                assertTrue(log, log.contains("Drive Mode: opening on connect"))
+                if (lockedBefore) assertTrue(log, log.contains("Drive Mode: opened over the lock screen"))
+            }
+        } finally {
+            closeDriveMode()
+            shell("input keyevent KEYCODE_WAKEUP")
+            shell("wm dismiss-keyguard")
+        }
+    }
+
+    private fun driveModeResumed(): Boolean {
+        var found = false
+        onMain {
+            found = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
+                .any { it is DriveModeActivity }
+        }
+        return found
+    }
+
+    private fun closeDriveMode() {
+        onMain {
+            androidx.test.runner.lifecycle.Stage.values().forEach { stage ->
+                androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(stage).filterIsInstance<DriveModeActivity>().forEach { it.finish() }
+            }
+        }
+        SystemClock.sleep(500)
+    }
+
     @Test
     fun screensOpenWithoutCrashing() {
         ActivityScenario.launch(MainActivity::class.java).use { it.onActivity { a -> assertTrue(!a.isFinishing) } }

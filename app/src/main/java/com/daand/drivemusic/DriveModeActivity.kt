@@ -41,6 +41,10 @@ class DriveModeActivity : Activity() {
         super.onCreate(savedInstanceState)
         DriveLog.init(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Opened: the "tap to open" banner isn't needed any more.
+        getSystemService(android.app.NotificationManager::class.java).cancel(DriveMonitorService.DRIVE_MODE_NOTIFICATION)
+        val locked = getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked
+        DriveLog.log("Drive Mode: opened" + if (locked) " over the lock screen" else "")
         val frame = android.widget.FrameLayout(this).apply { setBackgroundColor(Style.BG) }
         // MATCH_PARENT so the weighted button rows get real height (not collapsed to zero).
         frame.addView(buildUi(), android.widget.FrameLayout.LayoutParams(-1, -1))
