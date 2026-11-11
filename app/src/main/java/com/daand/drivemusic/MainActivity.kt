@@ -7,6 +7,7 @@ import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
@@ -41,10 +42,16 @@ class MainActivity : Activity() {
         prefs = Prefs(this)
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(32))
+            setPadding(dp(16), dp(20), dp(16), dp(40))
         }
-        scroll = ScrollView(this).apply { addView(root) }
+        scroll = ScrollView(this).apply {
+            addView(root)
+            setBackgroundColor(Style.BG)
+            isFillViewport = true
+        }
         setContentView(scroll)
+        window.statusBarColor = Style.BG
+        window.navigationBarColor = Style.BG
     }
 
     override fun onResume() {
@@ -74,7 +81,7 @@ class MainActivity : Activity() {
         text((if (running) "✅ Monitor running" else "❌ Monitor NOT running - grant Notification access below") +
             "\nCar: ${prefs.lastCarState}" +
             if (prefs.lastDrive.isNotEmpty()) "\nLast drive: ${prefs.lastDrive}" else "")
-        button("🚗 Open Drive Mode (big buttons, full screen)") { startActivity(Intent(this, DriveModeActivity::class.java)) }
+        button("🚗 Open Drive Mode (big buttons, full screen)", accent = true) { startActivity(Intent(this, DriveModeActivity::class.java)) }
         switch("Auto-open Drive Mode when Android Auto connects", prefs.autoOpenDriveMode) { prefs.autoOpenDriveMode = it; render() }
         if (prefs.autoOpenDriveMode) {
             text("For it to pop up by itself (not just as a tap notification), allow full-screen notifications for Drive Music.")
@@ -218,7 +225,7 @@ class MainActivity : Activity() {
                 try { startActivity(Intent("com.android.settings.TTS_SETTINGS")) } catch (e: Exception) { toast("Open Settings → General management → Text-to-speech") }
             }
 
-            button("🔊 Test greeting now") {
+            button("🔊 Test greeting now", accent = true) {
                 toast("Speaking... turn up the media volume")
                 WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong())
             }
@@ -227,7 +234,7 @@ class MainActivity : Activity() {
 
         // ---------------- actions
         header("Test & logs")
-        button("▶ Test: start YouTube Music now") {
+        button("▶ Test: start YouTube Music now", accent = true) {
             val svc = DriveMonitorService.instance
             if (svc == null) toast("Grant Notification access first") else {
                 svc.startMusic("manual test button", requireCar = false)
@@ -544,59 +551,111 @@ class MainActivity : Activity() {
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
-    private fun title(s: String) = root.addView(TextView(this).apply {
-        text = s; textSize = 26f; setTypeface(typeface, Typeface.BOLD)
+    private fun title(s: String) = root.addView(LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(0, 0, 0, dp(6))
+        addView(TextView(this@MainActivity).apply {
+            text = s; textSize = 30f; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT)
+        })
+        addView(View(this@MainActivity).apply {
+            background = Style.rounded(Style.PRIMARY, dp(2).toFloat())
+            layoutParams = LinearLayout.LayoutParams(dp(44), dp(4)).apply { topMargin = dp(6) }
+        })
     })
 
     private fun header(s: String) = root.addView(TextView(this).apply {
-        text = s; textSize = 19f; setTypeface(typeface, Typeface.BOLD); setPadding(0, dp(20), 0, dp(6))
+        text = s.uppercase(); textSize = 13f; setTypeface(typeface, Typeface.BOLD)
+        setTextColor(Style.PRIMARY); letterSpacing = 0.08f
+        setPadding(dp(4), dp(22), 0, dp(8))
     })
 
     private fun text(s: String) = root.addView(TextView(this).apply {
-        text = s; textSize = 14f; setPadding(0, dp(2), 0, dp(6))
+        text = s; textSize = 14f; setTextColor(Style.TEXT2); setLineSpacing(dp(3).toFloat(), 1f)
+        setPadding(dp(4), dp(2), dp(4), dp(8))
     })
 
-    private fun button(label: String, onClick: () -> Unit) = root.addView(Button(this).apply {
-        text = label; isAllCaps = false; setOnClickListener { onClick() }
+    private fun button(label: String, accent: Boolean = false, onClick: () -> Unit) = root.addView(Button(this).apply {
+        text = label; isAllCaps = false; textSize = 15f
+        setTextColor(if (accent) Color.WHITE else Style.TEXT)
+        background = Style.button(if (accent) Style.PRIMARY else Style.SURFACE2, dp(14).toFloat())
+        stateListAnimator = null
+        setPadding(dp(18), dp(14), dp(18), dp(14))
+        setOnClickListener { onClick() }
+        (layoutParams as? LinearLayout.LayoutParams ?: LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        )).also { it.topMargin = dp(6); layoutParams = it }
     })
 
     private fun row(vararg views: View) = root.addView(LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = android.view.Gravity.CENTER_VERTICAL
+        setPadding(0, dp(4), 0, dp(4))
         views.forEach { addView(it) }
     })
 
+    private fun smallBtn(label: String, onClick: () -> Unit) = Button(this).apply {
+        text = label; isAllCaps = false; textSize = 16f; setTextColor(Style.TEXT)
+        background = Style.button(Style.SURFACE2, dp(12).toFloat()); stateListAnimator = null
+        minimumWidth = dp(52); setPadding(dp(14), dp(10), dp(14), dp(10))
+        setOnClickListener { onClick() }
+    }
+
     private fun stepper(label: String, value: String, minus: () -> Unit, plus: () -> Unit) = row(
         TextView(this).apply {
-            text = "$label: $value"; textSize = 15f
+            text = "$label: $value"; textSize = 15f; setTextColor(Style.TEXT)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         },
-        Button(this).apply { text = "−"; setOnClickListener { minus(); render() } },
-        Button(this).apply { text = "+"; setOnClickListener { plus(); render() } },
+        smallBtn("−") { minus(); render() },
+        smallBtn("+") { plus(); render() },
     )
 
     private fun check(label: String, help: String, ok: Boolean, action: String, onClick: () -> Unit) {
         if (!ok) toFix++
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(6), 0, dp(6))
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            background = Style.rounded(Style.SURFACE, dp(14).toFloat())
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            (LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)).also {
+                it.topMargin = dp(8); layoutParams = it
+            }
+            addView(TextView(this@MainActivity).apply {
+                text = if (ok) "✓" else "!"
+                setTypeface(typeface, Typeface.BOLD); textSize = 16f; gravity = android.view.Gravity.CENTER
+                setTextColor(Color.WHITE)
+                background = Style.rounded(if (ok) Style.GREEN else Style.AMBER, dp(13).toFloat())
+                val sz = dp(26); layoutParams = LinearLayout.LayoutParams(sz, sz).apply { marginEnd = dp(12) }
+            })
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 addView(TextView(this@MainActivity).apply {
-                    text = (if (ok) "✅ " else "⚠️ ") + label; textSize = 15f; setTypeface(typeface, Typeface.BOLD)
+                    text = label; textSize = 15f; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT)
                 })
-                addView(TextView(this@MainActivity).apply { text = help; textSize = 13f })
+                addView(TextView(this@MainActivity).apply {
+                    text = help; textSize = 13f; setTextColor(Style.TEXT2); setLineSpacing(dp(2).toFloat(), 1f)
+                    setPadding(0, dp(2), 0, 0)
+                })
             })
             if (!ok) addView(Button(this@MainActivity).apply {
-                text = action; isAllCaps = false; setOnClickListener { onClick() }
+                text = action; isAllCaps = false; textSize = 14f; setTextColor(Color.WHITE)
+                background = Style.button(Style.PRIMARY, dp(12).toFloat()); stateListAnimator = null
+                setPadding(dp(16), dp(10), dp(16), dp(10))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(10) }
+                setOnClickListener { onClick() }
             })
         })
     }
 
     private fun switch(label: String, value: Boolean, onChange: (Boolean) -> Unit) = root.addView(Switch(this).apply {
-        text = label; textSize = 15f; isChecked = value
-        setPadding(0, dp(8), 0, dp(8))
+        text = label; textSize = 15f; isChecked = value; setTextColor(Style.TEXT)
+        background = Style.rounded(Style.SURFACE, dp(14).toFloat())
+        setPadding(dp(14), dp(14), dp(14), dp(14))
+        thumbTintList = Style.tint(if (value) Style.PRIMARY else Style.TEXT2)
+        trackTintList = Style.tint(if (value) 0x66_4F8CFF else Style.SURFACE2)
+        (LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)).also {
+            it.topMargin = dp(8); layoutParams = it
+        }
         setOnCheckedChangeListener { _, v -> onChange(v); DriveLog.log("Setting changed: $label = $v") }
     })
 

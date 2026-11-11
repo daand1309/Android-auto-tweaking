@@ -73,12 +73,12 @@ class DriveModeActivity : Activity() {
     private fun buildUi(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(Style.BG)
             setPadding(dp(20), dp(20), dp(20), dp(20))
         }
 
         nowPlaying = TextView(this).apply {
-            setTextColor(Color.WHITE); textSize = 30f; setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Style.TEXT); textSize = 30f; setTypeface(typeface, Typeface.BOLD)
             gravity = Gravity.CENTER; maxLines = 3
         }
         status = TextView(this).apply {
@@ -123,20 +123,20 @@ class DriveModeActivity : Activity() {
         playBtn.text = if (playing) "⏸" else "▶"
         val resumeOn = Prefs(this).autoResume
         resumeBtn.text = if (resumeOn) "↻ Resume: On" else "↻ Resume: Off"
-        resumeBtn.setBackgroundColor(if (resumeOn) Color.parseColor("#2E7D32") else Color.parseColor("#424242"))
+        resumeBtn.background = Style.button(if (resumeOn) Style.GREEN else Style.SURFACE2, dp(16).toFloat())
     }
 
     private fun flash() = handler.postDelayed({ updateDynamic() }, 400)
 
     private fun bigButton(label: String, onClick: () -> Unit) = Button(this).apply {
         text = label; textSize = 40f; isAllCaps = false
-        setTextColor(Color.WHITE); setBackgroundColor(Color.parseColor("#1565C0"))
+        setTextColor(Color.WHITE); background = Style.button(Style.PRIMARY, dp(20).toFloat()); stateListAnimator = null
         setOnClickListener { onClick() }
     }
 
     private fun smallButton(label: String, onClick: () -> Unit) = Button(this).apply {
         text = label; textSize = 18f; isAllCaps = false
-        setTextColor(Color.WHITE); setBackgroundColor(Color.parseColor("#424242"))
+        setTextColor(Style.TEXT); background = Style.button(Style.SURFACE2, dp(16).toFloat()); stateListAnimator = null
         setOnClickListener { onClick() }
     }
 

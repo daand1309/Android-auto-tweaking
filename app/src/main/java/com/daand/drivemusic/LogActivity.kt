@@ -35,6 +35,7 @@ class LogActivity : Activity() {
 
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(10), dp(10), dp(10), dp(6))
             addView(btn("Refresh") { load() })
             filterBtn = btn("Problems only") {
                 problemsOnly = !problemsOnly
@@ -54,23 +55,36 @@ class LogActivity : Activity() {
         logView = TextView(this).apply {
             typeface = Typeface.MONOSPACE
             textSize = 11f
+            setTextColor(Style.TEXT)
             setTextIsSelectable(true)
-            setPadding(16, 16, 16, 16)
+            setPadding(dp(14), dp(14), dp(14), dp(14))
         }
         scroll = ScrollView(this).apply {
             addView(logView)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            background = Style.rounded(Style.SURFACE, dp(14).toFloat())
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f).apply {
+                setMargins(dp(10), 0, dp(10), dp(10))
+            }
         }
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Style.BG)
             addView(buttons)
             addView(scroll)
         })
+        window.statusBarColor = Style.BG
+        window.navigationBarColor = Style.BG
         load()
     }
 
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
     private fun btn(label: String, onClick: () -> Unit) = Button(this).apply {
-        text = label; isAllCaps = false; setOnClickListener { onClick() }
+        text = label; isAllCaps = false; textSize = 14f; setTextColor(Style.TEXT)
+        background = Style.button(Style.SURFACE2, dp(12).toFloat()); stateListAnimator = null
+        setPadding(dp(14), dp(10), dp(14), dp(10))
+        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(6) }
+        setOnClickListener { onClick() }
     }
 
     private fun load() {

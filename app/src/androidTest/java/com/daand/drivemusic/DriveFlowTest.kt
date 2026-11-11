@@ -219,6 +219,7 @@ class DriveFlowTest {
         ActivityScenario.launch(MainActivity::class.java).use { it.onActivity { a -> assertTrue(!a.isFinishing) } }
         DriveLog.log("!!! PAUSE #1 while driving. Clues: test")
         ActivityScenario.launch(LogActivity::class.java).use { it.onActivity { a -> assertTrue(!a.isFinishing) } }
+        ActivityScenario.launch(DriveModeActivity::class.java).use { it.onActivity { a -> assertTrue(!a.isFinishing) } }
     }
 
     // ------------------------------------------------------------------ helpers
