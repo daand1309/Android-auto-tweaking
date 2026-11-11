@@ -294,8 +294,19 @@ class MainActivity : Activity() {
             }
         }
         switch("Intro animation", prefs.showSplash) { prefs.showSplash = it; render() }
-        if (prefs.showSplash) stepperLike("Intro text: ${prefs.carName.ifBlank { "none" }}", "Change") {
-            askText("Text shown in the intro", "e.g. ASX", prefs.carName) { prefs.carName = it.take(12); render() }
+        if (prefs.showSplash) {
+            val hasImage = IntroImage.exists(this)
+            stepperLike("Intro image: ${if (hasImage) "your picture" else "none (shows text)"}", if (hasImage) "Change" else "Choose") {
+                @Suppress("DEPRECATION")
+                startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE); type = "image/*"
+                }, REQ_INTRO_IMAGE)
+            }
+            if (hasImage) button("Remove intro image") { IntroImage.clear(this); render() }
+            else stepperLike("Intro text: ${prefs.carName.ifBlank { "none" }}", "Change") {
+                askText("Text shown in the intro", "e.g. ASX", prefs.carName) { prefs.carName = it.take(12); render() }
+            }
+            button("▶  Preview intro") { startActivity(Intent(this, DriveModeActivity::class.java)) }
         }
     }
 
@@ -394,6 +405,11 @@ class MainActivity : Activity() {
                     toast("Settings saved")
                     DriveLog.log("Settings backed up")
                 }
+                REQ_INTRO_IMAGE -> {
+                    IntroImage.save(this, uri)
+                    toast("Intro image set")
+                    render()
+                }
                 REQ_IMPORT -> {
                     val json = contentResolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
                     val n = prefs.importJson(json)
@@ -403,7 +419,7 @@ class MainActivity : Activity() {
                 }
             }
         } catch (e: Exception) {
-            toast("Couldn't ${if (requestCode == REQ_EXPORT) "save" else "restore"}: ${e.message}")
+            toast("Couldn't ${when (requestCode) { REQ_EXPORT -> "save"; REQ_INTRO_IMAGE -> "use that image"; else -> "restore" }}: ${e.message}")
         }
     }
 
@@ -818,6 +834,7 @@ class MainActivity : Activity() {
         private const val REQ_LOCATION = 3
         private const val REQ_EXPORT = 10
         private const val REQ_IMPORT = 11
+        private const val REQ_INTRO_IMAGE = 12
     }
 
     private fun openEqualizer() {

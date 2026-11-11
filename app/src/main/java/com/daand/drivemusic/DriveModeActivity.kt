@@ -71,7 +71,18 @@ class DriveModeActivity : Activity() {
             text = "DRIVE MODE"; setTextColor(Style.TEXT2); textSize = 14f
             letterSpacing = 0.4f; alpha = 0f; setPadding(0, dp(10), 0, 0)
         }
-        overlay.addView(nameTv)
+        // Your own intro image (e.g. the car badge) replaces the text when one is set.
+        val logo = IntroImage.load(this)
+        val hero: View = if (logo != null) android.widget.ImageView(this).apply {
+            setImageBitmap(logo)
+            adjustViewBounds = true
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            alpha = 0f; scaleX = 0.8f; scaleY = 0.8f
+            val side = (minOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels) * 0.75).toInt()
+            layoutParams = LinearLayout.LayoutParams(side, LinearLayout.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.CENTER }
+            maxHeight = side
+        } else nameTv
+        overlay.addView(hero)
         overlay.addView(bar)
         overlay.addView(sub)
         frame.addView(overlay, android.widget.FrameLayout.LayoutParams(-1, -1))
@@ -81,9 +92,10 @@ class DriveModeActivity : Activity() {
                 (overlay.parent as? android.widget.FrameLayout)?.removeView(overlay)
             }.start()
         }
-        overlay.setOnClickListener { handler.removeCallbacksAndMessages(null); remove.run() }
+        // Skip on tap - only cancel the intro's own timer, not the screen's refresh.
+        overlay.setOnClickListener { handler.removeCallbacks(remove); remove.run() }
 
-        nameTv.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(420).start()
+        hero.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(if (logo != null) 650 else 420).start()
         sub.animate().alpha(1f).setStartDelay(250).setDuration(400).start()
         val fullW = resources.displayMetrics.widthPixels / 3
         android.animation.ValueAnimator.ofInt(0, fullW).apply {
@@ -91,7 +103,7 @@ class DriveModeActivity : Activity() {
             addUpdateListener { bar.layoutParams = (bar.layoutParams as LinearLayout.LayoutParams).apply { width = it.animatedValue as Int }; bar.requestLayout() }
             start()
         }
-        handler.postDelayed(remove, 1700)
+        handler.postDelayed(remove, if (logo != null) 2300 else 1700)
     }
 
     override fun onResume() {
