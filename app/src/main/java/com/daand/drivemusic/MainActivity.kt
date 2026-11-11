@@ -252,6 +252,15 @@ class MainActivity : Activity() {
             "• No overlay, accessibility, location, contacts, SMS or storage permissions.")
 
         // ---------------- manual steps
+        header("Drive Music on the car screen")
+        text(
+            "There's now a Drive Music screen on the Android Auto display (now playing, status, and Play / Welcome / " +
+                "Auto-resume buttons). To switch it on, once:\n" +
+                "Android Auto → Settings → tap 'Version' 10 times → ⋮ (top right) → Developer settings → turn on 'Unknown sources'.\n" +
+                "Then Drive Music appears in the car's app grid. (This is personal/developer mode — the screen uses only " +
+                "Android Auto's safety-approved buttons and lists.)"
+        )
+
         header("Things only you can change")
         text(
             "• Samsung: Settings → Battery → Background usage limits → make sure YouTube Music, Android Auto and Drive Music " +

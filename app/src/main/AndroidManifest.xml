@@ -43,6 +43,22 @@
         android:label="@string/app_name"
         android:theme="@android:style/Theme.DeviceDefault.DayNight">
 
+        <!-- Tells Android Auto this app provides a templated car screen. -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+
+        <!-- The screen shown on the car display (Android Auto). Runs in Android Auto's
+             developer mode ("Unknown sources"); it uses only safety-approved templates. -->
+        <service
+            android:name=".car.DriveCarAppService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService" />
+                <category android:name="androidx.car.app.category.POI" />
+            </intent-filter>
+        </service>
+
         <activity
             android:name=".MainActivity"
             android:exported="true">

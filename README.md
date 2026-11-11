@@ -17,6 +17,14 @@ A small Android app (built for a Samsung phone + Android Auto + YouTube Music) t
 - **Last drive summary** on the main screen (duration, pauses, auto-resumes, last pause reason).
 - **Log viewer**: colour-coded (red = problems, green = success, blue = drive start/end) with a "Problems only" filter.
 
+## On the car screen (Android Auto)
+
+Drive Music adds a templated screen to the Android Auto display showing **now playing**, **status** and **last drive**, with **Play**, **Welcome** (replay the greeting) and **Auto-resume on/off** buttons.
+
+- Android Auto only allows safety-approved templates (lists, rows, buttons), so this is an info-and-controls screen, not a custom dashboard, and it can't put text on the map screen.
+- Enable it once: **Android Auto → Settings → tap "Version" 10 times → ⋮ → Developer settings → Unknown sources**. Drive Music then shows in the car's app launcher. This is personal/developer mode; publishing a car app to everyone would need Google's review.
+- The screen refreshes every few seconds while it's open. It does **not** change the head unit's own boot/splash screen — that's the car kit's firmware, unrelated to this app.
+
 ## Welcome greeting
 
 When Android Auto connects, a voice welcomes you by name (e.g. "Good morning, Mr. Smith. Welcome back."), adds two random lines from a list of 25 (plus day/time-specific ones), reads the weather and road conditions, says which song is up first, and then starts your music. English or Dutch.
