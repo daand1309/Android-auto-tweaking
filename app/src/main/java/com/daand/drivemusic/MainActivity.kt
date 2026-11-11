@@ -75,6 +75,14 @@ class MainActivity : Activity() {
             "\nCar: ${prefs.lastCarState}" +
             if (prefs.lastDrive.isNotEmpty()) "\nLast drive: ${prefs.lastDrive}" else "")
         button("🚗 Open Drive Mode (big buttons, full screen)") { startActivity(Intent(this, DriveModeActivity::class.java)) }
+        switch("Auto-open Drive Mode when Android Auto connects", prefs.autoOpenDriveMode) { prefs.autoOpenDriveMode = it; render() }
+        if (prefs.autoOpenDriveMode) {
+            text("For it to pop up by itself (not just as a tap notification), allow full-screen notifications for Drive Music.")
+            if (Build.VERSION.SDK_INT >= 34) button("Allow full-screen notifications") {
+                try { startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:$packageName"))) }
+                catch (e: Exception) { openAppSettings(packageName) }
+            }
+        }
         val checklistHeader = TextView(this)
         root.addView(checklistHeader)
 

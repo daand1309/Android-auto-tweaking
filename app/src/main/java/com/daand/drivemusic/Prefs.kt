@@ -149,6 +149,11 @@ class Prefs(context: Context) {
         get() = sp.getLong("last_greeting", 0L)
         set(v) = sp.edit().putLong("last_greeting", v).apply()
 
+    /** Auto-open the phone Drive Mode screen when Android Auto connects. */
+    var autoOpenDriveMode: Boolean
+        get() = sp.getBoolean("auto_open_drive_mode", false)
+        set(v) = sp.edit().putBoolean("auto_open_drive_mode", v).apply()
+
     var lastCarState: String
         get() = sp.getString("last_car_state", "unknown") ?: "unknown"
         set(v) = sp.edit().putString("last_car_state", v).apply()

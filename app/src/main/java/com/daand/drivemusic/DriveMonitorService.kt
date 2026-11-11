@@ -1,5 +1,9 @@
 package com.daand.drivemusic
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.ComponentName
@@ -229,6 +233,7 @@ class DriveMonitorService : NotificationListenerService() {
             lastPauseClue = ""
             DriveLog.log("=== CAR: $name ===")
             logEnvironment()
+            if (prefs.autoOpenDriveMode) openDriveMode()
             if (wasFirstEvent && findYtm() != null) {
                 // The monitor was (re)started by Android in the middle of a drive. Don't touch playback.
                 DriveLog.log("Monitor started mid-drive - not changing what's playing")
@@ -426,6 +431,35 @@ class DriveMonitorService : NotificationListenerService() {
             userPausedViaUi = false
             c.transportControls.play()
             DriveLog.log("Car screen: play")
+        }
+    }
+
+    /** Fires a full-screen-intent notification that opens Drive Mode on the phone when the car
+     *  connects. No overlay permission needed - the system launches it (or shows a heads-up to tap). */
+    private fun openDriveMode() {
+        try {
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.createNotificationChannel(
+                NotificationChannel("drivemode", "Drive Mode", NotificationManager.IMPORTANCE_HIGH)
+            )
+            val intent = Intent(this, DriveModeActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            val pi = PendingIntent.getActivity(
+                this, 7, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val n = Notification.Builder(this, "drivemode")
+                .setSmallIcon(android.R.drawable.ic_media_play)
+                .setContentTitle("Drive Mode")
+                .setContentText("Tap to open the big controls")
+                .setCategory(Notification.CATEGORY_NAVIGATION)
+                .setContentIntent(pi)
+                .setFullScreenIntent(pi, true)
+                .setAutoCancel(true)
+                .build()
+            nm.notify(7, n)
+            DriveLog.log("Drive Mode: opening on connect")
+        } catch (e: Exception) {
+            DriveLog.log("Drive Mode: could not open (${e.message})")
         }
     }
 
