@@ -27,7 +27,10 @@ object IntroImage {
         file(ctx, name).delete()
     }
 
-    /** Copies the chosen image, scaled down, and makes a dark background transparent. */
+    /**
+     * Copies the chosen image, scaled down. For the intro logo a dark background is made
+     * transparent; the car photo is kept as-is (a dark studio shot is still a photo, not a logo).
+     */
     fun save(ctx: Context, uri: Uri, name: String = FILE) {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         ctx.contentResolver.openInputStream(uri)!!.use { BitmapFactory.decodeStream(it, null, bounds) }
@@ -41,7 +44,7 @@ object IntroImage {
         val h = src.height
         val px = IntArray(w * h)
         src.getPixels(px, 0, w, 0, 0, w, h)
-        if (hasDarkBackground(px, w, h)) lightOnTransparent(px)
+        if (name == FILE && hasDarkBackground(px, w, h)) lightOnTransparent(px)
         val out = Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
         file(ctx, name).outputStream().use { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
