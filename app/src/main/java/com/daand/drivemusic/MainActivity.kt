@@ -29,6 +29,8 @@ class MainActivity : Activity() {
 
     private lateinit var prefs: Prefs
     private lateinit var root: LinearLayout
+    private lateinit var scroll: ScrollView
+    private var toFix = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,7 +40,8 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(32))
         }
-        setContentView(ScrollView(this).apply { addView(root) })
+        scroll = ScrollView(this).apply { addView(root) }
+        setContentView(scroll)
     }
 
     override fun onResume() {
@@ -50,7 +53,9 @@ class MainActivity : Activity() {
     }
 
     private fun render() {
+        val y = scroll.scrollY  // keep scroll position when re-drawing after a button tap
         root.removeAllViews()
+        toFix = 0
         val pm = getSystemService(PowerManager::class.java)
 
         title("Drive Music")
@@ -60,10 +65,10 @@ class MainActivity : Activity() {
         header("Status")
         val running = DriveMonitorService.instance != null
         text((if (running) "✅ Monitor running" else "❌ Monitor NOT running - grant Notification access below") +
-            "\nCar: ${prefs.lastCarState}")
-
-        // ---------------- checklist
-        header("Setup checklist (do all of these)")
+            "\nCar: ${prefs.lastCarState}" +
+            if (prefs.lastDrive.isNotEmpty()) "\nLast drive: ${prefs.lastDrive}" else "")
+        val checklistHeader = TextView(this)
+        root.addView(checklistHeader)
 
         check(
             "1. Notification access (required)",
@@ -117,6 +122,11 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }
 
+        checklistHeader.apply {
+            text = if (toFix == 0) "Setup checklist - all done ✅" else "Setup checklist - $toFix to fix ⚠️"
+            textSize = 19f; setTypeface(typeface, Typeface.BOLD); setPadding(0, dp(20), 0, dp(6))
+        }
+
         // ---------------- settings
         header("Settings")
         val installed = MusicApps.isInstalled(packageManager, music)
@@ -125,19 +135,30 @@ class MainActivity : Activity() {
         button("Change music app") { pickMusicApp() }
         switch("Start music when Android Auto connects", prefs.autoStart) { prefs.autoStart = it }
         switch("Auto-resume if music pauses while driving", prefs.autoResume) { prefs.autoResume = it }
-        text("Resume after ${prefs.resumeDelaySec} seconds. It won't resume during calls, while the Assistant talks, " +
-            "or if another app is playing. If you pause on purpose it will still resume (max 4 times per 10 min) - turn it off if that annoys you.")
-        row(
-            Button(this).apply { text = "- 2s"; setOnClickListener { prefs.resumeDelaySec = (prefs.resumeDelaySec - 2).coerceAtLeast(2); render() } },
-            Button(this).apply { text = "+ 2s"; setOnClickListener { prefs.resumeDelaySec = (prefs.resumeDelaySec + 2).coerceAtMost(60); render() } },
-        )
+        stepper("Resume after", "${prefs.resumeDelaySec}s",
+            { prefs.resumeDelaySec = (prefs.resumeDelaySec - 2).coerceAtLeast(2) },
+            { prefs.resumeDelaySec = (prefs.resumeDelaySec + 2).coerceAtMost(60) })
+        text("Never resumes during calls, while the Assistant talks, or while another app plays. " +
+            "If you pause again within a minute of an auto-resume, it takes the hint and stays off until the next drive. " +
+            "Tip: add the 'Auto-resume' Quick Settings tile to switch it on/off quickly.")
+        stepper("Wait after connecting", "${prefs.startDelaySec}s",
+            { prefs.startDelaySec = (prefs.startDelaySec - 1).coerceAtLeast(0) },
+            { prefs.startDelaySec = (prefs.startDelaySec + 1).coerceAtMost(30) })
+        switch("Pause music when leaving the car", prefs.pauseOnDisconnect) { prefs.pauseOnDisconnect = it }
+        switch("Set media volume when connecting", prefs.setVolumeOnConnect) { prefs.setVolumeOnConnect = it; render() }
+        if (prefs.setVolumeOnConnect) {
+            stepper("Volume", "${prefs.connectVolumePct}%",
+                { prefs.connectVolumePct = (prefs.connectVolumePct - 10).coerceAtLeast(10) },
+                { prefs.connectVolumePct = (prefs.connectVolumePct + 10).coerceAtMost(100) })
+            text("Note: with some cars the car's own volume knob is used and this has no effect.")
+        }
 
         // ---------------- actions
         header("Test & logs")
         button("▶ Test: start YouTube Music now") {
             val svc = DriveMonitorService.instance
             if (svc == null) toast("Grant Notification access first") else {
-                svc.startMusic("manual test button")
+                svc.startMusic("manual test button", requireCar = false)
                 toast("Trying... check the logs")
             }
         }
@@ -161,10 +182,11 @@ class MainActivity : Activity() {
                 "turn on 'Unknown sources'.\n\n" +
                 "• Wired Android Auto: if the logs show Bluetooth/car disconnects, try a different short USB cable."
         )
-        button("Open YouTube Music settings") {
+        button("Open music app") {
             packageManager.getLaunchIntentForPackage(prefs.musicPackage)?.let { startActivity(it) }
                 ?: toast("Music app not installed")
         }
+        scroll.post { scroll.scrollTo(0, y) }
     }
 
     // ---------------------------------------------------------------- helpers
@@ -212,10 +234,21 @@ class MainActivity : Activity() {
 
     private fun row(vararg views: View) = root.addView(LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
+        gravity = android.view.Gravity.CENTER_VERTICAL
         views.forEach { addView(it) }
     })
 
+    private fun stepper(label: String, value: String, minus: () -> Unit, plus: () -> Unit) = row(
+        TextView(this).apply {
+            text = "$label: $value"; textSize = 15f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        },
+        Button(this).apply { text = "−"; setOnClickListener { minus(); render() } },
+        Button(this).apply { text = "+"; setOnClickListener { plus(); render() } },
+    )
+
     private fun check(label: String, help: String, ok: Boolean, action: String, onClick: () -> Unit) {
+        if (!ok) toFix++
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(6), 0, dp(6))

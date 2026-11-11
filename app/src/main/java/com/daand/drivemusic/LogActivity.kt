@@ -2,6 +2,12 @@ package com.daand.drivemusic
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.AlertDialog
+import android.graphics.Color
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.content.Intent
 import android.graphics.Typeface
 import android.os.Build
@@ -20,6 +26,8 @@ class LogActivity : Activity() {
 
     private lateinit var logView: TextView
     private lateinit var scroll: ScrollView
+    private lateinit var filterBtn: Button
+    private var problemsOnly = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -28,8 +36,20 @@ class LogActivity : Activity() {
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(btn("Refresh") { load() })
+            filterBtn = btn("Problems only") {
+                problemsOnly = !problemsOnly
+                filterBtn.text = if (problemsOnly) "Show all" else "Problems only"
+                load()
+            }
+            addView(filterBtn)
             addView(btn("Share") { share() })
-            addView(btn("Clear") { DriveLog.clear(); DriveLog.log("Log cleared"); load() })
+            addView(btn("Clear") {
+                AlertDialog.Builder(this@LogActivity)
+                    .setMessage("Delete all logs?")
+                    .setPositiveButton("Delete") { _, _ -> DriveLog.clear(); DriveLog.log("Log cleared"); load() }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            })
         }
         logView = TextView(this).apply {
             typeface = Typeface.MONOSPACE
@@ -54,9 +74,36 @@ class LogActivity : Activity() {
     }
 
     private fun load() {
-        val lines = DriveLog.readAll().lines()
-        logView.text = lines.takeLast(600).joinToString("\n").ifBlank { "No logs yet. Go for a drive!" }
+        var lines = DriveLog.readAll().lines().filter { it.isNotBlank() }
+        if (problemsOnly) lines = lines.filter { l -> PROBLEM_MARKERS.any { l.contains(it) } || l.contains("=== CAR") }
+        lines = lines.takeLast(600)
+        if (lines.isEmpty()) {
+            logView.text = if (problemsOnly) "No problems logged 🎉" else "No logs yet. Go for a drive!"
+            return
+        }
+        // Colour-code: red = problems, green = success, blue = start/end of a drive.
+        val sb = SpannableStringBuilder()
+        for (line in lines) {
+            val start = sb.length
+            sb.append(line).append('\n')
+            val color = when {
+                PROBLEM_MARKERS.any { line.contains(it) } -> Color.rgb(0xE5, 0x39, 0x35)
+                line.contains("success") || line.contains("RESUME: auto-resuming") -> Color.rgb(0x2E, 0x9D, 0x4F)
+                line.contains("=== CAR") -> Color.rgb(0x1E, 0x88, 0xE5)
+                else -> null
+            }
+            if (color != null) {
+                sb.setSpan(ForegroundColorSpan(color), start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                sb.setSpan(StyleSpan(Typeface.BOLD), start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        logView.text = sb
         scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
+    }
+
+    companion object {
+        private val PROBLEM_MARKERS = listOf("!!!", "FAILED", "ERROR", "LOST", "destroyed", "stopped by the system",
+            "not installed", "gave up", "disconnected from", "looks deliberate")
     }
 
     private fun share() {

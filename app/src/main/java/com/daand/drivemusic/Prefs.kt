@@ -27,6 +27,28 @@ class Prefs(context: Context) {
             ?: MusicApps.autoDetect(ctx).also { sp.edit().putString("music_pkg", it).apply() }
         set(v) = sp.edit().putString("music_pkg", v).apply()
 
+    /** Seconds to wait after Android Auto connects before pressing play (lets the car settle). */
+    var startDelaySec: Int
+        get() = sp.getInt("start_delay", 2)
+        set(v) = sp.edit().putInt("start_delay", v).apply()
+
+    var setVolumeOnConnect: Boolean
+        get() = sp.getBoolean("set_volume", false)
+        set(v) = sp.edit().putBoolean("set_volume", v).apply()
+
+    var connectVolumePct: Int
+        get() = sp.getInt("volume_pct", 60)
+        set(v) = sp.edit().putInt("volume_pct", v).apply()
+
+    /** Pause the music when Android Auto disconnects, so it doesn't carry on from the phone speaker. */
+    var pauseOnDisconnect: Boolean
+        get() = sp.getBoolean("pause_on_disconnect", true)
+        set(v) = sp.edit().putBoolean("pause_on_disconnect", v).apply()
+
+    var lastDrive: String
+        get() = sp.getString("last_drive", "") ?: ""
+        set(v) = sp.edit().putString("last_drive", v).apply()
+
     var lastCarState: String
         get() = sp.getString("last_car_state", "unknown") ?: "unknown"
         set(v) = sp.edit().putString("last_car_state", v).apply()

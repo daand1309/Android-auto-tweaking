@@ -71,6 +71,13 @@ class DriveMonitorService : NotificationListenerService() {
     private var lastNetworkLostAt = 0L
     private var lastBtDisconnectAt = 0L
     private var lastAudioUsages = ""
+    private var lastInterruption = ""
+    private var lastInterruptionAt = 0L
+    private var lastPauseClue = ""
+    private var lastAutoResumeAt = 0L
+    /** Set when you pause again right after an auto-resume: we take the hint for the rest of the drive. */
+    var resumeOffThisDrive = false
+    private var firstCarEvent = true
     private val resumeTimes = ArrayDeque<Long>()
 
     private var startRunnable: Runnable? = null
@@ -146,6 +153,8 @@ class DriveMonitorService : NotificationListenerService() {
         prefs.lastCarState = name
         val nowConnected = type == CarConnection.CONNECTION_TYPE_PROJECTION ||
             type == CarConnection.CONNECTION_TYPE_NATIVE
+        val wasFirstEvent = firstCarEvent
+        firstCarEvent = false
         if (nowConnected == carConnected) return@Observer
         carConnected = nowConnected
 
@@ -154,29 +163,53 @@ class DriveMonitorService : NotificationListenerService() {
             pausesThisDrive = 0
             resumesThisDrive = 0
             resumeTimes.clear()
+            resumeOffThisDrive = false
+            lastAutoResumeAt = 0L
+            lastPauseClue = ""
             DriveLog.log("=== CAR: $name ===")
             logEnvironment()
-            if (prefs.autoStart) startMusic("Android Auto connected")
-            else DriveLog.log("Auto-start is turned off in settings")
+            if (wasFirstEvent && findYtm() != null) {
+                // The monitor was (re)started by Android in the middle of a drive. Don't touch playback.
+                DriveLog.log("Monitor started mid-drive - not changing what's playing")
+                return@Observer
+            }
+            applyConnectVolume()
+            val other = otherAppPlaying()
+            when {
+                !prefs.autoStart -> DriveLog.log("Auto-start is turned off in settings")
+                other != null -> DriveLog.log("START: skipped - $other is already playing, not taking over")
+                else -> startMusic("Android Auto connected", prefs.startDelaySec * 1000L)
+            }
         } else {
             val mins = (SystemClock.elapsedRealtime() - carConnectedAt) / 60000
             DriveLog.log("=== CAR: disconnected after ${mins} min. Pauses: $pausesThisDrive, auto-resumes: $resumesThisDrive ===")
+            prefs.lastDrive = java.text.SimpleDateFormat("EEE d MMM HH:mm", java.util.Locale.getDefault()).format(java.util.Date()) +
+                " - ${mins} min, $pausesThisDrive pause(s), $resumesThisDrive auto-resume(s)" +
+                if (lastPauseClue.isNotEmpty()) "\nLast pause: $lastPauseClue" else ""
             cancelStart()
             cancelResume()
+            if (prefs.pauseOnDisconnect) {
+                val c = findYtm()
+                if (c?.playbackState?.state == PlaybackState.STATE_PLAYING) {
+                    c.transportControls.pause()
+                    DriveLog.log("Paused music because you left the car")
+                }
+            }
         }
     }
 
     // ---------------------------------------------------------------- start music
 
     /** Opens YouTube Music and presses play, retrying until it is really playing. */
-    fun startMusic(reason: String) {
+    fun startMusic(reason: String, delayMs: Long = 0L, requireCar: Boolean = true) {
         cancelStart()
-        DriveLog.log("START: trying to start YouTube Music ($reason)")
+        DriveLog.log("START: trying to start YouTube Music ($reason)" + if (delayMs > 0) " in ${delayMs / 1000}s" else "")
         var tick = 0
         var playSentAtTick = -10
         val r = object : Runnable {
             override fun run() {
-                val c = ytm ?: findYtm()?.also { attachYtm(it) }
+                if (requireCar && !carConnected) { startRunnable = null; return }
+                val c = ytm?.takeIf { it.packageName == musicPkg } ?: findYtm()?.also { attachYtm(it) }
                 val state = c?.playbackState?.state
                 when {
                     state == PlaybackState.STATE_PLAYING -> {
@@ -218,7 +251,7 @@ class DriveMonitorService : NotificationListenerService() {
             }
         }
         startRunnable = r
-        handler.post(r)
+        handler.postDelayed(r, delayMs)
     }
 
     private fun cancelStart() {
@@ -308,7 +341,14 @@ class DriveMonitorService : NotificationListenerService() {
                 PlaybackState.STATE_NONE -> {
                     if (prev == PlaybackState.STATE_PLAYING || prev == PlaybackState.STATE_BUFFERING) {
                         pausesThisDrive++
-                        DriveLog.log("!!! PAUSE #$pausesThisDrive while driving. ${diagnose()}")
+                        val clues = diagnose()
+                        lastPauseClue = clues.joinToString("; ").ifEmpty { "no clues (pause button / steering wheel / Hey Google?)" }
+                        DriveLog.log("!!! PAUSE #$pausesThisDrive while driving. Clues: $lastPauseClue")
+                        val sinceResume = SystemClock.elapsedRealtime() - lastAutoResumeAt
+                        if (lastAutoResumeAt > 0 && sinceResume < 60_000 && clues.isEmpty() && !resumeOffThisDrive) {
+                            resumeOffThisDrive = true
+                            DriveLog.log("You paused again ${sinceResume / 1000}s after an auto-resume - looks deliberate. Auto-resume OFF until the next drive.")
+                        }
                         scheduleResume()
                     }
                 }
@@ -328,19 +368,29 @@ class DriveMonitorService : NotificationListenerService() {
             DriveLog.log("Auto-resume is off - leaving it paused")
             return
         }
+        if (resumeOffThisDrive) {
+            DriveLog.log("Auto-resume paused for this drive - leaving it paused")
+            return
+        }
         cancelResume()
         val delay = prefs.resumeDelaySec.coerceIn(2, 120) * 1000L
         var waits = 0
         val r = object : Runnable {
             override fun run() {
-                if (!carConnected) { resumeRunnable = null; return }
-                val c = ytm ?: findYtm()
+                if (!carConnected || !prefs.autoResume || resumeOffThisDrive) { resumeRunnable = null; return }
+                val c = findYtm()
                 if (c?.playbackState?.state == PlaybackState.STATE_PLAYING) { resumeRunnable = null; return }
 
                 val blocker = resumeBlocker()
-                if (blocker != null && waits < 20) {
+                if (blocker != null) {
+                    // Never resume over a call / Assistant / another app. Wait up to ~15 min, then give up.
                     waits++
-                    if (waits == 1 || waits % 5 == 0) DriveLog.log("RESUME: waiting - $blocker")
+                    if (waits > 300) {
+                        DriveLog.log("RESUME: gave up - $blocker for too long")
+                        resumeRunnable = null
+                        return
+                    }
+                    if (waits == 1 || waits % 20 == 0) DriveLog.log("RESUME: waiting - $blocker")
                     handler.postDelayed(this, 3000)
                     return
                 }
@@ -352,6 +402,7 @@ class DriveMonitorService : NotificationListenerService() {
                     return
                 }
                 resumeTimes.addLast(now)
+                lastAutoResumeAt = now
                 resumesThisDrive++
                 resumeRunnable = null
                 DriveLog.log("RESUME: auto-resuming YouTube Music")
@@ -377,18 +428,33 @@ class DriveMonitorService : NotificationListenerService() {
         val usages = activeUsages()
         if (AudioAttributes.USAGE_ASSISTANT in usages) return "Google Assistant is talking"
         if (AudioAttributes.USAGE_VOICE_COMMUNICATION in usages) return "voice call audio active"
-        val otherPlaying = try {
-            sessions.getActiveSessions(listenerComponent)
-                .firstOrNull { it.packageName != musicPkg && it.playbackState?.state == PlaybackState.STATE_PLAYING }
-        } catch (e: SecurityException) { null }
-        if (otherPlaying != null) return "another app is playing (${otherPlaying.packageName})"
+        otherAppPlaying()?.let { return "another app is playing ($it)" }
         return null
+    }
+
+    /** Package of another media app that is currently playing, if any. */
+    private fun otherAppPlaying(): String? = try {
+        sessions.getActiveSessions(listenerComponent)
+            .firstOrNull { it.packageName != musicPkg && it.playbackState?.state == PlaybackState.STATE_PLAYING }
+            ?.packageName
+    } catch (e: SecurityException) { null }
+
+    private fun applyConnectVolume() {
+        if (!prefs.setVolumeOnConnect) return
+        val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val idx = Math.round(max * prefs.connectVolumePct / 100f).coerceIn(1, max)
+        try {
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, idx, 0)
+            DriveLog.log("Set media volume to ${prefs.connectVolumePct}% ($idx/$max)")
+        } catch (e: SecurityException) {
+            DriveLog.log("Could not set volume (Do Not Disturb?): ${e.message}")
+        }
     }
 
     // ---------------------------------------------------------------- diagnostics
 
-    /** Builds a one-line guess at why music paused. */
-    private fun diagnose(): String {
+    /** Collects clues about why music just paused. Empty = nothing suspicious found. */
+    private fun diagnose(): List<String> {
         val now = SystemClock.elapsedRealtime()
         val clues = mutableListOf<String>()
         when (audio.mode) {
@@ -397,6 +463,9 @@ class DriveMonitorService : NotificationListenerService() {
         }
         val usages = activeUsages()
         if (usages.isNotEmpty()) clues += "other audio playing: " + usages.joinToString { usageName(it) }
+        else if (lastInterruptionAt > 0 && now - lastInterruptionAt < 15_000) {
+            clues += "$lastInterruption played ${(now - lastInterruptionAt) / 1000}s ago"
+        }
         if (!isOnline()) clues += "NO INTERNET right now"
         if (lastNetworkLostAt > 0 && now - lastNetworkLostAt < 60_000) clues += "internet dropped ${(now - lastNetworkLostAt) / 1000}s ago"
         if (lastBtDisconnectAt > 0 && now - lastBtDisconnectAt < 30_000) clues += "Bluetooth device disconnected ${(now - lastBtDisconnectAt) / 1000}s ago"
@@ -405,9 +474,7 @@ class DriveMonitorService : NotificationListenerService() {
                 .filter { it.packageName != musicPkg && it.playbackState?.state == PlaybackState.STATE_PLAYING }
                 .forEach { clues += "${it.packageName} started playing" }
         } catch (_: SecurityException) {}
-        if (lastAudioUsages.isNotEmpty() && clues.none { it.startsWith("other audio") }) clues += "recent audio: $lastAudioUsages"
-        return if (clues.isEmpty()) "Clues: none found (pause button / steering wheel / Hey Google / app itself?)"
-        else "Clues: " + clues.joinToString("; ")
+        return clues
     }
 
     private fun logEnvironment() {
@@ -426,6 +493,13 @@ class DriveMonitorService : NotificationListenerService() {
             val names = configs.map { usageName(it.audioAttributes.usage) }.distinct().sorted().joinToString()
             if (names == lastAudioUsages) return
             lastAudioUsages = names
+            val interrupts = configs.map { it.audioAttributes.usage }
+                .filter { it != AudioAttributes.USAGE_MEDIA && it != AudioAttributes.USAGE_UNKNOWN }
+                .distinct()
+            if (interrupts.isNotEmpty()) {
+                lastInterruption = interrupts.joinToString { usageName(it) }
+                lastInterruptionAt = SystemClock.elapsedRealtime()
+            }
             if (carConnected) DriveLog.log("Audio streams now: ${names.ifEmpty { "silence" }}")
         }
     }

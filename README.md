@@ -7,6 +7,16 @@ A small Android app (built for a Samsung phone + Android Auto + YouTube Music) t
 3. **Logs everything** that happens during a drive, with a best guess at *why* each pause happened (navigation prompt, Assistant, notification, call, lost internet, Bluetooth drop, app killed by battery saver...). You can share the log from the app.
 4. **Setup checklist** showing which phone settings still need fixing (battery restrictions for YouTube Music / Android Auto / this app), with buttons that open the right settings page.
 
+## Extras
+
+- **Smart auto-resume**: if you pause again within a minute of an auto-resume (and nothing else explains the pause), it assumes you meant it and stays off until the next drive. It never resumes during a call, while the Assistant talks, or while another app plays.
+- **Quick Settings tile** "Auto-resume": swipe down → edit (pencil) → drag the tile in. Tap it to switch auto-resume on/off.
+- **Won't hijack**: if another app (podcast, audiobook) is already playing when you connect, it leaves it alone.
+- **Pause when leaving the car** (on by default) so music doesn't carry on from the phone speaker.
+- **Set media volume on connect** (optional) and **wait after connecting** delay.
+- **Last drive summary** on the main screen (duration, pauses, auto-resumes, last pause reason).
+- **Log viewer**: colour-coded (red = problems, green = success, blue = drive start/end) with a "Problems only" filter.
+
 ## Patched YouTube Music (Morphe / ReVanced)
 
 Supported. Patched builds use a different package name than the official app, so Drive Music finds them automatically (patched builds are preferred over the official one if both are installed). You can check or change the app under **Settings → Change music app**. If MicroG (GmsCore) is installed, it gets its own battery item on the checklist: if Samsung puts MicroG to sleep, the patched app can lose sign-in and stop streaming.
