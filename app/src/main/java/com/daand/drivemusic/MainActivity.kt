@@ -167,6 +167,7 @@ class MainActivity : Activity() {
         if (prefs.greetingEnabled) {
             val name = prefs.greetingName.ifBlank { "(not set)" }
             stepperLike("Name: $name", "Change") { askName() }
+            stepperLike("Birthday: ${prefs.birthday.ifBlank { "(none)" }}", "Set") { askBirthday() }
             switch("Speak in Dutch (Nederlands)", prefs.greetingDutch) { prefs.greetingDutch = it }
             switch("Say which song will play", prefs.announceSong) { prefs.announceSong = it }
             switch("Include the weather", prefs.weatherEnabled) { prefs.weatherEnabled = it; render() }
@@ -390,6 +391,15 @@ class MainActivity : Activity() {
     private fun askName() = askText("How should the voice call you?", "e.g. Mr. Smith", prefs.greetingName) {
         prefs.greetingName = it
         render()
+    }
+
+    private fun askBirthday() = askText("Your birthday (MM-DD)", "e.g. 04-27 - leave empty for none", prefs.birthday) { input ->
+        val v = input.trim()
+        if (v.isEmpty() || Regex("""^\d{2}-\d{2}$""").matches(v)) {
+            prefs.birthday = v
+            if (v.isNotEmpty()) toast("A birthday greeting will play on $v")
+            render()
+        } else toast("Please use MM-DD, e.g. 04-27")
     }
 
     private fun askCity() = askText("Weather for which city?", "e.g. Utrecht", prefs.weatherPlace) { city ->

@@ -12,8 +12,14 @@ import kotlin.random.Random
 @RunWith(RobolectricTestRunner::class)  // for the real org.json implementation
 class GreetingTest {
 
+    // Fixed to 15 June (an ordinary, non-holiday day) so tests don't change on real holidays.
     private fun at(hour: Int, day: Int = Calendar.WEDNESDAY): Calendar = Calendar.getInstance().apply {
+        set(Calendar.MONTH, Calendar.JUNE); set(Calendar.DAY_OF_MONTH, 15)
         set(Calendar.DAY_OF_WEEK, day); set(Calendar.HOUR_OF_DAY, hour)
+    }
+
+    private fun onDate(month: Int, dayOfMonth: Int, hour: Int = 10): Calendar = Calendar.getInstance().apply {
+        set(Calendar.MONTH, month); set(Calendar.DAY_OF_MONTH, dayOfMonth); set(Calendar.HOUR_OF_DAY, hour)
     }
 
     private val sunny = GreetingText.WeatherNow(tempNow = 18.4, code = 0, windKmh = 10.0, tempMin = 9.6, tempMax = 21.2, rainChance = 5)
@@ -150,6 +156,37 @@ class GreetingTest {
         assertEquals("Up first: Intro.", GreetingText.songSentence(GreetingText.Song("Intro", ""), false, true))
         val t = GreetingText.build("X", false, at(10), null, "", Random(1), song = song)
         assertTrue(t, t.endsWith("Up first: Bohemian Rhapsody by Queen. Starting your music. Have a great drive!"))
+    }
+
+    // ---------------- special occasions
+
+    @Test fun birthdayGreeting() {
+        val t = GreetingText.build("X", false, onDate(Calendar.APRIL, 27), null, "", Random(1), birthday = "04-27")
+        assertTrue(t, t.contains("happy birthday"))
+    }
+
+    @Test fun birthdayOnlyOnTheRightDay() {
+        val t = GreetingText.build("X", false, onDate(Calendar.APRIL, 28), null, "", Random(1), birthday = "04-27")
+        assertFalse(t, t.contains("happy birthday"))
+    }
+
+    @Test fun holidayLines() {
+        assertTrue(GreetingText.build("X", false, onDate(Calendar.DECEMBER, 25), null, "", Random(1)).contains("Merry Christmas"))
+        assertTrue(GreetingText.build("X", true, onDate(Calendar.JANUARY, 1), null, "", Random(1)).contains("Gelukkig nieuwjaar"))
+        assertTrue(GreetingText.build("X", false, onDate(Calendar.OCTOBER, 31), null, "", Random(1)).contains("Halloween"))
+    }
+
+    @Test fun occasionReplacesOneRandomLineNotBoth() {
+        // On a holiday, one occasion line + one random line (still a full greeting).
+        val t = GreetingText.build("X", false, onDate(Calendar.DECEMBER, 25), null, "", Random(3))
+        val used = GreetingText.LINES_EN.filter { t.contains(it) }
+        assertEquals(1, used.size)
+    }
+
+    @Test fun shortWeatherForCarScreen() {
+        assertEquals("Utrecht: 18 degrees, clear skies, rain 5%", GreetingText.shortWeather(sunny, "Utrecht", false))
+        assertEquals("min 2 graden, sneeuw, regen 80%",
+            GreetingText.shortWeather(sunny.copy(tempNow = -2.0, code = 71, rainChance = 80), "", true))
     }
 
     @Test fun locationIsRoundedForPrivacy() {

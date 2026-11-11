@@ -42,7 +42,7 @@ object GreetingText {
 
     fun build(
         name: String, dutch: Boolean, cal: Calendar, weather: WeatherNow?, place: String,
-        random: Random = Random.Default, roads: Boolean = false, song: Song? = null,
+        random: Random = Random.Default, roads: Boolean = false, song: Song? = null, birthday: String = "",
     ): String {
         val hour = cal.get(Calendar.HOUR_OF_DAY)
         val day = cal.get(Calendar.DAY_OF_WEEK)
@@ -52,9 +52,12 @@ object GreetingText {
         parts += if (who.isEmpty()) timeGreeting(hour, dutch) + "." else "${timeGreeting(hour, dutch)}, $who."
         parts += if (dutch) "Welkom terug." else "Welcome back."
 
+        // A special-occasion line takes the place of one random line when it applies.
+        val occasion = occasionLine(cal, birthday, dutch)
+        if (occasion != null) parts += occasion
         dayLine(day, hour, dutch)?.let { parts += it }
         val pool = if (dutch) LINES_NL else LINES_EN
-        pool.shuffled(random).take(2).forEach { parts += it }
+        pool.shuffled(random).take(if (occasion != null) 1 else 2).forEach { parts += it }
 
         if (weather != null) {
             parts += weatherSentence(weather, place, dutch, withAdvice = !roads)
@@ -63,6 +66,36 @@ object GreetingText {
         if (song != null) parts += songSentence(song, dutch, upFirst = true)
         parts += if (dutch) "Ik zet je muziek aan. Goede reis!" else "Starting your music. Have a great drive!"
         return parts.joinToString(" ")
+    }
+
+    /** A festive line for a birthday ("MM-DD") or a known holiday, or null. */
+    fun occasionLine(cal: Calendar, birthday: String, dutch: Boolean): String? {
+        val month = cal.get(Calendar.MONTH) + 1
+        val dayOfMonth = cal.get(Calendar.DAY_OF_MONTH)
+        val md = "%02d-%02d".format(month, dayOfMonth)
+        if (birthday.isNotBlank() && birthday.trim() == md) {
+            return if (dutch) "En nog iets belangrijks: gefeliciteerd met je verjaardag! Fijne dag, helemaal van mij."
+            else "And something important: happy birthday! Have a wonderful day, from me to you."
+        }
+        return when (md) {
+            "01-01" -> if (dutch) "Gelukkig nieuwjaar! Laten we er een topjaar van maken." else "Happy New Year! Let's make this one count."
+            "12-25", "12-26" -> if (dutch) "Vrolijk kerstfeest! Rij voorzichtig door de drukte." else "Merry Christmas! Drive gently through the holiday rush."
+            "12-31" -> if (dutch) "Oudjaarsdag! Rij veilig, en geniet vanavond." else "It's New Year's Eve! Drive safe, and enjoy tonight."
+            "10-31" -> if (dutch) "Happy Halloween! Pas op voor spoken op de weg." else "Happy Halloween! Watch out for ghosts on the road."
+            "04-27" -> if (dutch) "Fijne Koningsdag! Oranje staat je goed." else "Happy King's Day! Orange suits you."
+            "12-05" -> if (dutch) "Fijne pakjesavond! Sinterklaas rijdt ook mee." else "Happy Sinterklaas evening!"
+            "02-14" -> if (dutch) "Fijne Valentijnsdag! De auto houdt ook van jou." else "Happy Valentine's Day! The car loves you too."
+            else -> null
+        }
+    }
+
+    /** Short weather line for the car screen, e.g. "Utrecht: 18 degrees, clear skies, rain 5%". */
+    fun shortWeather(w: WeatherNow, place: String, dutch: Boolean): String {
+        val t = SpeechText.number(w.tempNow.roundToInt(), dutch)
+        val desc = describe(w.code, dutch)
+        val prefix = if (place.isNotBlank()) "$place: " else ""
+        return if (dutch) "$prefix$t graden, $desc, regen ${w.rainChance}%"
+        else "$prefix$t degrees, $desc, rain ${w.rainChance}%"
     }
 
     fun timeGreeting(hour: Int, dutch: Boolean) = when (hour) {
@@ -712,9 +745,13 @@ object WelcomeAnnouncer {
                     DriveLog.log("GREETING: weather unavailable (${e.message})"); null
                 }
             }
+            if (weather != null) {
+                p.lastWeatherSummary = GreetingText.shortWeather(weather, p.weatherPlace, p.greetingDutch)
+                p.lastWeatherAt = System.currentTimeMillis()
+            }
             val text = GreetingText.build(
                 p.namePronunciation.ifBlank { p.greetingName }, p.greetingDutch, Calendar.getInstance(), weather, p.weatherPlace,
-                roads = p.roadConditionsEnabled, song = song.takeIf { p.announceSong },
+                roads = p.roadConditionsEnabled, song = song.takeIf { p.announceSong }, birthday = p.birthday,
             )
             p.lastGreetingAt = System.currentTimeMillis()
             main.post {

@@ -38,7 +38,7 @@ class DriveScreen(carContext: CarContext) : Screen(carContext), DefaultLifecycle
     private fun signature(): String {
         val svc = DriveMonitorService.instance
         val song = svc?.currentSong()
-        return "${svc != null}|${prefs.lastCarState}|${song?.title}|${song?.artist}|${prefs.autoResume}|${prefs.lastDrive}"
+        return "${svc != null}|${svc?.isPlaying()}|${prefs.lastCarState}|${song?.title}|${song?.artist}|${prefs.autoResume}|${prefs.lastWeatherSummary}"
     }
 
     init {
@@ -58,6 +58,7 @@ class DriveScreen(carContext: CarContext) : Screen(carContext), DefaultLifecycle
         val service = DriveMonitorService.instance
         val song = service?.currentSong()
 
+        val playing = service?.isPlaying() == true
         val list = ItemList.Builder()
         list.addItem(
             Row.Builder()
@@ -65,27 +66,36 @@ class DriveScreen(carContext: CarContext) : Screen(carContext), DefaultLifecycle
                 .addText(song?.let { "${it.title}${if (it.artist.isNotBlank()) " — ${it.artist}" else ""}" } ?: "Nothing playing yet")
                 .build()
         )
+        // Transport controls (as tappable rows - an ActionStrip only fits a couple of buttons).
         list.addItem(
-            Row.Builder()
-                .setTitle("Status")
-                .addText(if (service == null) "Monitor not running — open the app" else prefs.lastCarState)
+            Row.Builder().setTitle("⏮  Previous")
+                .setOnClickListener { DriveMonitorService.instance?.skipPrevious(); invalidate() }
                 .build()
         )
-        if (prefs.lastDrive.isNotBlank()) {
-            list.addItem(Row.Builder().setTitle("Last drive").addText(prefs.lastDrive.replace("\n", " · ")).build())
+        list.addItem(
+            Row.Builder().setTitle(if (playing) "⏸  Pause" else "▶  Play")
+                .setOnClickListener { DriveMonitorService.instance?.playPause(); invalidate() }
+                .build()
+        )
+        list.addItem(
+            Row.Builder().setTitle("⏭  Next")
+                .setOnClickListener { DriveMonitorService.instance?.skipNext(); invalidate() }
+                .build()
+        )
+        val weatherFresh = System.currentTimeMillis() - prefs.lastWeatherAt < 3 * 60 * 60 * 1000L
+        if (prefs.lastWeatherSummary.isNotBlank() && weatherFresh) {
+            list.addItem(Row.Builder().setTitle("Weather").addText(prefs.lastWeatherSummary).build())
+        } else {
+            list.addItem(
+                Row.Builder()
+                    .setTitle("Status")
+                    .addText(if (service == null) "Monitor not running — open the app" else prefs.lastCarState)
+                    .build()
+            )
         }
 
         val resumeOn = prefs.autoResume
         val actions = ActionStrip.Builder()
-            .addAction(
-                Action.Builder()
-                    .setTitle("Play")
-                    .setOnClickListener {
-                        DriveMonitorService.instance?.startMusic("car screen Play button", requireCar = false)
-                        invalidate()
-                    }
-                    .build()
-            )
             .addAction(
                 Action.Builder()
                     .setTitle("Welcome")

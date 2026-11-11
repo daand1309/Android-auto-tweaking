@@ -99,6 +99,8 @@ class DriveMonitorService : NotificationListenerService() {
     private var lastInterruptionAt = 0L
     private var pendingPauseRunnable: Runnable? = null
     private var briefInterruptions = 0
+    /** Set when you pause from the car screen, so auto-resume doesn't fight you. */
+    private var userPausedViaUi = false
     private var lastPauseClue = ""
     private var lastAutoResumeAt = 0L
     /** Set when you pause again right after an auto-resume: we take the hint for the rest of the drive. */
@@ -394,6 +396,39 @@ class DriveMonitorService : NotificationListenerService() {
         }
     }
 
+    // ---- media controls (used by the car screen) ----
+    private fun musicController(): MediaController? =
+        ytm?.takeIf { it.packageName == musicPkg } ?: findYtm()
+
+    fun isPlaying(): Boolean = musicController()?.playbackState?.state == PlaybackState.STATE_PLAYING
+
+    fun skipNext() {
+        userPausedViaUi = false
+        musicController()?.transportControls?.skipToNext()
+        DriveLog.log("Car screen: next track")
+    }
+
+    fun skipPrevious() {
+        userPausedViaUi = false
+        musicController()?.transportControls?.skipToPrevious()
+        DriveLog.log("Car screen: previous track")
+    }
+
+    /** Toggle play/pause from the car screen. A pause here won't be auto-resumed. */
+    fun playPause() {
+        val c = musicController()
+        if (c == null) { startMusic("car screen play", requireCar = false); return }
+        if (c.playbackState?.state == PlaybackState.STATE_PLAYING) {
+            userPausedViaUi = true
+            c.transportControls.pause()
+            DriveLog.log("Car screen: pause (you asked - won't auto-resume)")
+        } else {
+            userPausedViaUi = false
+            c.transportControls.play()
+            DriveLog.log("Car screen: play")
+        }
+    }
+
     /** The song YouTube Music has loaded (playing or queued), if it tells us. */
     fun currentSong(): GreetingText.Song? {
         val md = (ytm?.takeIf { it.packageName == musicPkg } ?: findYtm())?.metadata ?: return null
@@ -454,6 +489,7 @@ class DriveMonitorService : NotificationListenerService() {
 
             when (s) {
                 PlaybackState.STATE_PLAYING -> {
+                    userPausedViaUi = false
                     if (pendingPauseRunnable != null) {
                         // It stopped and came right back (the Morphe "Premium" blip, a buffer hiccup):
                         // never counted as a pause.
@@ -491,6 +527,11 @@ class DriveMonitorService : NotificationListenerService() {
 
     /** A stop that lasted past the grace period: a genuine pause. */
     private fun onConfirmedPause() {
+        if (userPausedViaUi) {
+            userPausedViaUi = false
+            DriveLog.log("Paused from the car screen - leaving it paused")
+            return
+        }
         pausesThisDrive++
         val clues = diagnose()
         lastPauseClue = clues.joinToString("; ").ifEmpty { "no clues (pause button / steering wheel / Hey Google?)" }

@@ -131,6 +131,20 @@ class Prefs(context: Context) {
         get() = sp.getString("name_pronunciation", "") ?: ""
         set(v) = sp.edit().putString("name_pronunciation", v).apply()
 
+    /** Optional birthday as "MM-DD" for a birthday greeting. */
+    var birthday: String
+        get() = sp.getString("birthday", "") ?: ""
+        set(v) = sp.edit().putString("birthday", v).apply()
+
+    /** Short weather line cached from the last greeting, shown on the car screen. */
+    var lastWeatherSummary: String
+        get() = sp.getString("last_weather", "") ?: ""
+        set(v) = sp.edit().putString("last_weather", v).apply()
+
+    var lastWeatherAt: Long
+        get() = sp.getLong("last_weather_at", 0L)
+        set(v) = sp.edit().putLong("last_weather_at", v).apply()
+
     var lastGreetingAt: Long
         get() = sp.getLong("last_greeting", 0L)
         set(v) = sp.edit().putLong("last_greeting", v).apply()
