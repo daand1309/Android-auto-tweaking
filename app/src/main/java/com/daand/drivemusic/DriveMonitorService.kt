@@ -150,7 +150,16 @@ class DriveMonitorService : NotificationListenerService() {
 
     // ---------------------------------------------------------------- Android Auto
 
-    private val carObserver = Observer<Int> { type ->
+    private val carObserver = Observer<Int> { type -> onCarState(type) }
+
+    /** Test hook: feeds a car connection state through exactly the same path as Android Auto does. */
+    @androidx.annotation.VisibleForTesting
+    fun simulateCarStateForTest(type: Int) {
+        firstCarEvent = false
+        onCarState(type)
+    }
+
+    private fun onCarState(type: Int) {
         val name = when (type) {
             CarConnection.CONNECTION_TYPE_PROJECTION -> "Android Auto connected"
             CarConnection.CONNECTION_TYPE_NATIVE -> "Android Automotive"
@@ -161,7 +170,7 @@ class DriveMonitorService : NotificationListenerService() {
             type == CarConnection.CONNECTION_TYPE_NATIVE
         val wasFirstEvent = firstCarEvent
         firstCarEvent = false
-        if (nowConnected == carConnected) return@Observer
+        if (nowConnected == carConnected) return
         carConnected = nowConnected
 
         if (nowConnected) {
@@ -177,7 +186,7 @@ class DriveMonitorService : NotificationListenerService() {
             if (wasFirstEvent && findYtm() != null) {
                 // The monitor was (re)started by Android in the middle of a drive. Don't touch playback.
                 DriveLog.log("Monitor started mid-drive - not changing what's playing")
-                return@Observer
+                return
             }
             applyConnectVolume()
             val other = otherAppPlaying()
