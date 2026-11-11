@@ -40,10 +40,14 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("stable") ?: signingConfigs.getByName("debug")
         }
     }
+    // Run the instrumented tests against the shrunk release build, so CI validates R8 output.
+    testBuildType = "release"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

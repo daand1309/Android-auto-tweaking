@@ -638,6 +638,7 @@ class DriveMonitorService : NotificationListenerService() {
 
     private val playbackConfigCallback = object : AudioManager.AudioPlaybackCallback() {
         override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>) {
+            if (!carConnected) return  // this data is only used while driving - skip the work otherwise
             val usages = configs.map { it.audioAttributes.usage }.distinct()
             val interrupts = usages.filter { it !in NOT_INTERRUPTIONS }
             if (interrupts.isNotEmpty()) {

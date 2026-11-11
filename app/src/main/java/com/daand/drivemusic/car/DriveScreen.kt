@@ -22,11 +22,23 @@ class DriveScreen(carContext: CarContext) : Screen(carContext), DefaultLifecycle
 
     private val prefs = Prefs(carContext)
     private val handler = Handler(Looper.getMainLooper())
+    private var lastSignature = ""
     private val refresh = object : Runnable {
         override fun run() {
-            invalidate()  // keep now-playing fresh while the screen is visible
-            handler.postDelayed(this, 5000)
+            // Only redraw when something actually changed - no needless template rebuilds.
+            val sig = signature()
+            if (sig != lastSignature) {
+                lastSignature = sig
+                invalidate()
+            }
+            handler.postDelayed(this, 8000)
         }
+    }
+
+    private fun signature(): String {
+        val svc = DriveMonitorService.instance
+        val song = svc?.currentSong()
+        return "${svc != null}|${prefs.lastCarState}|${song?.title}|${song?.artist}|${prefs.autoResume}|${prefs.lastDrive}"
     }
 
     init {
@@ -42,6 +54,7 @@ class DriveScreen(carContext: CarContext) : Screen(carContext), DefaultLifecycle
     }
 
     override fun onGetTemplate(): Template {
+        lastSignature = signature()
         val service = DriveMonitorService.instance
         val song = service?.currentSong()
 
