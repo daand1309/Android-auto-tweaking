@@ -72,6 +72,8 @@ class MainActivity : Activity() {
             NotificationListenerService.requestRebind(ComponentName(this, DriveMonitorService::class.java))
         }
         render()
+        handler.removeCallbacks(homeTick)
+        handler.postDelayed(homeTick, 5000)
         // Quietly look for an update when the app is opened (at most every 6 hours).
         if (prefs.autoUpdateCheck && System.currentTimeMillis() - prefs.lastUpdateCheck > 6 * 60 * 60 * 1000L) {
             checkForUpdate(silent = true)
@@ -87,6 +89,7 @@ class MainActivity : Activity() {
     }
 
     private var page = Page.HOME
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
     private fun go(p: Page) {
         page = p
@@ -161,9 +164,7 @@ class MainActivity : Activity() {
     }
 
     private fun renderHome() {
-        title("Drive Music")
-        val running = DriveMonitorService.instance != null
-        text((if (running) "● Running" else "● Not running") + "   ·   ${prefs.lastCarState}")
+        heroCard()
 
         button("🚗  Drive Mode", accent = true) { startActivity(Intent(this, DriveModeActivity::class.java)) }
         row(
@@ -425,6 +426,79 @@ class MainActivity : Activity() {
         } catch (e: Exception) {
             toast("Couldn't ${when (requestCode) { REQ_EXPORT -> "save"; REQ_INTRO_IMAGE -> "use that image"; else -> "restore" }}: ${e.message}")
         }
+    }
+
+    // ---------------------------------------------------------------- home hero (car + status)
+
+    private val homeTick = object : Runnable {
+        override fun run() {
+            if (page == Page.HOME) render()  // keep now-playing / driving status fresh
+            handler.postDelayed(this, 5000)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        handler.removeCallbacks(homeTick)
+    }
+
+    /** Tesla-style header: car name and status, the car drawn in the theme colour, status tiles around it. */
+    private fun heroCard() {
+        val svc = DriveMonitorService.instance
+        val driving = svc != null && prefs.lastCarState == "Android Auto connected"
+        root.addView(TextView(this).apply {
+            text = "DRIVE MUSIC"; textSize = 11f; letterSpacing = 0.3f; setTextColor(Style.TEXT2)
+            setPadding(dp(4), 0, 0, 0)
+        })
+        root.addView(TextView(this).apply {
+            text = prefs.carName.ifBlank { "My car" }; textSize = 34f; setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Style.TEXT); setPadding(dp(4), 0, 0, 0)
+        })
+        root.addView(TextView(this).apply {
+            text = when {
+                svc == null -> "●  Setup needed"
+                driving -> "●  Driving  ·  Android Auto connected"
+                else -> "●  Parked"
+            }
+            textSize = 14f
+            setTextColor(when { svc == null -> Style.AMBER; driving -> Style.GREEN; else -> Style.TEXT2 })
+            setPadding(dp(4), dp(2), 0, 0)
+        })
+        root.addView(CarHeroView(this).apply {
+            this.driving = driving
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(4) }
+        })
+
+        val song = svc?.currentSong()
+        val weatherFresh = System.currentTimeMillis() - prefs.lastWeatherAt < 3 * 60 * 60 * 1000L
+        val lastMins = Regex("""- (\d+) min""").find(prefs.lastDrive)?.groupValues?.get(1)
+        val tiles = listOf(
+            "♪" to (song?.let { if (it.artist.isNotBlank()) "${it.title} · ${it.artist}" else it.title } ?: "Nothing playing"),
+            "☁" to (if (weatherFresh && prefs.lastWeatherSummary.isNotBlank()) prefs.lastWeatherSummary else "Weather after next drive"),
+            "⏱" to (if (lastMins != null) "Last drive: $lastMins min" else "No drives yet"),
+            "●" to (if (svc != null) "Monitor on" else "Monitor off"),
+        )
+        tiles.chunked(2).forEach { pair ->
+            row(*pair.map { (icon, label) -> statusTile(icon, label) }.toTypedArray())
+        }
+    }
+
+    private fun statusTile(icon: String, label: String) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = android.view.Gravity.CENTER_VERTICAL
+        background = Style.rounded(Style.SURFACE, dp(12).toFloat())
+        setPadding(dp(12), dp(10), dp(12), dp(10))
+        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            setMargins(0, dp(6), dp(6), 0)
+        }
+        addView(TextView(this@MainActivity).apply {
+            text = icon; textSize = 15f; setTextColor(Style.PRIMARY); setPadding(0, 0, dp(8), 0)
+        })
+        addView(TextView(this@MainActivity).apply {
+            text = label; textSize = 13f; setTextColor(Style.TEXT)
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+        })
     }
 
     /** Title row for a sub-page with a back arrow. */
