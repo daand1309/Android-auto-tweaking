@@ -573,7 +573,9 @@ class DriveMonitorService : NotificationListenerService() {
                 }
                 PlaybackState.STATE_PAUSED, PlaybackState.STATE_STOPPED, PlaybackState.STATE_ERROR,
                 PlaybackState.STATE_NONE -> {
-                    if ((prev == PlaybackState.STATE_PLAYING || prev == PlaybackState.STATE_BUFFERING) &&
+                    if (userPausedViaUi) {
+                        // You paused it from the car screen / Drive Mode: not an interruption at all.
+                    } else if ((prev == PlaybackState.STATE_PLAYING || prev == PlaybackState.STATE_BUFFERING) &&
                         pendingPauseRunnable == null && resumeRunnable == null &&
                         SystemClock.elapsedRealtime() >= suppressPauseUntil
                     ) {

@@ -78,6 +78,8 @@
         <activity
             android:name=".DriveModeActivity"
             android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
             android:label="Drive mode"
             android:screenOrientation="fullUser"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
