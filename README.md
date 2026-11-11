@@ -21,6 +21,33 @@ A small Android app (built for a Samsung phone + Android Auto + YouTube Music) t
 
 Supported. Patched builds use a different package name than the official app, so Drive Music finds them automatically (patched builds are preferred over the official one if both are installed). You can check or change the app under **Settings → Change music app**. If MicroG (GmsCore) is installed, it gets its own battery item on the checklist: if Samsung puts MicroG to sleep, the patched app can lose sign-in and stop streaming.
 
+## Phone security (Play Protect / Samsung)
+
+The app is built to be as boring as possible to security scanners:
+
+- **No internet permission**: it physically cannot send data anywhere.
+- **No** overlay, accessibility, location, contacts, SMS, storage or "ignore battery optimisation" permissions.
+- Notification access is only used to control media; notification contents are never read or logged.
+- The only exported components are protected by system-only permissions (notification listener, Quick Settings tile) and the launcher screen.
+
+What you may see when installing, and what to do:
+
+| Prompt | What to do |
+|---|---|
+| **Auto Blocker** blocks the install (Samsung) | Settings → Security and privacy → Auto Blocker → turn off, install, then turn it back on. (Needed again for each update.) |
+| **Play Protect**: "Unsafe app blocked" / "Send app for scanning?" | Tap *Scan app* - it has nothing to flag. If it still asks: *More details → Install anyway*. |
+| Notification access switch is **greyed out / "Restricted setting"** | Settings → Apps → Drive Music → ⋮ (top right) → *Allow restricted settings*, then grant Notification access. The app has an "App info" button for this. |
+| "**Unverified developer**" (Android developer verification, rolling out from late 2026) | Use Android's *advanced flow* for installing unverified apps (one-time, includes a 24 h wait), or install via a computer with `adb install`. |
+
+### Stable signing key (optional, avoids uninstall-before-update)
+
+By default each CI build is signed with a throwaway debug key, so you must uninstall before installing a new build. To fix that, create a keystore once and add these repository secrets (Settings → Secrets and variables → Actions): `KEYSTORE_BASE64` (the `.jks` file, base64-encoded), `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`. Never commit the keystore to the repo.
+
+```
+keytool -genkeypair -v -keystore drive-music.jks -alias drivemusic -keyalg RSA -keysize 4096 -validity 10000
+base64 -w0 drive-music.jks   # paste the output into KEYSTORE_BASE64
+```
+
 ## Install
 
 1. On GitHub open **Actions → Build APK →** the latest successful run → download **DriveMusic-apk** (a zip containing `app-release.apk`).
@@ -30,7 +57,7 @@ Supported. Patched builds use a different package name than the official app, so
 
 ## Your Samsung routine
 
-You can keep your Modes & Routines "open YouTube Music" routine; this app presses play after it opens. Remove any "play/pause media" step from the routine so the two don't fight. If you grant **Display over other apps**, this app can open YouTube Music itself and the routine isn't needed.
+You can keep your Modes & Routines "open YouTube Music" routine; this app presses play after it opens. Remove any "play/pause media" step from the routine so the two don't fight. Keeping the routine is recommended: Android doesn't let background apps open other apps, so the routine opening YouTube Music + this app pressing play is the most reliable combo.
 
 ## When something goes wrong
 

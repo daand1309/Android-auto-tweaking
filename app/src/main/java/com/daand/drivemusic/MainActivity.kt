@@ -24,7 +24,7 @@ import android.widget.Toast
 import androidx.core.app.NotificationManagerCompat
 
 /** Setup checklist, settings and test button. Everything is built in code to keep the project small. */
-@SuppressLint("UseSwitchCompatOrMaterialCode", "SetTextI18n", "BatteryLife")
+@SuppressLint("UseSwitchCompatOrMaterialCode", "SetTextI18n")
 class MainActivity : Activity() {
 
     private lateinit var prefs: Prefs
@@ -72,17 +72,18 @@ class MainActivity : Activity() {
 
         check(
             "1. Notification access (required)",
-            "Lets this app see and control YouTube Music and keeps it running in the background.",
+            "Only used to control YouTube Music and keep this app running - it never reads your notifications. " +
+                "If the switch is greyed out ('Restricted setting'): tap 'App info' → ⋮ (top right) → " +
+                "'Allow restricted settings', then come back and tap 'Open'.",
             hasNotificationAccess(), "Open"
         ) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+        if (!hasNotificationAccess()) button("App info (for 'Allow restricted settings')") { openAppSettings(packageName) }
 
         check(
             "2. This app: battery Unrestricted",
-            "Stops Samsung from putting this app to sleep.",
-            pm.isIgnoringBatteryOptimizations(packageName), "Fix"
-        ) {
-            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
-        }
+            "Stops Samsung from putting this app to sleep. In the page that opens: Battery → Unrestricted.",
+            pm.isIgnoringBatteryOptimizations(packageName), "Open"
+        ) { openAppSettings(packageName) }
 
         val music = prefs.musicPackage
         check(
@@ -109,17 +110,9 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 31) {
             check(
                 "5. Nearby devices (Bluetooth)",
-                "Optional: lets the log show your car's Bluetooth name when it connects/disconnects.",
+                "Optional: only used to show your car's Bluetooth name in the log.",
                 checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED, "Allow"
             ) { requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 1) }
-        }
-
-        check(
-            "6. Display over other apps",
-            "Optional but recommended: lets this app open YouTube Music while the screen is off / you're in Maps.",
-            Settings.canDrawOverlays(this), "Allow"
-        ) {
-            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }
 
         checklistHeader.apply {
@@ -163,6 +156,13 @@ class MainActivity : Activity() {
             }
         }
         button("📄 View / share logs") { startActivity(Intent(this, LogActivity::class.java)) }
+
+        // ---------------- privacy
+        header("Privacy & security")
+        text("• This app has no internet permission: nothing can ever be sent off your phone.\n" +
+            "• It never reads your notifications; notification access is only needed to press play/pause.\n" +
+            "• Logs stay on your phone and are only shared when you tap Share.\n" +
+            "• No overlay, accessibility, location, contacts, SMS or storage permissions.")
 
         // ---------------- manual steps
         header("Things only you can change")

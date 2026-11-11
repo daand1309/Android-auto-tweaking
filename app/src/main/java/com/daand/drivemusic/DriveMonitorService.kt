@@ -112,7 +112,8 @@ class DriveMonitorService : NotificationListenerService() {
                 addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
                 addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
             },
-            ContextCompat.RECEIVER_EXPORTED
+            // Not exported: only the system can deliver these, other apps can't send fake events.
+            ContextCompat.RECEIVER_NOT_EXPORTED
         )
     }
 
@@ -141,6 +142,11 @@ class DriveMonitorService : NotificationListenerService() {
         runCatching { unregisterReceiver(btReceiver) }
         detachYtm()
     }
+
+    // Notification access is only used to get permission to control media sessions.
+    // We deliberately never read, store or log the content of any notification.
+    override fun onNotificationPosted(sbn: android.service.notification.StatusBarNotification?) {}
+    override fun onNotificationRemoved(sbn: android.service.notification.StatusBarNotification?) {}
 
     // ---------------------------------------------------------------- Android Auto
 

@@ -4,9 +4,9 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    <!-- Optional: lets the app open YouTube Music while the phone is in the background. -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Deliberately NOT requested, to keep phone security (Play Protect / Samsung) happy:
+         INTERNET (nothing can ever leave the phone), SYSTEM_ALERT_WINDOW (overlay + notification
+         access is a malware pattern), REQUEST_IGNORE_BATTERY_OPTIMIZATIONS (policy-flagged). -->
 
     <queries>
         <!-- Needed to find patched YouTube Music builds (e.g. Morphe) whose package name we don't know in advance. -->

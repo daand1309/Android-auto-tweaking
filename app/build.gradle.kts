@@ -15,11 +15,23 @@ android {
         versionName = "1.0"
     }
 
+    // Use a real, stable key when the CI secrets are set (see README); otherwise the debug key.
+    val keystoreFile = System.getenv("KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.exists() }
+    signingConfigs {
+        if (keystoreFile != null) {
+            create("stable") {
+                storeFile = keystoreFile
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Signed with the debug key so the APK can be sideloaded straight from CI.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("stable") ?: signingConfigs.getByName("debug")
         }
     }
 
