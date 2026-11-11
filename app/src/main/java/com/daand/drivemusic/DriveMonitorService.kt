@@ -342,6 +342,12 @@ class DriveMonitorService : NotificationListenerService() {
             val prev = lastYtmState
             if (s == prev) return
             lastYtmState = s
+            if (s == PlaybackState.STATE_PLAYING && startRunnable != null) {
+                // Finish the start routine the moment music plays, so it can never
+                // "fight" a pause that happens right after (pause handling deals with that).
+                DriveLog.log("START: success - YouTube Music is playing")
+                cancelStart()
+            }
             if (!carConnected) return
 
             val extra = if (s == PlaybackState.STATE_ERROR) " error='${state.errorMessage}'" else ""
