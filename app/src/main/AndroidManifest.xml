@@ -12,6 +12,9 @@
     <!-- Optional: only used (while the app is open) to set the weather location for the greeting.
          Approximate location only; never tracked in the background. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Optional "Where's my car": save the parked spot when Android Auto disconnects. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Opens Drive Mode on connect via a full-screen-intent notification (no overlay permission). -->
@@ -36,6 +39,10 @@
         <package android:name="app.morphe.android.gms" />
         <package android:name="com.mgoogle.android.gms" />
         <package android:name="com.google.android.projection.gearhead" />
+        <!-- Tracker apps we can open from "Where's my car". -->
+        <package android:name="com.samsung.android.oneconnect" />
+        <package android:name="com.samsung.android.fmm" />
+        <package android:name="com.google.android.apps.adm" />
     </queries>
 
     <application

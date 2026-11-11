@@ -308,6 +308,7 @@ class DriveMonitorService : NotificationListenerService() {
             prefs.lastDrive = java.text.SimpleDateFormat("EEE d MMM HH:mm", java.util.Locale.getDefault()).format(java.util.Date()) +
                 " - ${mins} min, $pausesThisDrive pause(s), $resumesThisDrive auto-resume(s)" +
                 if (lastPauseClue.isNotEmpty()) "\nLast pause: $lastPauseClue" else ""
+            Parking.capture(this)
             cancelStart()
             cancelResume()
             cancelPendingPause()

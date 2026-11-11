@@ -183,10 +183,21 @@ class Prefs(context: Context) {
 
     // ---- backup / restore
 
+    /** Save where the car is when Android Auto disconnects. */
+    var rememberParking: Boolean
+        get() = sp.getBoolean("remember_parking", false)
+        set(v) = sp.edit().putBoolean("remember_parking", v).apply()
+
+    /** Last parked spot as "lat,lon,accuracyMeters,timeMillis" (see [Parking.Spot]); "" = none. */
+    var parkedSpot: String
+        get() = sp.getString("parked_spot", "") ?: ""
+        set(v) = sp.edit().putString("parked_spot", v).apply()
+
     /** Your own choices only - not run-time state like the last drive or update checks. */
     private val notBackedUp = setOf(
         "last_car_state", "last_drive", "last_greeting", "last_weather", "last_weather_at",
         "last_update_check", "notified_update", "update_status", "last_seen_music_app", "last_music_change_at",
+        "parked_spot",
     )
 
     /** All settings as JSON (each value tagged with its type so it restores exactly). */

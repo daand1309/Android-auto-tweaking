@@ -351,6 +351,7 @@ class MainActivity : Activity() {
         header("Privacy")
         text("• Internet only for update checks (GitHub) and weather (Open-Meteo, location rounded to ~10 km).\n" +
             "• Notifications are never read. Logs stay on the phone unless you share them.\n" +
+            "• Where's my car (optional): your parked spot is saved on the phone only, never sent anywhere.\n" +
             "• No overlay, accessibility, contacts, SMS or storage access.")
         button("Open music app") {
             packageManager.getLaunchIntentForPackage(prefs.musicPackage)?.let { startActivity(it) } ?: toast("Music app not installed")
@@ -492,10 +493,67 @@ class MainActivity : Activity() {
             "♪" to (song?.let { if (it.artist.isNotBlank()) "${it.title} · ${it.artist}" else it.title } ?: "Nothing playing"),
             "☁" to (if (weatherFresh && prefs.lastWeatherSummary.isNotBlank()) prefs.lastWeatherSummary else "Weather after next drive"),
             "⏱" to (if (lastMins != null) "Last drive: $lastMins min" else "No drives yet"),
-            "●" to (if (svc != null) "Monitor on" else "Monitor off"),
+            "📍" to (Parking.spot(this)?.let { "Parked ${Parking.whenText(it.time)}" } ?: "Where's my car?"),
         )
         tiles.chunked(2).forEach { pair ->
-            row(*pair.map { (icon, label) -> statusTile(icon, label) }.toTypedArray())
+            row(*pair.map { (icon, label) ->
+                statusTile(icon, label).apply { if (icon == "📍") { background = Style.button(Style.SURFACE, dp(12).toFloat()); setOnClickListener { whereIsMyCar() } } }
+            }.toTypedArray())
+        }
+    }
+
+    // ---------------------------------------------------------------- where's my car
+
+    private fun whereIsMyCar() {
+        val spot = Parking.spot(this)
+        val tracker = Parking.trackerApp(this)
+        val on = prefs.rememberParking && Parking.hasPermission(this) && Parking.hasBackgroundPermission(this)
+        val items = mutableListOf<Pair<String, () -> Unit>>()
+        if (spot != null) items += "🗺  Walk there in Maps" to {
+            try { startActivity(Parking.mapsIntent(spot)) } catch (e: Exception) { toast("No maps app found") }
+        }
+        if (tracker != null) items += "📡  Open ${tracker.second} (tracker)" to { startActivity(tracker.first) }
+        items += (if (on) "Stop remembering where I park" else "📍  Remember where I park") to {
+            if (on) { prefs.rememberParking = false; DriveLog.log("Setting changed: remember parking = off"); render() }
+            else enableParking()
+        }
+        val msg = when {
+            spot != null -> "Saved ${Parking.whenText(spot.time)} when Android Auto disconnected (±${spot.accuracyM.toInt()} m)."
+            on -> "Your car's spot is saved the next time Android Auto disconnects."
+            else -> "Turn this on and the app saves where you parked each time Android Auto disconnects. " +
+                "The spot stays on your phone."
+        } + if (tracker == null) "" else "\n\nYour tracker's live position is only visible in ${tracker.second} - it doesn't share it with other apps."
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(24), dp(8), dp(24), 0) }
+        val dialog = AlertDialog.Builder(this).setTitle("Where's my car?").setView(box)
+            .setNegativeButton("Close", null).create()
+        box.addView(TextView(this).apply { text = msg; textSize = 14f; setPadding(0, 0, 0, dp(8)) })
+        items.forEach { (label, action) ->
+            box.addView(TextView(this).apply {
+                text = label; textSize = 16f; setTextColor(Style.PRIMARY); setPadding(0, dp(12), 0, dp(12))
+                setOnClickListener { dialog.dismiss(); action() }
+            })
+        }
+        dialog.show()
+    }
+
+    /** Fine location first, then "Allow all the time" (Android asks for those separately). */
+    private fun enableParking() {
+        when {
+            !Parking.hasPermission(this) ->
+                requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), REQ_PARKING)
+            !Parking.hasBackgroundPermission(this) ->
+                AlertDialog.Builder(this).setTitle("One more step")
+                    .setMessage("The car disconnects while the app is in the background, so on the next screen choose " +
+                        "\"Allow all the time\". The location is only read at that moment, and it stays on your phone.")
+                    .setPositiveButton("Continue") { _, _ ->
+                        requestPermissions(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION), REQ_PARKING)
+                    }.setNegativeButton("Cancel", null).show()
+            else -> {
+                prefs.rememberParking = true
+                DriveLog.log("Setting changed: remember parking = on")
+                toast("I'll remember where you park")
+                render()
+            }
         }
     }
 
@@ -737,6 +795,9 @@ class MainActivity : Activity() {
         if (requestCode == REQ_LOCATION) {
             if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) useMyLocation()
             else toast("No problem - use 'Type a city' instead")
+        } else if (requestCode == REQ_PARKING) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) enableParking()
+            else toast("Location wasn't allowed - parking spot can't be saved")
         } else render()
     }
 
@@ -944,6 +1005,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQ_LOCATION = 3
+        private const val REQ_PARKING = 14
         private const val REQ_EXPORT = 10
         private const val REQ_IMPORT = 11
         private const val REQ_INTRO_IMAGE = 12
