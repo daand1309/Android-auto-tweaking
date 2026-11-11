@@ -66,265 +66,307 @@ class MainActivity : Activity() {
         }
     }
 
+    // ---------------------------------------------------------------- pages
+
+    private enum class Page(val title: String) {
+        HOME("Drive Music"), SETUP("Setup"), MUSIC("Music & driving"), GREETING("Welcome greeting"),
+        VOICE("Voice"), DRIVE_MODE("Drive Mode"), SOUND("Sound"), UPDATES("Updates"), HELP("Help & privacy")
+    }
+
+    private var page = Page.HOME
+
+    private fun go(p: Page) {
+        page = p
+        render()
+        scroll.post { scroll.scrollTo(0, 0) }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        when (page) {
+            Page.HOME -> @Suppress("DEPRECATION") super.onBackPressed()
+            Page.VOICE -> go(Page.GREETING)
+            else -> go(Page.HOME)
+        }
+    }
+
+    private class SetupItem(val label: String, val help: String, val ok: Boolean, val action: String, val onClick: () -> Unit)
+
+    /** Everything the app needs from the phone, used both for the home-screen badge and the Setup page. */
+    private fun setupItems(): List<SetupItem> {
+        val pm = getSystemService(PowerManager::class.java)
+        val music = prefs.musicPackage
+        val items = mutableListOf(
+            SetupItem("Notification access", "Required - lets the app control your music.",
+                hasNotificationAccess(), "Open") { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
+            SetupItem("Drive Music: battery Unrestricted", "Battery → Unrestricted.",
+                pm.isIgnoringBatteryOptimizations(packageName), "Open") { openAppSettings(packageName) },
+            SetupItem("${MusicApps.label(this, music)}: battery Unrestricted", "Battery → Unrestricted.",
+                pm.isIgnoringBatteryOptimizations(music), "Open") { openAppSettings(music) },
+            SetupItem("Android Auto: battery Unrestricted", "Battery → Unrestricted.",
+                pm.isIgnoringBatteryOptimizations(DriveMonitorService.ANDROID_AUTO), "Open") { openAppSettings(DriveMonitorService.ANDROID_AUTO) },
+        )
+        MusicApps.findMicroG(this)?.let { mg ->
+            items += SetupItem("MicroG: battery Unrestricted", "Keeps patched YouTube Music signed in.",
+                pm.isIgnoringBatteryOptimizations(mg), "Open") { openAppSettings(mg) }
+        }
+        if (Build.VERSION.SDK_INT >= 33) {
+            items += SetupItem("Notifications", "For Drive Mode pop-up and update alerts.",
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED, "Allow") {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2)
+            }
+        }
+        if (Build.VERSION.SDK_INT >= 31) {
+            items += SetupItem("Nearby devices (optional)", "Shows your car's Bluetooth name in the log.",
+                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED, "Allow") {
+                requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 1)
+            }
+        }
+        return items
+    }
+
     private fun render() {
         val y = scroll.scrollY  // keep scroll position when re-drawing after a button tap
         root.removeAllViews()
         toFix = 0
-        val pm = getSystemService(PowerManager::class.java)
+        when (page) {
+            Page.HOME -> renderHome()
+            Page.SETUP -> renderSetup()
+            Page.MUSIC -> renderMusic()
+            Page.GREETING -> renderGreeting()
+            Page.VOICE -> renderVoice()
+            Page.DRIVE_MODE -> renderDriveMode()
+            Page.SOUND -> renderSound()
+            Page.UPDATES -> renderUpdates()
+            Page.HELP -> renderHelp()
+        }
+        scroll.post { scroll.scrollTo(0, y) }
+    }
 
+    private fun renderHome() {
         title("Drive Music")
-        text("Starts YouTube Music (official or patched, e.g. Morphe) when Android Auto connects, resumes it if it pauses, and logs what happened so problems can be fixed.")
-
-        // ---------------- status
-        header("Status")
         val running = DriveMonitorService.instance != null
-        text((if (running) "✅ Monitor running" else "❌ Monitor NOT running - grant Notification access below") +
-            "\nCar: ${prefs.lastCarState}" +
-            if (prefs.lastDrive.isNotEmpty()) "\nLast drive: ${prefs.lastDrive}" else "")
-        button("🚗 Open Drive Mode (big buttons, full screen)", accent = true) { startActivity(Intent(this, DriveModeActivity::class.java)) }
-        switch("Auto-open Drive Mode when Android Auto connects", prefs.autoOpenDriveMode) { prefs.autoOpenDriveMode = it; render() }
-        if (prefs.autoOpenDriveMode) {
-            text("For it to pop up by itself (not just as a tap notification), allow full-screen notifications for Drive Music.")
-            if (Build.VERSION.SDK_INT >= 34) button("Allow full-screen notifications") {
-                try { startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:$packageName"))) }
-                catch (e: Exception) { openAppSettings(packageName) }
-            }
-        }
-        val checklistHeader = TextView(this)
-        root.addView(checklistHeader)
+        text((if (running) "● Running" else "● Not running") + "   ·   ${prefs.lastCarState}")
 
-        check(
-            "1. Notification access (required)",
-            "Only used to control YouTube Music and keep this app running - it never reads your notifications. " +
-                "If the switch is greyed out ('Restricted setting'): tap 'App info' → ⋮ (top right) → " +
-                "'Allow restricted settings', then come back and tap 'Open'.",
-            hasNotificationAccess(), "Open"
-        ) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
-        if (!hasNotificationAccess()) button("App info (for 'Allow restricted settings')") { openAppSettings(packageName) }
+        button("🚗  Drive Mode", accent = true) { startActivity(Intent(this, DriveModeActivity::class.java)) }
+        row(
+            quickBtn("▶  Start music") {
+                val svc = DriveMonitorService.instance
+                if (svc == null) toast("Finish setup first") else { svc.startMusic("manual test button", requireCar = false); toast("Starting...") }
+            },
+            quickBtn("🔊  Greeting") {
+                toast("Speaking...")
+                WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false)
+            },
+        )
 
-        check(
-            "2. This app: battery Unrestricted",
-            "Stops Samsung from putting this app to sleep. In the page that opens: Battery → Unrestricted.",
-            pm.isIgnoringBatteryOptimizations(packageName), "Open"
-        ) { openAppSettings(packageName) }
+        availableUpdate?.let { upd -> navRow("⬇  Update ${upd.versionName} available", "Tap to install", highlight = true) { go(Page.UPDATES) } }
+        val missing = setupItems().count { !it.ok && !it.label.contains("optional") }
+        if (missing > 0) navRow("⚠  Setup: $missing step(s) left", "Needed for the app to work properly", warn = true) { go(Page.SETUP) }
 
-        val music = prefs.musicPackage
-        check(
-            "3. ${MusicApps.label(this, music)}: battery Unrestricted",
-            "In the page that opens: Battery → Unrestricted.",
-            pm.isIgnoringBatteryOptimizations(music), "Open"
-        ) { openAppSettings(music) }
-
-        val microG = MusicApps.findMicroG(this)
-        if (microG != null) {
-            check(
-                "3b. MicroG (${MusicApps.label(this, microG)}): battery Unrestricted",
-                "Patched YouTube Music needs MicroG to stay signed in and stream. If Samsung puts it to sleep, music can stop.",
-                pm.isIgnoringBatteryOptimizations(microG), "Open"
-            ) { openAppSettings(microG) }
-        }
-
-        check(
-            "4. Android Auto: battery Unrestricted",
-            "In the page that opens: Battery → Unrestricted.",
-            pm.isIgnoringBatteryOptimizations(DriveMonitorService.ANDROID_AUTO), "Open"
-        ) { openAppSettings(DriveMonitorService.ANDROID_AUTO) }
-
-        if (Build.VERSION.SDK_INT >= 31) {
-            check(
-                "5. Nearby devices (Bluetooth)",
-                "Optional: only used to show your car's Bluetooth name in the log.",
-                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED, "Allow"
-            ) { requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 1) }
-        }
-
-        checklistHeader.apply {
-            text = if (toFix == 0) "Setup checklist - all done ✅" else "Setup checklist - $toFix to fix ⚠️"
-            textSize = 19f; setTypeface(typeface, Typeface.BOLD); setPadding(0, dp(20), 0, dp(6))
-        }
-
-        if (Build.VERSION.SDK_INT >= 33) {
-            check(
-                "7. Notifications",
-                "Optional: only used to tell you when an app update is available.",
-                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED, "Allow"
-            ) { requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2) }
-        }
-
-        // ---------------- settings
         header("Settings")
+        navRow("Music & driving", "Auto-start, auto-resume, volume") { go(Page.MUSIC) }
+        navRow("Welcome greeting", if (prefs.greetingEnabled) "On · ${prefs.greetingName.ifBlank { "no name set" }}" else "Off") { go(Page.GREETING) }
+        navRow("Drive Mode", if (prefs.autoOpenDriveMode) "Opens when the car connects" else "Big buttons for your phone holder") { go(Page.DRIVE_MODE) }
+        navRow("Sound", "Equalizer and sound settings") { go(Page.SOUND) }
+        if (missing == 0) navRow("Setup", "All done ✓") { go(Page.SETUP) }
+
+        header("More")
+        navRow("Updates", "Version ${packageManager.getPackageInfo(packageName, 0).versionName}") { go(Page.UPDATES) }
+        navRow("Logs", "What happened on your drives") { startActivity(Intent(this, LogActivity::class.java)) }
+        navRow("Help & privacy", "Car screen setup, tips, what data is used") { go(Page.HELP) }
+        if (prefs.lastDrive.isNotEmpty()) text("Last drive: ${prefs.lastDrive}")
+    }
+
+    private fun renderSetup() {
+        pageHeader()
+        setupItems().forEach { check(it.label, it.help, it.ok, it.action, it.onClick) }
+        if (!hasNotificationAccess()) {
+            text("Switch greyed out? App info → ⋮ → Allow restricted settings.")
+            button("App info") { openAppSettings(packageName) }
+        }
+    }
+
+    private fun renderMusic() {
+        pageHeader()
+        val music = prefs.musicPackage
         val installed = MusicApps.isInstalled(packageManager, music)
-        text((if (installed) "🎵 " else "❌ ") + "Music app: ${MusicApps.label(this, music)}\n$music" +
-            if (music != MusicApps.OFFICIAL_YTM && installed) "\n(patched build detected - good)" else "")
-        button("Change music app") { pickMusicApp() }
-        switch("Start music when Android Auto connects", prefs.autoStart) { prefs.autoStart = it }
-        switch("Auto-resume if music pauses while driving", prefs.autoResume) { prefs.autoResume = it }
-        stepper("Resume after", "${prefs.resumeDelaySec}s",
-            { prefs.resumeDelaySec = (prefs.resumeDelaySec - 2).coerceAtLeast(2) },
-            { prefs.resumeDelaySec = (prefs.resumeDelaySec + 2).coerceAtMost(60) })
-        text("Never resumes during calls, while the Assistant talks, or while another app plays. " +
-            "If you pause again within a minute of an auto-resume, it takes the hint and stays off until the next drive. " +
-            "Tip: add the 'Auto-resume' Quick Settings tile to switch it on/off quickly.")
+        stepperLike((if (installed) "" else "❌ ") + "Music app: ${MusicApps.label(this, music)}", "Change") { pickMusicApp() }
+        switch("Start music when the car connects", prefs.autoStart) { prefs.autoStart = it }
         stepper("Wait after connecting", "${prefs.startDelaySec}s",
             { prefs.startDelaySec = (prefs.startDelaySec - 1).coerceAtLeast(0) },
             { prefs.startDelaySec = (prefs.startDelaySec + 1).coerceAtMost(30) })
+        switch("Auto-resume after a pause", prefs.autoResume) { prefs.autoResume = it; render() }
+        if (prefs.autoResume) {
+            stepper("Resume after", "${prefs.resumeDelaySec}s",
+                { prefs.resumeDelaySec = (prefs.resumeDelaySec - 2).coerceAtLeast(2) },
+                { prefs.resumeDelaySec = (prefs.resumeDelaySec + 2).coerceAtMost(60) })
+            text("Never during calls, the Assistant, or other apps.")
+        }
         switch("Pause music when leaving the car", prefs.pauseOnDisconnect) { prefs.pauseOnDisconnect = it }
         switch("Set media volume when connecting", prefs.setVolumeOnConnect) { prefs.setVolumeOnConnect = it; render() }
         if (prefs.setVolumeOnConnect) {
             stepper("Volume", "${prefs.connectVolumePct}%",
                 { prefs.connectVolumePct = (prefs.connectVolumePct - 10).coerceAtLeast(10) },
                 { prefs.connectVolumePct = (prefs.connectVolumePct + 10).coerceAtMost(100) })
-            text("Note: with some cars the car's own volume knob is used and this has no effect.")
         }
+    }
 
-        // ---------------- greeting
-        header("Welcome greeting")
-        switch("Say a welcome when Android Auto connects", prefs.greetingEnabled) { prefs.greetingEnabled = it; render() }
-        if (prefs.greetingEnabled) {
-            val name = prefs.greetingName.ifBlank { "(not set)" }
-            stepperLike("Name: $name", "Change") { askName() }
-            stepperLike("Birthday: ${prefs.birthday.ifBlank { "(none)" }}", "Set") { askBirthday() }
-            switch("Speak in Dutch (Nederlands)", prefs.greetingDutch) { prefs.greetingDutch = it }
-            switch("Say which song will play", prefs.announceSong) { prefs.announceSong = it }
-            switch("Include the weather", prefs.weatherEnabled) { prefs.weatherEnabled = it; render() }
-            if (prefs.weatherEnabled) {
-                val place = when {
-                    prefs.weatherPlace.isNotBlank() -> prefs.weatherPlace
-                    !prefs.weatherLat.isNaN() -> "your location"
-                    else -> "(not set)"
-                }
-                switch("Include road conditions (ice, fog, rain, wind, darkness)", prefs.roadConditionsEnabled) { prefs.roadConditionsEnabled = it }
-                text("Weather for: $place")
-                row(
-                    Button(this).apply { text = "📍 Use my location"; isAllCaps = false; setOnClickListener { useMyLocation() } },
-                    Button(this).apply { text = "🔎 Type a city"; isAllCaps = false; setOnClickListener { askCity() } },
-                )
-            }
-            // ---- voice & pronunciation
-            text("Voice & pronunciation")
-            stepperLike("Pronounce name as: ${prefs.namePronunciation.ifBlank { "(same as name)" }}", "Change") { askPronunciation() }
-            stepperLike("Voice: ${prefs.voiceName.ifBlank { "automatic (best available)" }}", "Choose") { pickVoice() }
-            stepper("Speed", "%.2fx".format(prefs.speechRate),
-                { prefs.speechRate = (prefs.speechRate - 0.05f).coerceAtLeast(0.6f) },
-                { prefs.speechRate = (prefs.speechRate + 0.05f).coerceAtMost(1.4f) })
-            stepper("Pitch", "%.2f".format(prefs.speechPitch),
-                { prefs.speechPitch = (prefs.speechPitch - 0.05f).coerceAtLeast(0.6f) },
-                { prefs.speechPitch = (prefs.speechPitch + 0.05f).coerceAtMost(1.4f) })
-            button("▶ Preview voice") { previewVoice() }
-            if (!MusicApps.isInstalled(packageManager, VoicePicker.GOOGLE_TTS)) {
-                text("Tip: for a much more natural voice, install 'Speech Services by Google' and choose it as the voice engine.")
-                button("Get Speech Services by Google") {
-                    try {
-                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${VoicePicker.GOOGLE_TTS}")))
-                    } catch (e: Exception) {
-                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=${VoicePicker.GOOGLE_TTS}")))
-                    }
-                }
-            }
-            button("Download better voices (phone speech settings)") {
-                try { startActivity(Intent("com.android.settings.TTS_SETTINGS")) } catch (e: Exception) { toast("Open Settings → General management → Text-to-speech") }
-            }
-
-            button("🔊 Test greeting now", accent = true) {
-                toast("Speaking... turn up the media volume")
-                WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false)
-            }
-            text("The greeting plays before your music starts (not again if you reconnect within 10 minutes).")
+    private fun renderGreeting() {
+        pageHeader()
+        switch("Welcome me when the car connects", prefs.greetingEnabled) { prefs.greetingEnabled = it; render() }
+        if (!prefs.greetingEnabled) return
+        button("🔊  Test greeting", accent = true) {
+            toast("Speaking...")
+            WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false)
         }
-
-        // ---------------- actions
-        header("Test & logs")
-        button("▶ Test: start YouTube Music now", accent = true) {
-            val svc = DriveMonitorService.instance
-            if (svc == null) toast("Grant Notification access first") else {
-                svc.startMusic("manual test button", requireCar = false)
-                toast("Trying... check the logs")
+        stepperLike("Name: ${prefs.greetingName.ifBlank { "not set" }}", "Change") { askName() }
+        stepperLike("Birthday: ${prefs.birthday.ifBlank { "none" }}", "Set") { askBirthday() }
+        switch("Speak Dutch", prefs.greetingDutch) { prefs.greetingDutch = it }
+        switch("Say which song plays first", prefs.announceSong) { prefs.announceSong = it }
+        switch("Weather", prefs.weatherEnabled) { prefs.weatherEnabled = it; render() }
+        if (prefs.weatherEnabled) {
+            switch("Road conditions", prefs.roadConditionsEnabled) { prefs.roadConditionsEnabled = it }
+            val place = when {
+                prefs.weatherPlace.isNotBlank() -> prefs.weatherPlace
+                !prefs.weatherLat.isNaN() -> "your location"
+                else -> "not set"
+            }
+            stepperLike("Location: $place", "Change") {
+                AlertDialog.Builder(this).setTitle("Weather location")
+                    .setItems(arrayOf("📍  Use my location", "🔎  Type a city")) { _, i -> if (i == 0) useMyLocation() else askCity() }
+                    .show()
             }
         }
-        button("📄 View / share logs") { startActivity(Intent(this, LogActivity::class.java)) }
+        navRow("Voice", prefs.voiceName.ifBlank { "Automatic" }) { go(Page.VOICE) }
+    }
 
-        // ---------------- updates
-        header("Updates")
+    private fun renderVoice() {
+        pageHeader(back = Page.GREETING)
+        button("▶  Preview voice", accent = true) { previewVoice() }
+        stepperLike("Voice: ${prefs.voiceName.ifBlank { "automatic" }}", "Choose") { pickVoice() }
+        stepperLike("Say my name as: ${prefs.namePronunciation.ifBlank { "as written" }}", "Change") { askPronunciation() }
+        stepper("Speed", "%.2fx".format(prefs.speechRate),
+            { prefs.speechRate = (prefs.speechRate - 0.05f).coerceAtLeast(0.6f) },
+            { prefs.speechRate = (prefs.speechRate + 0.05f).coerceAtMost(1.4f) })
+        stepper("Pitch", "%.2f".format(prefs.speechPitch),
+            { prefs.speechPitch = (prefs.speechPitch - 0.05f).coerceAtLeast(0.6f) },
+            { prefs.speechPitch = (prefs.speechPitch + 0.05f).coerceAtMost(1.4f) })
+        if (!MusicApps.isInstalled(packageManager, VoicePicker.GOOGLE_TTS)) {
+            button("Get a better voice (Google)") {
+                try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${VoicePicker.GOOGLE_TTS}"))) }
+                catch (e: Exception) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=${VoicePicker.GOOGLE_TTS}"))) }
+            }
+        }
+        button("Download more voices") {
+            try { startActivity(Intent("com.android.settings.TTS_SETTINGS")) } catch (e: Exception) { toast("Settings → General management → Text-to-speech") }
+        }
+    }
+
+    private fun renderDriveMode() {
+        pageHeader()
+        button("🚗  Open Drive Mode", accent = true) { startActivity(Intent(this, DriveModeActivity::class.java)) }
+        switch("Open automatically when the car connects", prefs.autoOpenDriveMode) { prefs.autoOpenDriveMode = it; render() }
+        if (prefs.autoOpenDriveMode) {
+            text("Pops up when the phone is locked; otherwise shows a tap banner.")
+            if (Build.VERSION.SDK_INT >= 34) button("Allow full-screen pop-up") {
+                try { startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:$packageName"))) }
+                catch (e: Exception) { openAppSettings(packageName) }
+            }
+        }
+        switch("Intro animation", prefs.showSplash) { prefs.showSplash = it; render() }
+        if (prefs.showSplash) stepperLike("Intro text: ${prefs.carName.ifBlank { "none" }}", "Change") {
+            askText("Text shown in the intro", "e.g. ASX", prefs.carName) { prefs.carName = it.take(12); render() }
+        }
+    }
+
+    private fun renderSound() {
+        pageHeader()
+        button("🎚  Open equalizer", accent = true) { openEqualizer() }
+        button("Phone sound settings") {
+            try { startActivity(Intent(Settings.ACTION_SOUND_SETTINGS)) } catch (e: Exception) { toast("Open Settings → Sounds") }
+        }
+        text("Music too quiet? Music & driving → Set media volume when connecting.")
+        text("Quiet calls? Turn on VoLTE (Settings → Connections → Mobile networks) and raise the volume during the call.")
+    }
+
+    private fun renderUpdates() {
+        pageHeader()
         val version = packageManager.getPackageInfo(packageName, 0).versionName
-        text("Installed version: $version" +
+        text("Installed: $version" +
             (if (updateMessage.isNotEmpty()) "\n$updateMessage" else "") +
             (if (prefs.updateStatus.isNotEmpty() && updateMessage.isEmpty()) "\nLast update: ${prefs.updateStatus}" else ""))
         val upd = availableUpdate
         if (upd != null) {
-            button(if (updateBusy) "Downloading..." else "⬇ Install version ${upd.versionName}") { if (!updateBusy) installUpdate(upd) }
-            if (upd.notes.isNotBlank()) text("What's new:\n" + upd.notes.take(600))
+            button(if (updateBusy) "Downloading..." else "⬇  Install ${upd.versionName}", accent = true) { if (!updateBusy) installUpdate(upd) }
+            if (upd.notes.isNotBlank()) text(upd.notes.take(400))
         }
-        button(if (updateBusy) "Working..." else "Check for updates now") { if (!updateBusy) checkForUpdate(silent = false) }
-        switch("Check for updates automatically (daily, never while driving)", prefs.autoUpdateCheck) { prefs.autoUpdateCheck = it }
+        button(if (updateBusy) "Working..." else "Check for updates") { if (!updateBusy) checkForUpdate(silent = false) }
+        switch("Check automatically (daily)", prefs.autoUpdateCheck) { prefs.autoUpdateCheck = it }
+    }
 
-        // ---------------- privacy
-        header("Privacy & security")
-        text("• Internet is only used to check this app's own GitHub page for updates (turn off above). " +
-            "No data about you, your music or your logs is ever sent.\n" +
-            "• Updates are only installed after a checksum and signature check, and Android always asks you first.\n" +
-            "• It never reads your notifications; notification access is only needed to press play/pause.\n" +
-            "• Weather: only your approximate location (rounded to ~10 km) is sent to Open-Meteo, a free weather service, " +
-            "when the greeting plays. Your location is never tracked in the background.\n" +
-            "• Logs stay on your phone and are only shared when you tap Share.\n" +
-            "• No overlay, accessibility, location, contacts, SMS or storage permissions.")
-
-        // ---------------- manual steps
-        header("Drive Music on the car screen")
-        text(
-            "There's now a Drive Music screen on the Android Auto display (now playing, status, and Play / Welcome / " +
-                "Auto-resume buttons). To switch it on, once:\n" +
-                "Android Auto → Settings → tap 'Version' 10 times → ⋮ (top right) → Developer settings → turn on 'Unknown sources'.\n" +
-                "Then Drive Music appears in the car's app grid. (This is personal/developer mode — the screen uses only " +
-                "Android Auto's safety-approved buttons and lists.)"
-        )
-
-        // ---------------- audio
-        header("Audio & sound")
-        text("The app can't process other apps' audio or change hands-free call quality (that's the Bluetooth " +
-            "Hands-Free Profile, handled by the phone and car). But your phone's own equalizer affects everything, " +
-            "which is the best lever for simple car speakers.")
-        button("🎚 Open equalizer", accent = true) { openEqualizer() }
-        button("Phone sound settings") {
-            try { startActivity(Intent(Settings.ACTION_SOUND_SETTINGS)) } catch (e: Exception) { toast("Open Settings → Sounds") }
-        }
-        text("Tips:\n" +
-            "• Music too quiet in the car? Turn on 'Set media volume when connecting' above.\n" +
-            "• Quiet/robotic hands-free calls: enable HD Voice / VoLTE (Settings → Mobile network), make sure Bluetooth " +
-            "wideband/HD audio is on, and raise the volume during the call.\n" +
-            "• The car head unit may have its own bass/treble/balance settings — worth a look.\n" +
-            "• On Samsung, Dolby Atmos and the Equalizer live in Settings → Sounds and vibration → Sound quality and effects.")
-
-        // ---------------- drive mode intro
-        header("Drive Mode intro")
-        switch("Show the ${prefs.carName} intro animation", prefs.showSplash) { prefs.showSplash = it }
-        stepperLike("Car name: ${prefs.carName.ifBlank { "(none)" }}", "Change") {
-            askText("Name shown in the intro", "e.g. ASX", prefs.carName) { prefs.carName = it.take(12); render() }
-        }
-        text("An original animated intro shown when Drive Mode opens (not Mitsubishi's badge — that's their trademark). " +
-            "It plays on the phone, not the car's boot screen.")
-
-        header("Things only you can change")
-        text(
-            "• Samsung: Settings → Battery → Background usage limits → make sure YouTube Music, Android Auto and Drive Music " +
-                "are NOT in 'Sleeping apps' or 'Deep sleeping apps'. Add them to 'Never sleeping apps'.\n\n" +
-                "• Samsung Modes & Routines: you can keep your 'open YouTube Music' routine - this app will press play after it opens. " +
-                "Remove any 'Play/pause media' step from the routine so they don't fight.\n\n" +
-                "• YouTube Music → Settings → Downloads & storage → turn on Smart downloads, and download your driving playlists " +
-                "(stops pauses in areas with no signal). Make sure 'Stream via Wi-Fi only' is OFF.\n\n" +
-                "• YouTube Music → Settings → General → 'Remind me to take a break' → OFF.\n\n" +
-                "• Android Auto settings → turn off notification sounds / message read-outs if logs show NOTIFICATION or ASSISTANT pauses.\n\n" +
-                "• If logs show 'GOOGLE ASSISTANT' just before pauses, 'Hey Google' is being triggered by road noise: " +
-                "Google app → Settings → Google Assistant → Hey Google & Voice Match → turn off or lower sensitivity.\n\n" +
-                "• Patched YouTube Music (Morphe/ReVanced): keep MicroG updated and signed in, and set it to Unrestricted battery too. " +
-                "If the app ever disappears from the car screen: Android Auto settings → tap 'Version' 10 times → ⋮ → Developer settings → " +
-                "turn on 'Unknown sources'.\n\n" +
-                "• Wired Android Auto: if the logs show Bluetooth/car disconnects, try a different short USB cable."
-        )
+    private fun renderHelp() {
+        pageHeader()
+        header("Car screen")
+        text("Android Auto → Settings → tap Version 10× → ⋮ → Developer settings → Unknown sources on. " +
+            "Then Launcher aanpassen → tick Drive Music.")
+        header("If music pauses")
+        text("• Samsung: put YouTube Music, Android Auto, MicroG and Drive Music in 'Never sleeping apps'.\n" +
+            "• YouTube Music: turn on Smart downloads; turn off 'Remind me to take a break'.\n" +
+            "• Logs show GOOGLE ASSISTANT before pauses? Lower 'Hey Google' sensitivity.\n" +
+            "• Wired Android Auto dropping? Try a short, good USB cable.")
+        header("Privacy")
+        text("• Internet only for update checks (GitHub) and weather (Open-Meteo, location rounded to ~10 km).\n" +
+            "• Notifications are never read. Logs stay on the phone unless you share them.\n" +
+            "• No overlay, accessibility, contacts, SMS or storage access.")
         button("Open music app") {
-            packageManager.getLaunchIntentForPackage(prefs.musicPackage)?.let { startActivity(it) }
-                ?: toast("Music app not installed")
+            packageManager.getLaunchIntentForPackage(prefs.musicPackage)?.let { startActivity(it) } ?: toast("Music app not installed")
         }
-        scroll.post { scroll.scrollTo(0, y) }
+    }
+
+    /** Title row for a sub-page with a back arrow. */
+    private fun pageHeader(back: Page = Page.HOME) = root.addView(TextView(this).apply {
+        text = "‹  ${page.title}"; textSize = 24f; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT)
+        setPadding(dp(4), dp(4), 0, dp(14))
+        setOnClickListener { go(back) }
+    })
+
+    /** Menu row: title + short subtitle, opens something when tapped. */
+    private fun navRow(title: String, subtitle: String, highlight: Boolean = false, warn: Boolean = false, onClick: () -> Unit) =
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            background = Style.button(
+                when { highlight -> 0xFF1D3A6B.toInt(); warn -> 0xFF4A3510.toInt(); else -> Style.SURFACE }, dp(14).toFloat()
+            )
+            setPadding(dp(16), dp(14), dp(14), dp(14))
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also {
+                it.topMargin = dp(8); layoutParams = it
+            }
+            isClickable = true
+            setOnClickListener { onClick() }
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(TextView(this@MainActivity).apply {
+                    text = title; textSize = 16f; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT)
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = subtitle; textSize = 13f; setTextColor(Style.TEXT2); setPadding(0, dp(2), 0, 0)
+                })
+            })
+            addView(TextView(this@MainActivity).apply { text = "›"; textSize = 24f; setTextColor(Style.TEXT2) })
+        })
+
+    /** Half-width button for the home screen's quick actions. */
+    private fun quickBtn(label: String, onClick: () -> Unit) = Button(this).apply {
+        text = label; isAllCaps = false; textSize = 15f; setTextColor(Style.TEXT)
+        background = Style.button(Style.SURFACE2, dp(14).toFloat()); stateListAnimator = null
+        setPadding(dp(12), dp(14), dp(12), dp(14))
+        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            setMargins(0, dp(6), dp(6), 0)
+        }
+        setOnClickListener { onClick() }
     }
 
     // ---------------------------------------------------------------- greeting settings
