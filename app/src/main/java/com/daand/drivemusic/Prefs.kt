@@ -163,6 +163,15 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("show_splash", true)
         set(v) = sp.edit().putBoolean("show_splash", v).apply()
 
+    /** Music app + version seen on the previous drive, to spot Morphe updates/renames. */
+    var lastSeenMusicApp: String
+        get() = sp.getString("last_seen_music_app", "") ?: ""
+        set(v) = sp.edit().putString("last_seen_music_app", v).apply()
+
+    var lastMusicChangeAt: Long
+        get() = sp.getLong("last_music_change_at", 0L)
+        set(v) = sp.edit().putLong("last_music_change_at", v).apply()
+
     var lastCarState: String
         get() = sp.getString("last_car_state", "unknown") ?: "unknown"
         set(v) = sp.edit().putString("last_car_state", v).apply()
@@ -172,7 +181,7 @@ class Prefs(context: Context) {
     /** Your own choices only - not run-time state like the last drive or update checks. */
     private val notBackedUp = setOf(
         "last_car_state", "last_drive", "last_greeting", "last_weather", "last_weather_at",
-        "last_update_check", "notified_update", "update_status",
+        "last_update_check", "notified_update", "update_status", "last_seen_music_app", "last_music_change_at",
     )
 
     /** All settings as JSON (each value tagged with its type so it restores exactly). */

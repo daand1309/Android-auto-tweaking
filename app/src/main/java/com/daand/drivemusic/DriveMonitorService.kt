@@ -371,6 +371,9 @@ class DriveMonitorService : NotificationListenerService() {
                 tick++
                 if (tick >= START_MAX_TICKS) {
                     DriveLog.log("START: FAILED - YouTube Music not playing after ${START_MAX_TICKS * START_TICK_MS / 1000}s (state=${stateName(ytm?.playbackState?.state)})")
+                    if (System.currentTimeMillis() - prefs.lastMusicChangeAt < 7 * 24 * 3600_000L) {
+                        DriveLog.log("START: the music app was updated/changed recently - that may have changed how it starts; send this log")
+                    }
                     startRunnable = null
                 } else {
                     handler.postDelayed(this, START_TICK_MS)
@@ -752,7 +755,27 @@ class DriveMonitorService : NotificationListenerService() {
         return clues
     }
 
+    /**
+     * Notices when the music app was updated or replaced since the last drive (e.g. a Morphe update)
+     * and says so in the log - if playback misbehaves right after, that's the first suspect.
+     */
+    private fun checkMusicAppChanged() {
+        val pkg = musicPkg
+        val now = "$pkg ${MusicApps.versionOf(this, pkg)}"
+        val before = prefs.lastSeenMusicApp
+        if (!MusicApps.isInstalled(packageManager, pkg)) {
+            DriveLog.log("!!! MUSIC APP NOT FOUND: $pkg isn't installed - open Drive Music → Music & driving and pick your music app")
+        } else if (before.isNotEmpty() && before != now) {
+            val (oldPkg, oldVer) = before.split(" ", limit = 2).let { it[0] to it.getOrElse(1) { "?" } }
+            DriveLog.log(if (oldPkg != pkg) "Music app CHANGED: $oldPkg -> $pkg (the old one was removed or renamed)"
+                else "Music app UPDATED: $oldVer -> ${now.substringAfter(' ')} (if anything misbehaves now, this update is the likely cause)")
+            prefs.lastMusicChangeAt = System.currentTimeMillis()
+        }
+        prefs.lastSeenMusicApp = now
+    }
+
     private fun logEnvironment() {
+        checkMusicAppChanged()
         val pm = getSystemService(android.os.PowerManager::class.java)
         fun ver(pkg: String) = try { packageManager.getPackageInfo(pkg, 0).versionName } catch (e: Exception) { "not installed" }
         val microG = MusicApps.findMicroG(this)

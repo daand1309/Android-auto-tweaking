@@ -177,6 +177,9 @@ class MainActivity : Activity() {
             },
         )
 
+        if (!MusicApps.isInstalled(packageManager, prefs.musicPackage)) {
+            navRow("⚠  Music app not found", "Tap to pick the app that plays your music", warn = true) { pickMusicApp() }
+        }
         availableUpdate?.let { upd -> navRow("⬇  Update ${upd.versionName} available", "Tap to install", highlight = true) { go(Page.UPDATES) } }
         val missing = setupItems().count { !it.ok && !it.label.contains("optional") }
         if (missing > 0) navRow("⚠  Setup: $missing step(s) left", "Needed for the app to work properly", warn = true) { go(Page.SETUP) }
