@@ -31,6 +31,9 @@ class MainActivity : Activity() {
     private lateinit var root: LinearLayout
     private lateinit var scroll: ScrollView
     private var toFix = 0
+    private var availableUpdate: Updater.Release? = null
+    private var updateBusy = false
+    private var updateMessage = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,6 +53,10 @@ class MainActivity : Activity() {
             NotificationListenerService.requestRebind(ComponentName(this, DriveMonitorService::class.java))
         }
         render()
+        // Quietly look for an update when the app is opened (at most every 6 hours).
+        if (prefs.autoUpdateCheck && System.currentTimeMillis() - prefs.lastUpdateCheck > 6 * 60 * 60 * 1000L) {
+            checkForUpdate(silent = true)
+        }
     }
 
     private fun render() {
@@ -120,6 +127,14 @@ class MainActivity : Activity() {
             textSize = 19f; setTypeface(typeface, Typeface.BOLD); setPadding(0, dp(20), 0, dp(6))
         }
 
+        if (Build.VERSION.SDK_INT >= 33) {
+            check(
+                "7. Notifications",
+                "Optional: only used to tell you when an app update is available.",
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED, "Allow"
+            ) { requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2) }
+        }
+
         // ---------------- settings
         header("Settings")
         val installed = MusicApps.isInstalled(packageManager, music)
@@ -157,9 +172,25 @@ class MainActivity : Activity() {
         }
         button("📄 View / share logs") { startActivity(Intent(this, LogActivity::class.java)) }
 
+        // ---------------- updates
+        header("Updates")
+        val version = packageManager.getPackageInfo(packageName, 0).versionName
+        text("Installed version: $version" +
+            (if (updateMessage.isNotEmpty()) "\n$updateMessage" else "") +
+            (if (prefs.updateStatus.isNotEmpty() && updateMessage.isEmpty()) "\nLast update: ${prefs.updateStatus}" else ""))
+        val upd = availableUpdate
+        if (upd != null) {
+            button(if (updateBusy) "Downloading..." else "⬇ Install version ${upd.versionName}") { if (!updateBusy) installUpdate(upd) }
+            if (upd.notes.isNotBlank()) text("What's new:\n" + upd.notes.take(600))
+        }
+        button(if (updateBusy) "Working..." else "Check for updates now") { if (!updateBusy) checkForUpdate(silent = false) }
+        switch("Check for updates automatically (daily, never while driving)", prefs.autoUpdateCheck) { prefs.autoUpdateCheck = it }
+
         // ---------------- privacy
         header("Privacy & security")
-        text("• This app has no internet permission: nothing can ever be sent off your phone.\n" +
+        text("• Internet is only used to check this app's own GitHub page for updates (turn off above). " +
+            "No data about you, your music or your logs is ever sent.\n" +
+            "• Updates are only installed after a checksum and signature check, and Android always asks you first.\n" +
             "• It never reads your notifications; notification access is only needed to press play/pause.\n" +
             "• Logs stay on your phone and are only shared when you tap Share.\n" +
             "• No overlay, accessibility, location, contacts, SMS or storage permissions.")
@@ -187,6 +218,56 @@ class MainActivity : Activity() {
                 ?: toast("Music app not installed")
         }
         scroll.post { scroll.scrollTo(0, y) }
+    }
+
+    // ---------------------------------------------------------------- updates
+
+    private fun checkForUpdate(silent: Boolean) {
+        updateBusy = true
+        if (!silent) { updateMessage = "Checking..."; render() }
+        Thread {
+            val (release, msg) = try {
+                val r = Updater.checkForUpdate(this)
+                r to (if (r == null) "You have the latest version ✅" else "Version ${r.versionName} is available")
+            } catch (e: Exception) {
+                null to "Couldn't check for updates (${e.message ?: "no internet?"})"
+            }
+            runOnUiThread {
+                updateBusy = false
+                availableUpdate = release
+                if (!silent || release != null) updateMessage = msg
+                if (!isFinishing) render()
+            }
+        }.start()
+    }
+
+    private fun installUpdate(r: Updater.Release) {
+        if (!Updater.canInstall(this)) {
+            toast("Allow 'Install unknown apps' for Drive Music, then tap Install again")
+            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            return
+        }
+        updateBusy = true
+        updateMessage = "Downloading version ${r.versionName}..."
+        render()
+        DriveLog.log("UPDATE: downloading version ${r.versionName}")
+        Thread {
+            try {
+                var lastShown = -10
+                val apk = Updater.downloadAndVerify(this, r) { pct ->
+                    if (pct >= lastShown + 10) {
+                        lastShown = pct
+                        runOnUiThread { updateMessage = "Downloading version ${r.versionName}... $pct%"; render() }
+                    }
+                }
+                DriveLog.log("UPDATE: download verified (checksum + signature OK)")
+                Updater.install(this, apk)
+                runOnUiThread { updateBusy = false; updateMessage = "Verified ✅ - confirm the update on the next screen"; render() }
+            } catch (e: Exception) {
+                DriveLog.log("UPDATE: failed - ${e.message}")
+                runOnUiThread { updateBusy = false; updateMessage = "❌ ${e.message}"; render() }
+            }
+        }.start()
     }
 
     // ---------------------------------------------------------------- helpers

@@ -18,8 +18,10 @@ android {
         applicationId = "com.daand.drivemusic"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // CI sets VERSION_CODE to the build number, so every release is newer than the last.
+        val buildNumber = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
+        versionCode = buildNumber
+        versionName = "1.$buildNumber"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

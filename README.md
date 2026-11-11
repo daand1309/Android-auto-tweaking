@@ -25,7 +25,8 @@ Supported. Patched builds use a different package name than the official app, so
 
 The app is built to be as boring as possible to security scanners:
 
-- **No internet permission**: it physically cannot send data anywhere.
+- **Internet is only used by the built-in updater** to check this app's own GitHub Releases (api.github.com / github.com). No data about you, your music or your logs is sent. You can turn automatic checks off.
+- **Updates are verified before installing**: HTTPS from GitHub only, SHA-256 checksum must match, same package, newer version, and signed with the same key as the installed app. Android always shows its own "Update" confirmation.
 - **No** overlay, accessibility, location, contacts, SMS, storage or "ignore battery optimisation" permissions.
 - Notification access is only used to control media; notification contents are never read or logged.
 - The only exported components are protected by system-only permissions (notification listener, Quick Settings tile) and the launcher screen.
@@ -39,9 +40,19 @@ What you may see when installing, and what to do:
 | Notification access switch is **greyed out / "Restricted setting"** | Settings → Apps → Drive Music → ⋮ (top right) → *Allow restricted settings*, then grant Notification access. The app has an "App info" button for this. |
 | "**Unverified developer**" (Android developer verification, rolling out from late 2026) | Use Android's *advanced flow* for installing unverified apps (one-time, includes a 24 h wait), or install via a computer with `adb install`. |
 
-### Stable signing key (optional, avoids uninstall-before-update)
+## Updates
 
-By default each CI build is signed with a throwaway debug key, so you must uninstall before installing a new build. To fix that, create a keystore once and add these repository secrets (Settings → Secrets and variables → Actions): `KEYSTORE_BASE64` (the `.jks` file, base64-encoded), `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`. Never commit the keystore to the repo.
+The app updates itself from this repo's **GitHub Releases**:
+
+- Every push to the default branch that passes **all** tests is published as a release (`v1.<build number>`) with the APK and its SHA-256 checksum. Releases are only made when the permanent signing key secrets are set.
+- The app checks once a day (never while driving) and when opened, shows a notification, and installs with one tap (Android asks you to confirm).
+- First time: tap **Install** → allow **Install unknown apps** for Drive Music → tap **Install** again.
+
+Requirements: the repository must be **public** (so the app can read releases without a token) and the signing key secrets below must be set.
+
+### Signing key (required for updates)
+
+Android only installs an update if it's signed with the same key as the installed app. Create a keystore once and add these repository secrets (Settings → Secrets and variables → Actions): `KEYSTORE_BASE64` (the `.jks` file, base64-encoded), `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`. Never commit the keystore to the repo.
 
 ```
 keytool -genkeypair -v -keystore drive-music.jks -alias drivemusic -keyalg RSA -keysize 4096 -validity 10000
@@ -50,8 +61,8 @@ base64 -w0 drive-music.jks   # paste the output into KEYSTORE_BASE64
 
 ## Install
 
-1. On GitHub open **Actions → Build APK →** the latest successful run → download **DriveMusic-apk** (a zip containing `app-release.apk`).
-2. Copy/open the APK on your phone. Allow "Install unknown apps" for your browser or file manager when asked.
+1. On your phone open this repo's **Releases** page and download **DriveMusic.apk** from the latest release. (Builds without the permanent key are only available as a zip under **Actions → Build APK → latest run → DriveMusic-apk**.)
+2. Open the APK on your phone. Allow "Install unknown apps" for your browser or file manager when asked.
 3. Open **Drive Music** and work through the checklist until everything shows ✅. **Notification access** is the only required one: it is what lets the app control YouTube Music and keep running in the background.
 4. Tap **▶ Test: start YouTube Music now** to check it works.
 
@@ -81,8 +92,12 @@ Open the app → **View / share logs** → **Share**, and send the file. Lines t
 
 Every push runs three GitHub Actions jobs:
 
-- **build**: builds the APK and runs Android lint.
+- **build**: builds the APK, runs Android lint and writes the SHA-256 checksum.
 - **unit-tests** (Robolectric): music app detection (official vs Morphe/patched), MicroG detection, settings, log rotation.
 - **emulator-tests**: runs the real background service on an Android 14 emulator against a fake YouTube Music player: test button, start on car connect, auto-start off, pause logging + auto-resume, auto-resume off, "paused on purpose" rule, pause when leaving the car, and the screens opening. Android Auto itself can't run on an emulator, so the car connection is simulated through the same code path.
+
+- **release**: publishes the GitHub Release used by the updater (only if all the above pass).
+
+Unit tests also cover the updater's safety checks (version parsing, GitHub-only hosts, release/checksum parsing).
 
 Run locally with `./gradlew testDebugUnitTest` and (with an emulator/phone attached) `./gradlew connectedDebugAndroidTest`.

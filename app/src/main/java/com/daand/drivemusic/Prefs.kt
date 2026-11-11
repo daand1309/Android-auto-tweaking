@@ -49,6 +49,24 @@ class Prefs(context: Context) {
         get() = sp.getString("last_drive", "") ?: ""
         set(v) = sp.edit().putString("last_drive", v).apply()
 
+    /** Check GitHub for app updates once a day (never while driving). */
+    var autoUpdateCheck: Boolean
+        get() = sp.getBoolean("auto_update", true)
+        set(v) = sp.edit().putBoolean("auto_update", v).apply()
+
+    var lastUpdateCheck: Long
+        get() = sp.getLong("last_update_check", 0L)
+        set(v) = sp.edit().putLong("last_update_check", v).apply()
+
+    /** Version name of an available update we already notified about ("" = none). */
+    var notifiedUpdate: String
+        get() = sp.getString("notified_update", "") ?: ""
+        set(v) = sp.edit().putString("notified_update", v).apply()
+
+    var updateStatus: String
+        get() = sp.getString("update_status", "") ?: ""
+        set(v) = sp.edit().putString("update_status", v).apply()
+
     var lastCarState: String
         get() = sp.getString("last_car_state", "unknown") ?: "unknown"
         set(v) = sp.edit().putString("last_car_state", v).apply()

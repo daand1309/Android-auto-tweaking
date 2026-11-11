@@ -4,9 +4,17 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- Built-in updater: INTERNET is used ONLY to check/download releases from this app's own
+         GitHub repo (api.github.com / github.com). REQUEST_INSTALL_PACKAGES lets it hand the
+         verified update to Android, which always asks you to confirm. POST_NOTIFICATIONS is for
+         the optional "update available" notification. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Deliberately NOT requested, to keep phone security (Play Protect / Samsung) happy:
-         INTERNET (nothing can ever leave the phone), SYSTEM_ALERT_WINDOW (overlay + notification
-         access is a malware pattern), REQUEST_IGNORE_BATTERY_OPTIMIZATIONS (policy-flagged). -->
+         SYSTEM_ALERT_WINDOW (overlay + notification access is a malware pattern),
+         REQUEST_IGNORE_BATTERY_OPTIMIZATIONS (policy-flagged). -->
 
     <queries>
         <!-- Needed to find patched YouTube Music builds (e.g. Morphe) whose package name we don't know in advance. -->
@@ -23,6 +31,7 @@
 
     <application
         android:allowBackup="false"
+        android:usesCleartextTraffic="false"
         android:icon="@android:drawable/ic_media_play"
         android:label="@string/app_name"
         android:theme="@android:style/Theme.DeviceDefault.DayNight">
@@ -63,6 +72,11 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
+
+        <!-- Receives the result of installing an update (only Android can send it). -->
+        <receiver
+            android:name=".UpdateInstallReceiver"
+            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -115,6 +115,7 @@ class DriveMonitorService : NotificationListenerService() {
         }
         audio.registerAudioPlaybackCallback(playbackConfigCallback, handler)
         connectivity.registerDefaultNetworkCallback(networkCallback, handler)
+        handler.postDelayed(updateCheck, 60_000)
         ContextCompat.registerReceiver(
             this, btReceiver,
             IntentFilter().apply {
@@ -143,6 +144,7 @@ class DriveMonitorService : NotificationListenerService() {
         instance = null
         cancelStart()
         cancelResume()
+        handler.removeCallbacks(updateCheck)
         carConnection?.type?.removeObserver(carObserver)
         carConnection = null
         runCatching { sessions.removeOnActiveSessionsChangedListener(sessionsListener) }
@@ -156,6 +158,14 @@ class DriveMonitorService : NotificationListenerService() {
     // We deliberately never read, store or log the content of any notification.
     override fun onNotificationPosted(sbn: android.service.notification.StatusBarNotification?) {}
     override fun onNotificationRemoved(sbn: android.service.notification.StatusBarNotification?) {}
+
+    /** Daily update check (the Updater skips it if checked recently, disabled, or driving). */
+    private val updateCheck = object : Runnable {
+        override fun run() {
+            Updater.maybeCheckInBackground(this@DriveMonitorService, driving = carConnected)
+            handler.postDelayed(this, 3 * 60 * 60 * 1000L)
+        }
+    }
 
     // ---------------------------------------------------------------- Android Auto
 
