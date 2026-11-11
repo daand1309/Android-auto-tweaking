@@ -492,14 +492,34 @@ class MainActivity : Activity() {
         val tiles = listOf(
             "♪" to (song?.let { if (it.artist.isNotBlank()) "${it.title} · ${it.artist}" else it.title } ?: "Nothing playing"),
             "☁" to (if (weatherFresh && prefs.lastWeatherSummary.isNotBlank()) prefs.lastWeatherSummary else "Weather after next drive"),
-            "⏱" to (if (lastMins != null) "Last drive: $lastMins min" else "No drives yet"),
+            "⏱" to when (lastMins) { null -> "No drives yet"; "0" -> "Last drive: <1 min"; else -> "Last drive: $lastMins min" },
             "📍" to (Parking.spot(this)?.let { "Parked ${Parking.whenText(it.time)}" } ?: "Where's my car?"),
         )
         tiles.chunked(2).forEach { pair ->
             row(*pair.map { (icon, label) ->
-                statusTile(icon, label).apply { if (icon == "📍") { background = Style.button(Style.SURFACE, dp(12).toFloat()); setOnClickListener { whereIsMyCar() } } }
+                statusTile(icon, label).apply {
+                    val action: (() -> Unit)? = when (icon) {
+                        "♪" -> { { openMusicApp() } }
+                        "☁" -> { { go(Page.GREETING) } }
+                        "⏱" -> { { lastDriveDetails() } }
+                        "📍" -> { { whereIsMyCar() } }
+                        else -> null
+                    }
+                    if (action != null) { background = Style.button(Style.SURFACE, dp(12).toFloat()); setOnClickListener { action() } }
+                }
             }.toTypedArray())
         }
+    }
+
+    private fun openMusicApp() {
+        packageManager.getLaunchIntentForPackage(prefs.musicPackage)?.let { startActivity(it) } ?: toast("Music app not installed")
+    }
+
+    private fun lastDriveDetails() {
+        AlertDialog.Builder(this).setTitle("Last drive")
+            .setMessage(prefs.lastDrive.ifBlank { "No drives yet - connect to Android Auto and it shows up here." })
+            .setPositiveButton("Open logs") { _, _ -> startActivity(Intent(this, LogActivity::class.java)) }
+            .setNegativeButton("Close", null).show()
     }
 
     // ---------------------------------------------------------------- where's my car

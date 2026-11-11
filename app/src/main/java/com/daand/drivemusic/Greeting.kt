@@ -90,12 +90,10 @@ object GreetingText {
     }
 
     /** Short weather line for the car screen, e.g. "Utrecht: 18 degrees, clear skies, rain 5%". */
-    fun shortWeather(w: WeatherNow, place: String, dutch: Boolean): String {
-        val t = SpeechText.number(w.tempNow.roundToInt(), dutch)
-        val desc = describe(w.code, dutch)
-        val prefix = if (place.isNotBlank()) "$place: " else ""
-        return if (dutch) "$prefix$t graden, $desc, regen ${w.rainChance}%"
-        else "$prefix$t degrees, $desc, rain ${w.rainChance}%"
+    /** Compact form for the home tile and car screen, e.g. "4° · overcast · 20% rain". */
+    fun tileWeather(w: WeatherNow, dutch: Boolean): String {
+        val desc = describe(w.code, dutch).removePrefix("een ").removePrefix("a ")
+        return "${w.tempNow.roundToInt()}° · $desc · ${w.rainChance}% ${if (dutch) "regen" else "rain"}"
     }
 
     fun timeGreeting(hour: Int, dutch: Boolean) = when (hour) {
@@ -746,7 +744,7 @@ object WelcomeAnnouncer {
                 }
             }
             if (weather != null) {
-                p.lastWeatherSummary = GreetingText.shortWeather(weather, p.weatherPlace, p.greetingDutch)
+                p.lastWeatherSummary = GreetingText.tileWeather(weather, p.greetingDutch)
                 p.lastWeatherAt = System.currentTimeMillis()
             }
             val text = GreetingText.build(

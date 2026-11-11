@@ -183,10 +183,10 @@ class GreetingTest {
         assertEquals(1, used.size)
     }
 
-    @Test fun shortWeatherForCarScreen() {
-        assertEquals("Utrecht: 18 degrees, clear skies, rain 5%", GreetingText.shortWeather(sunny, "Utrecht", false))
-        assertEquals("min 2 graden, sneeuw, regen 80%",
-            GreetingText.shortWeather(sunny.copy(tempNow = -2.0, code = 71, rainChance = 80), "", true))
+    @Test fun compactWeatherForTileAndCarScreen() {
+        assertEquals("18° · clear skies · 5% rain", GreetingText.tileWeather(sunny, false))
+        assertEquals("-2° · sneeuw · 80% regen", GreetingText.tileWeather(sunny.copy(tempNow = -2.0, code = 71, rainChance = 80), true))
+        assertEquals("18° · heldere lucht · 5% regen", GreetingText.tileWeather(sunny, true))
     }
 
     @Test fun locationIsRoundedForPrivacy() {
