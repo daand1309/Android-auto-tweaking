@@ -42,7 +42,13 @@ jobs:
               exit 1
             fi
             if ! keytool -list -keystore "$RUNNER_TEMP/release.jks" -storepass "$KEYSTORE_PASSWORD" >/dev/null 2>&1; then
-              echo "::error::Keystore can't be opened - KEYSTORE_BASE64 is incomplete or KEYSTORE_PASSWORD is wrong."
+              # Tell which secret is wrong by comparing the decoded file with the known keystore fingerprint
+              # (a fingerprint of the password-protected file - safe to publish).
+              if [ "$(sha256sum "$RUNNER_TEMP/release.jks" | cut -d' ' -f1)" = "eb3ae8860bf69aac69e26e1bead11787eee7b5d77ba2d85bdd81fd4a5942bff9" ]; then
+                echo "::error::KEYSTORE_BASE64 is correct, but KEYSTORE_PASSWORD is wrong - paste the password again."
+              else
+                echo "::error::KEYSTORE_BASE64 is damaged (a character is missing or changed) - paste it again."
+              fi
               exit 1
             fi
             echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
