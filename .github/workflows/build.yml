@@ -28,9 +28,20 @@ jobs:
         id: key
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            # Pasting on a phone often adds line breaks/spaces - strip all whitespace first.
+            CLEAN=$(printf '%s' "$KEYSTORE_BASE64" | tr -d '[:space:]')
+            echo "KEYSTORE_BASE64: ${#CLEAN} characters after cleaning (a complete one is 5676)"
+            if ! printf '%s' "$CLEAN" | base64 -d > "$RUNNER_TEMP/release.jks" 2>/dev/null; then
+              echo "::error::KEYSTORE_BASE64 secret is not valid base64 - it was probably cut off when copying. Paste the whole block again."
+              exit 1
+            fi
+            if ! keytool -list -keystore "$RUNNER_TEMP/release.jks" -storepass "$KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+              echo "::error::Keystore can't be opened - KEYSTORE_BASE64 is incomplete or KEYSTORE_PASSWORD is wrong."
+              exit 1
+            fi
             echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
             echo "Using stable signing key"
             echo "stable_key=true" >> "$GITHUB_OUTPUT"
