@@ -7,6 +7,10 @@ A small Android app (built for a Samsung phone + Android Auto + YouTube Music) t
 3. **Logs everything** that happens during a drive, with a best guess at *why* each pause happened (navigation prompt, Assistant, notification, call, lost internet, Bluetooth drop, app killed by battery saver...). You can share the log from the app.
 4. **Setup checklist** showing which phone settings still need fixing (battery restrictions for YouTube Music / Android Auto / this app), with buttons that open the right settings page.
 
+## Patched YouTube Music (Morphe / ReVanced)
+
+Supported. Patched builds use a different package name than the official app, so Drive Music finds them automatically (patched builds are preferred over the official one if both are installed). You can check or change the app under **Settings → Change music app**. If MicroG (GmsCore) is installed, it gets its own battery item on the checklist: if Samsung puts MicroG to sleep, the patched app can lose sign-in and stop streaming.
+
 ## Install
 
 1. On GitHub open **Actions → Build APK →** the latest successful run → download **DriveMusic-apk** (a zip containing `app-release.apk`).
@@ -28,7 +32,7 @@ Open the app → **View / share logs** → **Share**, and send the file. Lines t
 | `... GOOGLE ASSISTANT` | "Hey Google" was triggered (often road noise). Turn off or lower its sensitivity. |
 | `... NOTIFICATION sound` | A notification interrupted. Mute notifications in Android Auto. |
 | `... internet dropped` / `NO INTERNET` | Signal lost. Download playlists / turn on Smart downloads. |
-| `YouTube Music session destroyed` | Samsung killed the app. Set battery to Unrestricted and add it to "Never sleeping apps". |
+| `YouTube Music session destroyed` | Samsung killed the app. Set battery to Unrestricted (also for MicroG) and add it to "Never sleeping apps". |
 | `CAR: disconnected` mid-drive | Android Auto connection dropped (try another USB cable, or check wireless AA). |
 | `Clues: none found` | Probably a real pause press (steering wheel, screen) or YouTube Music itself. |
 

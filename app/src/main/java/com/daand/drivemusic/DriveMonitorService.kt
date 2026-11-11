@@ -36,7 +36,6 @@ import androidx.lifecycle.Observer
 class DriveMonitorService : NotificationListenerService() {
 
     companion object {
-        const val YTM = "com.google.android.apps.youtube.music"
         const val ANDROID_AUTO = "com.google.android.projection.gearhead"
 
         /** Set while the listener is connected, so the UI can trigger a manual test. */
@@ -59,6 +58,9 @@ class DriveMonitorService : NotificationListenerService() {
     private var carConnection: CarConnection? = null
     private var carConnected = false
     private var carConnectedAt = 0L
+
+    /** Re-read each time so changing the app in settings takes effect immediately. */
+    private val musicPkg get() = prefs.musicPackage
 
     private var ytm: MediaController? = null
     private var lastYtmState = -1
@@ -86,7 +88,7 @@ class DriveMonitorService : NotificationListenerService() {
         listenerComponent = ComponentName(this, DriveMonitorService::class.java)
         instance = this
 
-        DriveLog.log("Monitor started (Android ${android.os.Build.VERSION.RELEASE}, ${android.os.Build.MODEL})")
+        DriveLog.log("Monitor started, controlling ${prefs.musicPackage} (Android ${android.os.Build.VERSION.RELEASE}, ${android.os.Build.MODEL})")
 
         carConnection = CarConnection(this).also { it.type.observeForever(carObserver) }
         try {
@@ -225,9 +227,9 @@ class DriveMonitorService : NotificationListenerService() {
     }
 
     private fun launchYtm() {
-        val intent = packageManager.getLaunchIntentForPackage(YTM)
+        val intent = packageManager.getLaunchIntentForPackage(musicPkg)
         if (intent == null) {
-            DriveLog.log("START: YouTube Music is not installed!")
+            DriveLog.log("START: music app $musicPkg is not installed! Pick the right app in Drive Music settings.")
             return
         }
         try {
@@ -255,7 +257,7 @@ class DriveMonitorService : NotificationListenerService() {
         if (carConnected) {
             DriveLog.log("Media apps active: " + list.joinToString { "${it.packageName}(${stateName(it.playbackState?.state)})" }.ifEmpty { "none" })
         }
-        val found = list.firstOrNull { it.packageName == YTM }
+        val found = list.firstOrNull { it.packageName == musicPkg }
         if (found == null) {
             if (ytm != null) {
                 DriveLog.log("YouTube Music media session closed")
@@ -267,7 +269,7 @@ class DriveMonitorService : NotificationListenerService() {
     }
 
     private fun findYtm(): MediaController? = try {
-        sessions.getActiveSessions(listenerComponent).firstOrNull { it.packageName == YTM }
+        sessions.getActiveSessions(listenerComponent).firstOrNull { it.packageName == musicPkg }
     } catch (e: SecurityException) {
         null
     }
@@ -377,7 +379,7 @@ class DriveMonitorService : NotificationListenerService() {
         if (AudioAttributes.USAGE_VOICE_COMMUNICATION in usages) return "voice call audio active"
         val otherPlaying = try {
             sessions.getActiveSessions(listenerComponent)
-                .firstOrNull { it.packageName != YTM && it.playbackState?.state == PlaybackState.STATE_PLAYING }
+                .firstOrNull { it.packageName != musicPkg && it.playbackState?.state == PlaybackState.STATE_PLAYING }
         } catch (e: SecurityException) { null }
         if (otherPlaying != null) return "another app is playing (${otherPlaying.packageName})"
         return null
@@ -400,7 +402,7 @@ class DriveMonitorService : NotificationListenerService() {
         if (lastBtDisconnectAt > 0 && now - lastBtDisconnectAt < 30_000) clues += "Bluetooth device disconnected ${(now - lastBtDisconnectAt) / 1000}s ago"
         try {
             sessions.getActiveSessions(listenerComponent)
-                .filter { it.packageName != YTM && it.playbackState?.state == PlaybackState.STATE_PLAYING }
+                .filter { it.packageName != musicPkg && it.playbackState?.state == PlaybackState.STATE_PLAYING }
                 .forEach { clues += "${it.packageName} started playing" }
         } catch (_: SecurityException) {}
         if (lastAudioUsages.isNotEmpty() && clues.none { it.startsWith("other audio") }) clues += "recent audio: $lastAudioUsages"
@@ -411,8 +413,10 @@ class DriveMonitorService : NotificationListenerService() {
     private fun logEnvironment() {
         val pm = getSystemService(android.os.PowerManager::class.java)
         fun ver(pkg: String) = try { packageManager.getPackageInfo(pkg, 0).versionName } catch (e: Exception) { "not installed" }
-        DriveLog.log("Info: YouTube Music ${ver(YTM)}, Android Auto ${ver(ANDROID_AUTO)}")
-        DriveLog.log("Info: battery unrestricted? YTM=${pm.isIgnoringBatteryOptimizations(YTM)}, " +
+        val microG = MusicApps.findMicroG(this)
+        DriveLog.log("Info: music app $musicPkg ${ver(musicPkg)}, Android Auto ${ver(ANDROID_AUTO)}, MicroG ${microG ?: "not found"}")
+        if (microG != null) DriveLog.log("Info: MicroG battery unrestricted? ${pm.isIgnoringBatteryOptimizations(microG)}")
+        DriveLog.log("Info: battery unrestricted? music app=${pm.isIgnoringBatteryOptimizations(musicPkg)}, " +
             "AndroidAuto=${pm.isIgnoringBatteryOptimizations(ANDROID_AUTO)}, this app=${pm.isIgnoringBatteryOptimizations(packageName)}; " +
             "power saving=${pm.isPowerSaveMode}; internet=${isOnline()}")
     }

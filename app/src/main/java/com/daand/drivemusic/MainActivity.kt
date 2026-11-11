@@ -3,6 +3,7 @@ package com.daand.drivemusic
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -53,7 +54,7 @@ class MainActivity : Activity() {
         val pm = getSystemService(PowerManager::class.java)
 
         title("Drive Music")
-        text("Starts YouTube Music when Android Auto connects, resumes it if it pauses, and logs what happened so problems can be fixed.")
+        text("Starts YouTube Music (official or patched, e.g. Morphe) when Android Auto connects, resumes it if it pauses, and logs what happened so problems can be fixed.")
 
         // ---------------- status
         header("Status")
@@ -78,11 +79,21 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
         }
 
+        val music = prefs.musicPackage
         check(
-            "3. YouTube Music: battery Unrestricted",
+            "3. ${MusicApps.label(this, music)}: battery Unrestricted",
             "In the page that opens: Battery → Unrestricted.",
-            pm.isIgnoringBatteryOptimizations(DriveMonitorService.YTM), "Open"
-        ) { openAppSettings(DriveMonitorService.YTM) }
+            pm.isIgnoringBatteryOptimizations(music), "Open"
+        ) { openAppSettings(music) }
+
+        val microG = MusicApps.findMicroG(this)
+        if (microG != null) {
+            check(
+                "3b. MicroG (${MusicApps.label(this, microG)}): battery Unrestricted",
+                "Patched YouTube Music needs MicroG to stay signed in and stream. If Samsung puts it to sleep, music can stop.",
+                pm.isIgnoringBatteryOptimizations(microG), "Open"
+            ) { openAppSettings(microG) }
+        }
 
         check(
             "4. Android Auto: battery Unrestricted",
@@ -108,6 +119,10 @@ class MainActivity : Activity() {
 
         // ---------------- settings
         header("Settings")
+        val installed = MusicApps.isInstalled(packageManager, music)
+        text((if (installed) "🎵 " else "❌ ") + "Music app: ${MusicApps.label(this, music)}\n$music" +
+            if (music != MusicApps.OFFICIAL_YTM && installed) "\n(patched build detected - good)" else "")
+        button("Change music app") { pickMusicApp() }
         switch("Start music when Android Auto connects", prefs.autoStart) { prefs.autoStart = it }
         switch("Auto-resume if music pauses while driving", prefs.autoResume) { prefs.autoResume = it }
         text("Resume after ${prefs.resumeDelaySec} seconds. It won't resume during calls, while the Assistant talks, " +
@@ -141,15 +156,34 @@ class MainActivity : Activity() {
                 "• Android Auto settings → turn off notification sounds / message read-outs if logs show NOTIFICATION or ASSISTANT pauses.\n\n" +
                 "• If logs show 'GOOGLE ASSISTANT' just before pauses, 'Hey Google' is being triggered by road noise: " +
                 "Google app → Settings → Google Assistant → Hey Google & Voice Match → turn off or lower sensitivity.\n\n" +
+                "• Patched YouTube Music (Morphe/ReVanced): keep MicroG updated and signed in, and set it to Unrestricted battery too. " +
+                "If the app ever disappears from the car screen: Android Auto settings → tap 'Version' 10 times → ⋮ → Developer settings → " +
+                "turn on 'Unknown sources'.\n\n" +
                 "• Wired Android Auto: if the logs show Bluetooth/car disconnects, try a different short USB cable."
         )
         button("Open YouTube Music settings") {
-            packageManager.getLaunchIntentForPackage(DriveMonitorService.YTM)?.let { startActivity(it) }
-                ?: toast("YouTube Music not installed")
+            packageManager.getLaunchIntentForPackage(prefs.musicPackage)?.let { startActivity(it) }
+                ?: toast("Music app not installed")
         }
     }
 
     // ---------------------------------------------------------------- helpers
+
+    private fun pickMusicApp() {
+        val candidates = MusicApps.youtubeMusicCandidates(this)
+        val others = MusicApps.launchableApps(this).filter { a -> candidates.none { it.pkg == a.pkg } }
+        val all = candidates + others
+        val labels = all.map { (if (it in candidates) "★ " else "") + "${it.label}\n${it.pkg}" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Which app plays your music?")
+            .setItems(labels) { _, i ->
+                prefs.musicPackage = all[i].pkg
+                DriveLog.log("Setting changed: music app = ${all[i].pkg}")
+                render()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
 
     private fun hasNotificationAccess() =
         NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)

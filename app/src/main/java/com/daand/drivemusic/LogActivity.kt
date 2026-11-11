@@ -65,8 +65,11 @@ class LogActivity : Activity() {
         val header = buildString {
             appendLine("Drive Music log")
             appendLine("Phone: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
-            appendLine("YouTube Music: ${ver(DriveMonitorService.YTM)}, Android Auto: ${ver(DriveMonitorService.ANDROID_AUTO)}")
-            appendLine("Battery unrestricted: YTM=${pm.isIgnoringBatteryOptimizations(DriveMonitorService.YTM)}, " +
+            val music = Prefs(this@LogActivity).musicPackage
+            val microG = MusicApps.findMicroG(this@LogActivity)
+            appendLine("Music app: $music ${ver(music)}, MicroG: ${microG?.let { "$it ${ver(it)}" } ?: "not found"}")
+            appendLine("Android Auto: ${ver(DriveMonitorService.ANDROID_AUTO)}")
+            appendLine("Battery unrestricted: music=${pm.isIgnoringBatteryOptimizations(music)}, MicroG=${microG?.let { pm.isIgnoringBatteryOptimizations(it) }}, " +
                 "AA=${pm.isIgnoringBatteryOptimizations(DriveMonitorService.ANDROID_AUTO)}, app=${pm.isIgnoringBatteryOptimizations(packageName)}")
             appendLine("Monitor running: ${DriveMonitorService.instance != null}")
             appendLine("----")

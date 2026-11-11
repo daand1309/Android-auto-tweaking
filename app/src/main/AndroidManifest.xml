@@ -9,7 +9,15 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <queries>
+        <!-- Needed to find patched YouTube Music builds (e.g. Morphe) whose package name we don't know in advance. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
         <package android:name="com.google.android.apps.youtube.music" />
+        <package android:name="app.revanced.android.gms" />
+        <package android:name="app.morphe.android.gms" />
+        <package android:name="com.mgoogle.android.gms" />
         <package android:name="com.google.android.projection.gearhead" />
     </queries>
 
