@@ -8,7 +8,6 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 class DriveLogTest {
@@ -29,8 +28,7 @@ class DriveLogTest {
     @Test fun rotatesSoLogsNeverGrowUnbounded() {
         val line = "x".repeat(200)
         repeat(8000) { DriveLog.log("$it $line") }  // ~1.8 MB written
-        val dir = File(ctx.filesDir, "logs")
-        val total = dir.listFiles()!!.sumOf { it.length() }
+        val total = DriveLog.readAll().length
         assertTrue("logs use $total bytes", total < 1_200_000)
         assertTrue(DriveLog.readAll().contains("7999 "))  // newest line kept
     }
