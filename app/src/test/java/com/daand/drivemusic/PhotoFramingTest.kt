@@ -21,8 +21,10 @@ class PhotoFramingTest {
         assertTrue("top=$top", top <= 60 && top + 30 >= 80)
     }
 
-    @Test fun plainImageStartsAtTheTop() {
-        assertEquals(0, PhotoFraming.bestWindowTop(IntArray(20 * 50) { black }, 20, 50, 20))
+    @Test fun plainImageIsRoughlyCentred() {
+        // Nothing to focus on: every frame is equally good, so it's a (slightly raised) centre crop.
+        val top = PhotoFraming.bestWindowTop(IntArray(20 * 50) { black }, 20, 50, 20)
+        assertTrue("top=$top", top in 10..15)
     }
 
     @Test fun frameTallerThanImageStartsAtTheTop() {
