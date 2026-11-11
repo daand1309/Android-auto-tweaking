@@ -42,7 +42,8 @@ class DriveModeActivity : Activity() {
         DriveLog.init(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val frame = android.widget.FrameLayout(this).apply { setBackgroundColor(Style.BG) }
-        frame.addView(buildUi())
+        // MATCH_PARENT so the weighted button rows get real height (not collapsed to zero).
+        frame.addView(buildUi(), android.widget.FrameLayout.LayoutParams(-1, -1))
         setContentView(frame)
         if (Prefs(this).showSplash) playIntro(frame)
     }
@@ -133,31 +134,31 @@ class DriveModeActivity : Activity() {
         status = TextView(this).apply {
             setTextColor(Color.parseColor("#9E9E9E")); textSize = 16f; gravity = Gravity.CENTER
         }
-        root.addView(nowPlaying, lp(weight = 2f))
-        root.addView(status, lp())
+        root.addView(nowPlaying, vLp(weight = 2f))
+        root.addView(status, vLp())
 
-        // Big transport row
+        // Big transport row (horizontal: weight drives WIDTH, height fills the row).
         val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        controls.addView(bigButton("⏮") { svc()?.skipPrevious(); flash() }, lp(weight = 1f, height = dp(130)))
+        controls.addView(bigButton("⏮") { svc()?.skipPrevious(); flash() }, hLp(1f))
         playBtn = bigButton("▶") { svc()?.playPause(); handler.postDelayed({ updateDynamic() }, 300) }
-        controls.addView(playBtn, lp(weight = 1.3f, height = dp(130)))
-        controls.addView(bigButton("⏭") { svc()?.skipNext(); flash() }, lp(weight = 1f, height = dp(130)))
-        root.addView(controls, lp(weight = 3f))
+        controls.addView(playBtn, hLp(1.3f))
+        controls.addView(bigButton("⏭") { svc()?.skipNext(); flash() }, hLp(1f))
+        root.addView(controls, vLp(weight = 3f))
 
         // Bottom row
         val bottom = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
         bottom.addView(smallButton("🔊 Welcome") {
             WelcomeAnnouncer.run(this, svc()?.currentSong())
-        }, lp(weight = 1f, height = dp(80)))
+        }, hLp(1f))
         resumeBtn = smallButton("") {
             val p = Prefs(this)
             p.autoResume = !p.autoResume
             if (p.autoResume) svc()?.resumeOffThisDrive = false
             updateDynamic()
         }
-        bottom.addView(resumeBtn, lp(weight = 1f, height = dp(80)))
-        bottom.addView(smallButton("✕ Close") { finish() }, lp(weight = 0.7f, height = dp(80)))
-        root.addView(bottom, lp(weight = 2f))
+        bottom.addView(resumeBtn, hLp(1f))
+        bottom.addView(smallButton("✕ Close") { finish() }, hLp(0.7f))
+        root.addView(bottom, vLp(weight = 1.6f))
 
         return root
     }
@@ -189,8 +190,15 @@ class DriveModeActivity : Activity() {
         setOnClickListener { onClick() }
     }
 
-    private fun lp(weight: Float = 0f, height: Int = LinearLayout.LayoutParams.WRAP_CONTENT) =
+    /** Vertical child: full width, weighted height (0 so the weight controls it). */
+    private fun vLp(weight: Float = 0f, height: Int = LinearLayout.LayoutParams.WRAP_CONTENT) =
         LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, if (weight > 0) 0 else height, weight).apply {
+            val m = dp(6); setMargins(m, m, m, m)
+        }
+
+    /** Horizontal child: weighted width (0 so the weight controls it), full row height. */
+    private fun hLp(weight: Float) =
+        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, weight).apply {
             val m = dp(6); setMargins(m, m, m, m)
         }
 

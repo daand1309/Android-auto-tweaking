@@ -219,7 +219,23 @@ class DriveFlowTest {
         ActivityScenario.launch(MainActivity::class.java).use { it.onActivity { a -> assertTrue(!a.isFinishing) } }
         DriveLog.log("!!! PAUSE #1 while driving. Clues: test")
         ActivityScenario.launch(LogActivity::class.java).use { it.onActivity { a -> assertTrue(!a.isFinishing) } }
-        ActivityScenario.launch(DriveModeActivity::class.java).use { it.onActivity { a -> assertTrue(!a.isFinishing) } }
+        // Drive Mode: skip the intro overlay and verify the control buttons actually have size
+        // (a weighted-layout bug once made them collapse to zero height).
+        prefs.showSplash = false
+        ActivityScenario.launch(DriveModeActivity::class.java).use { scenario ->
+            SystemClock.sleep(600)  // let it lay out
+            scenario.onActivity { a ->
+                assertTrue(!a.isFinishing)
+                val buttons = mutableListOf<android.widget.Button>()
+                fun walk(v: android.view.View) {
+                    if (v is android.widget.Button) buttons += v
+                    if (v is android.view.ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
+                }
+                walk(a.window.decorView)
+                assertTrue("expected control buttons", buttons.size >= 4)
+                assertTrue("buttons must have a visible size", buttons.any { it.width > 0 && it.height > 0 })
+            }
+        }
     }
 
     // ------------------------------------------------------------------ helpers
