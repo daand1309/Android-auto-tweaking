@@ -76,3 +76,13 @@ Open the app → **View / share logs** → **Share**, and send the file. Lines t
 ## Build it yourself
 
 `./gradlew assembleRelease` (needs JDK 17+ and the Android SDK). The APK is signed with the debug key so it can be sideloaded.
+
+## Tests
+
+Every push runs three GitHub Actions jobs:
+
+- **build**: builds the APK and runs Android lint.
+- **unit-tests** (Robolectric): music app detection (official vs Morphe/patched), MicroG detection, settings, log rotation.
+- **emulator-tests**: runs the real background service on an Android 14 emulator against a fake YouTube Music player: test button, start on car connect, auto-start off, pause logging + auto-resume, auto-resume off, "paused on purpose" rule, pause when leaving the car, and the screens opening. Android Auto itself can't run on an emulator, so the car connection is simulated through the same code path.
+
+Run locally with `./gradlew testDebugUnitTest` and (with an emulator/phone attached) `./gradlew connectedDebugAndroidTest`.
