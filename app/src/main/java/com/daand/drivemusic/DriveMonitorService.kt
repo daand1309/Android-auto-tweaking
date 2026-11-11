@@ -47,13 +47,28 @@ class DriveMonitorService : NotificationListenerService() {
         private const val RESUME_WINDOW_MS = 10 * 60 * 1000L
         private const val RESUME_MAX_IN_WINDOW = 4
 
-        /** Audio that never pauses music: the music itself, and touch/keyboard clicks (which would
-         *  otherwise make every on-screen pause tap look like an "interruption"). */
+        /** Wait this long before calling a stop a "pause": patched builds briefly flip to ERROR
+         *  (e.g. a "Premium" blip) and recover on their own within about a second. */
+        private const val PAUSE_GRACE_MS = 3000L
+
+        /** Audio that never pauses music: the music itself, touch/keyboard clicks, and navigation
+         *  voice (it only ducks the music, it never stops it - and it fires constantly). */
         private val NOT_INTERRUPTIONS = setOf(
             AudioAttributes.USAGE_MEDIA,
             AudioAttributes.USAGE_UNKNOWN,
             AudioAttributes.USAGE_ASSISTANCE_SONIFICATION,
             AudioAttributes.USAGE_GAME,
+            AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE,
+        )
+
+        /** Audio worth noting in the log (it can actually interrupt music). Navigation is excluded. */
+        private val NOTABLE_AUDIO = setOf(
+            AudioAttributes.USAGE_ASSISTANT,
+            AudioAttributes.USAGE_VOICE_COMMUNICATION,
+            AudioAttributes.USAGE_NOTIFICATION,
+            AudioAttributes.USAGE_NOTIFICATION_EVENT,
+            AudioAttributes.USAGE_NOTIFICATION_RINGTONE,
+            AudioAttributes.USAGE_ALARM,
         )
     }
 
@@ -79,9 +94,11 @@ class DriveMonitorService : NotificationListenerService() {
     private var resumesThisDrive = 0
     private var lastNetworkLostAt = 0L
     private var lastBtDisconnectAt = 0L
-    private var lastAudioUsages = ""
+    private var lastNotableAudio = ""
     private var lastInterruption = ""
     private var lastInterruptionAt = 0L
+    private var pendingPauseRunnable: Runnable? = null
+    private var briefInterruptions = 0
     private var lastPauseClue = ""
     private var lastAutoResumeAt = 0L
     /** Set when you pause again right after an auto-resume: we take the hint for the rest of the drive. */
@@ -148,6 +165,7 @@ class DriveMonitorService : NotificationListenerService() {
         instance = null
         cancelStart()
         cancelResume()
+        cancelPendingPause()
         handler.removeCallbacks(updateCheck)
         carConnection?.type?.removeObserver(carObserver)
         carConnection = null
@@ -200,6 +218,9 @@ class DriveMonitorService : NotificationListenerService() {
             carConnectedAt = SystemClock.elapsedRealtime()
             pausesThisDrive = 0
             resumesThisDrive = 0
+            briefInterruptions = 0
+            lastNotableAudio = ""
+            cancelPendingPause()
             resumeTimes.clear()
             resumeOffThisDrive = false
             lastAutoResumeAt = 0L
@@ -239,12 +260,14 @@ class DriveMonitorService : NotificationListenerService() {
             }
         } else {
             val mins = (SystemClock.elapsedRealtime() - carConnectedAt) / 60000
-            DriveLog.log("=== CAR: disconnected after ${mins} min. Pauses: $pausesThisDrive, auto-resumes: $resumesThisDrive ===")
+            val brief = if (briefInterruptions > 0) ", $briefInterruptions brief blip(s) ignored" else ""
+            DriveLog.log("=== CAR: disconnected after ${mins} min. Pauses: $pausesThisDrive, auto-resumes: $resumesThisDrive$brief ===")
             prefs.lastDrive = java.text.SimpleDateFormat("EEE d MMM HH:mm", java.util.Locale.getDefault()).format(java.util.Date()) +
                 " - ${mins} min, $pausesThisDrive pause(s), $resumesThisDrive auto-resume(s)" +
                 if (lastPauseClue.isNotEmpty()) "\nLast pause: $lastPauseClue" else ""
             cancelStart()
             cancelResume()
+            cancelPendingPause()
             if (prefs.pauseOnDisconnect) {
                 val c = findYtm()
                 if (c?.playbackState?.state == PlaybackState.STATE_PLAYING) {
@@ -345,7 +368,9 @@ class DriveMonitorService : NotificationListenerService() {
 
     private fun onSessionsChanged(list: List<MediaController>) {
         if (carConnected) {
-            DriveLog.log("Media apps active: " + list.joinToString { "${it.packageName}(${stateName(it.playbackState?.state)})" }.ifEmpty { "none" })
+            // Only note other apps that are actually playing (ignore idle sessions like VLC sitting at NONE).
+            val others = list.filter { it.packageName != musicPkg && it.playbackState?.state == PlaybackState.STATE_PLAYING }
+            if (others.isNotEmpty()) DriveLog.log("Other media playing: " + others.joinToString { it.packageName })
         }
         val found = list.firstOrNull { it.packageName == musicPkg }
         if (found == null) {
@@ -418,22 +443,29 @@ class DriveMonitorService : NotificationListenerService() {
 
             when (s) {
                 PlaybackState.STATE_PLAYING -> {
+                    if (pendingPauseRunnable != null) {
+                        // It stopped and came right back (the Morphe "Premium" blip, a buffer hiccup):
+                        // never counted as a pause.
+                        cancelPendingPause()
+                        briefInterruptions++
+                        DriveLog.log("Brief interruption - playback recovered on its own (not counted)")
+                    }
                     if (resumeRunnable != null) DriveLog.log("Music came back by itself - auto-resume not needed")
                     cancelResume()
                 }
                 PlaybackState.STATE_PAUSED, PlaybackState.STATE_STOPPED, PlaybackState.STATE_ERROR,
                 PlaybackState.STATE_NONE -> {
-                    if (prev == PlaybackState.STATE_PLAYING || prev == PlaybackState.STATE_BUFFERING) {
-                        pausesThisDrive++
-                        val clues = diagnose()
-                        lastPauseClue = clues.joinToString("; ").ifEmpty { "no clues (pause button / steering wheel / Hey Google?)" }
-                        DriveLog.log("!!! PAUSE #$pausesThisDrive while driving. Clues: $lastPauseClue")
-                        val sinceResume = SystemClock.elapsedRealtime() - lastAutoResumeAt
-                        if (lastAutoResumeAt > 0 && sinceResume < 60_000 && clues.isEmpty() && !resumeOffThisDrive) {
-                            resumeOffThisDrive = true
-                            DriveLog.log("You paused again ${sinceResume / 1000}s after an auto-resume - looks deliberate. Auto-resume OFF until the next drive.")
+                    if ((prev == PlaybackState.STATE_PLAYING || prev == PlaybackState.STATE_BUFFERING) &&
+                        pendingPauseRunnable == null && resumeRunnable == null
+                    ) {
+                        // Wait out a possible self-recovering blip before treating it as a real pause.
+                        val r = Runnable {
+                            pendingPauseRunnable = null
+                            val cur = (ytm?.takeIf { it.packageName == musicPkg } ?: findYtm())?.playbackState?.state
+                            if (cur != PlaybackState.STATE_PLAYING) onConfirmedPause()
                         }
-                        scheduleResume()
+                        pendingPauseRunnable = r
+                        handler.postDelayed(r, PAUSE_GRACE_MS)
                     }
                 }
             }
@@ -443,6 +475,25 @@ class DriveMonitorService : NotificationListenerService() {
             DriveLog.log("YouTube Music session destroyed (app closed or killed by the system?)")
             detachYtm()
         }
+    }
+
+    /** A stop that lasted past the grace period: a genuine pause. */
+    private fun onConfirmedPause() {
+        pausesThisDrive++
+        val clues = diagnose()
+        lastPauseClue = clues.joinToString("; ").ifEmpty { "no clues (pause button / steering wheel / Hey Google?)" }
+        DriveLog.log("!!! PAUSE #$pausesThisDrive while driving. Clues: $lastPauseClue")
+        val sinceResume = SystemClock.elapsedRealtime() - lastAutoResumeAt
+        if (lastAutoResumeAt > 0 && sinceResume < 60_000 && clues.isEmpty() && !resumeOffThisDrive) {
+            resumeOffThisDrive = true
+            DriveLog.log("You paused again ${sinceResume / 1000}s after an auto-resume - looks deliberate. Auto-resume OFF until the next drive.")
+        }
+        scheduleResume()
+    }
+
+    private fun cancelPendingPause() {
+        pendingPauseRunnable?.let { handler.removeCallbacks(it) }
+        pendingPauseRunnable = null
     }
 
     // ---------------------------------------------------------------- auto resume
@@ -575,17 +626,19 @@ class DriveMonitorService : NotificationListenerService() {
 
     private val playbackConfigCallback = object : AudioManager.AudioPlaybackCallback() {
         override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>) {
-            val names = configs.map { usageName(it.audioAttributes.usage) }.distinct().sorted().joinToString()
-            if (names == lastAudioUsages) return
-            lastAudioUsages = names
-            val interrupts = configs.map { it.audioAttributes.usage }
-                .filter { it !in NOT_INTERRUPTIONS }
-                .distinct()
+            val usages = configs.map { it.audioAttributes.usage }.distinct()
+            val interrupts = usages.filter { it !in NOT_INTERRUPTIONS }
             if (interrupts.isNotEmpty()) {
                 lastInterruption = interrupts.joinToString { usageName(it) }
                 lastInterruptionAt = SystemClock.elapsedRealtime()
             }
-            if (carConnected) DriveLog.log("Audio streams now: ${names.ifEmpty { "silence" }}")
+            // Only log audio that can actually interrupt music (Assistant, call, notification...).
+            // Navigation-voice ducking fires constantly and never pauses music, so it's left out.
+            val notable = usages.filter { it in NOTABLE_AUDIO }.map { usageName(it) }.sorted().joinToString()
+            if (carConnected && notable != lastNotableAudio) {
+                lastNotableAudio = notable
+                if (notable.isNotEmpty()) DriveLog.log("Audio: $notable")
+            }
         }
     }
 

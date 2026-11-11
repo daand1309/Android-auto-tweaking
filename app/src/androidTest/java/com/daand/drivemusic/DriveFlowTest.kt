@@ -130,6 +130,21 @@ class DriveFlowTest {
     }
 
     @Test
+    fun transientErrorBlipIsNotCountedAsPause() {
+        connectCar()
+        val pausesLogged = { log().split("!!! PAUSE").size - 1 }
+        val before = pausesLogged()
+        // Simulate the Morphe "Premium" blip: PLAYING -> ERROR -> PLAYING within the grace window.
+        onMain { setState(PlaybackState.STATE_ERROR) }
+        SystemClock.sleep(600)
+        onMain { setState(PlaybackState.STATE_PLAYING) }
+        waitFor("blip to be recognised", 4_000) { log().contains("Brief interruption") }
+        SystemClock.sleep(4_000)  // past the grace period
+        assertEquals("a self-recovering blip must not add a pause", before, pausesLogged())
+        assertEquals(PlaybackState.STATE_PLAYING, currentState)
+    }
+
+    @Test
     fun autoResumeOffLeavesMusicPaused() {
         prefs.autoResume = false
         connectCar()
