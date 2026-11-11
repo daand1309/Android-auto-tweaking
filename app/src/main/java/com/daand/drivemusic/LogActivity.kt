@@ -66,12 +66,21 @@ class LogActivity : Activity() {
                 setMargins(dp(10), 0, dp(10), dp(10))
             }
         }
-        setContentView(LinearLayout(this).apply {
+        val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Style.BG)
             addView(buttons)
             addView(scroll)
-        })
+        }
+        setContentView(content)
+        // Keep clear of the status/navigation bars (Android 15+ draws edge-to-edge).
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(content) { v, insets ->
+            val bars = insets.getInsets(
+                androidx.core.view.WindowInsetsCompat.Type.systemBars() or androidx.core.view.WindowInsetsCompat.Type.displayCutout()
+            )
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
         window.statusBarColor = Style.BG
         window.navigationBarColor = Style.BG
         load()

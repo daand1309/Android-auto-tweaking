@@ -52,6 +52,15 @@ class MainActivity : Activity() {
         setContentView(scroll)
         window.statusBarColor = Style.BG
         window.navigationBarColor = Style.BG
+        // Android 15+ draws apps edge-to-edge (behind the status/navigation bars): pad the content
+        // by the real bar sizes so page titles don't slide under the clock/notch.
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(scroll) { _, insets ->
+            val bars = insets.getInsets(
+                androidx.core.view.WindowInsetsCompat.Type.systemBars() or androidx.core.view.WindowInsetsCompat.Type.displayCutout()
+            )
+            root.setPadding(dp(16) + bars.left, dp(16) + bars.top, dp(16) + bars.right, dp(40) + bars.bottom)
+            insets
+        }
     }
 
     override fun onResume() {
