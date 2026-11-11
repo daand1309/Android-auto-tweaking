@@ -88,9 +88,9 @@ object Updater {
     /** Returns the latest release if it is newer than what's installed, else null. */
     fun checkForUpdate(ctx: Context): Release? {
         val json = httpGetText(LATEST_URL)
-            ?: return null  // 404 = no releases published yet
-        val release = parseRelease(json) ?: return null
         Prefs(ctx).lastUpdateCheck = System.currentTimeMillis()
+        if (json == null) return null  // 404 = no releases published yet
+        val release = parseRelease(json) ?: return null
         return release.takeIf { it.versionCode > currentVersionCode(ctx) }
     }
 
@@ -155,7 +155,10 @@ object Updater {
             throw UpdateException("Downloaded version is not newer")
         }
         val installed = pm.getPackageInfo(ctx.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
-        if (signerHashes(installed) != signerHashes(archive) || signerHashes(installed).isEmpty()) {
+        val mine = signerHashes(installed)
+        val theirs = signerHashes(archive)
+        // If either can't be read, let Android's installer enforce the match (it always does).
+        if (mine.isNotEmpty() && theirs.isNotEmpty() && mine != theirs) {
             file.delete()
             throw UpdateException(
                 "This update is signed with a different key than the app you have installed. " +

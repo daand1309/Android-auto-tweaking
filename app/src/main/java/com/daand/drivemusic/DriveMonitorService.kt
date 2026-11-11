@@ -88,7 +88,18 @@ class DriveMonitorService : NotificationListenerService() {
     private var carConnectedAt = 0L
 
     /** Re-read each time so changing the app in settings takes effect immediately. */
-    private val musicPkg get() = prefs.musicPackage
+    private var cachedMusicPkg = ""
+    private var cachedMusicPkgAt = 0L
+    /** The music app to control. Cached for 10s - it's read on every playback event. */
+    private val musicPkg: String
+        get() {
+            val now = SystemClock.elapsedRealtime()
+            if (cachedMusicPkg.isEmpty() || now - cachedMusicPkgAt > 10_000) {
+                cachedMusicPkg = prefs.musicPackage
+                cachedMusicPkgAt = now
+            }
+            return cachedMusicPkg
+        }
 
     private var ytm: MediaController? = null
     private var lastYtmState = -1
@@ -116,6 +127,8 @@ class DriveMonitorService : NotificationListenerService() {
     private var suppressPauseUntil = 0L  // ignore stops we/the greeting cause until this time
     private val resumeTimes = ArrayDeque<Long>()
 
+    /** Bumped on every connect/disconnect so delayed greeting/start tasks from an old connection are ignored. */
+    private var connectGen = 0
     private var startRunnable: Runnable? = null
     private var resumeRunnable: Runnable? = null
 
@@ -172,7 +185,7 @@ class DriveMonitorService : NotificationListenerService() {
         cancelStart()
         cancelResume()
         cancelPendingPause()
-        handler.removeCallbacks(updateCheck)
+        handler.removeCallbacksAndMessages(null)  // includes updateCheck and any delayed greeting/start
         carConnection?.type?.removeObserver(carObserver)
         carConnection = null
         runCatching { sessions.removeOnActiveSessionsChangedListener(sessionsListener) }
@@ -219,6 +232,7 @@ class DriveMonitorService : NotificationListenerService() {
         firstCarEvent = false
         if (nowConnected == carConnected) return
         carConnected = nowConnected
+        val gen = ++connectGen
 
         if (nowConnected) {
             carConnectedAt = SystemClock.elapsedRealtime()
@@ -231,6 +245,8 @@ class DriveMonitorService : NotificationListenerService() {
             resumeOffThisDrive = false
             lastAutoResumeAt = 0L
             lastPauseClue = ""
+            userPausedViaUi = false
+            announceSongAfterStart = false
             DriveLog.log("=== CAR: $name ===")
             logEnvironment()
             if (prefs.autoOpenDriveMode) openDriveMode()
@@ -241,7 +257,8 @@ class DriveMonitorService : NotificationListenerService() {
             }
             applyConnectVolume()
             val other = otherAppPlaying()
-            val startAction: () -> Unit = {
+            val startAction: () -> Unit = start@{
+                if (gen != connectGen) return@start  // stale: the car disconnected/reconnected since
                 when {
                     !prefs.autoStart -> DriveLog.log("Auto-start is turned off in settings")
                     other != null -> DriveLog.log("START: skipped - $other is already playing, not taking over")
@@ -257,7 +274,7 @@ class DriveMonitorService : NotificationListenerService() {
                 }
                 else -> handler.postDelayed({
                     // Greeting first, then the music (startMusic checks we're still in the car).
-                    if (carConnected) {
+                    if (carConnected && gen == connectGen) {
                         val song = currentSong()
                         announceSongAfterStart = song == null && prefs.announceSong && prefs.autoStart && other == null
                         if (song != null) DriveLog.log("Queued song: ${song.title} - ${song.artist}")
@@ -265,13 +282,19 @@ class DriveMonitorService : NotificationListenerService() {
                         // and don't count that stop as a pause.
                         suppressPauseUntil = SystemClock.elapsedRealtime() + 90_000L
                         val c = ytm?.takeIf { it.packageName == musicPkg } ?: findYtm()
-                        if (c?.playbackState?.state == PlaybackState.STATE_PLAYING) {
+                        val pausedForWelcome = c?.playbackState?.state == PlaybackState.STATE_PLAYING
+                        if (pausedForWelcome) {
                             DriveLog.log("GREETING: music already playing (Android Auto auto-start?) - pausing it for the welcome")
-                            c.transportControls.pause()
+                            c?.transportControls?.pause()
                         }
                         WelcomeAnnouncer.run(this, song) {
                             suppressPauseUntil = 0L
-                            if (carConnected) startAction()
+                            if (!carConnected || gen != connectGen) return@run
+                            if (pausedForWelcome && (!prefs.autoStart || other != null)) {
+                                // Auto-start won't run, so put back the music we paused for the welcome.
+                                musicController()?.transportControls?.play()
+                                DriveLog.log("GREETING: done - resumed the music we paused")
+                            } else startAction()
                         }
                     }
                 }, prefs.startDelaySec * 1000L)
@@ -286,6 +309,8 @@ class DriveMonitorService : NotificationListenerService() {
             cancelStart()
             cancelResume()
             cancelPendingPause()
+            announceSongAfterStart = false
+            suppressPauseUntil = 0L
             if (prefs.pauseOnDisconnect) {
                 val c = findYtm()
                 if (c?.playbackState?.state == PlaybackState.STATE_PLAYING) {
@@ -313,6 +338,7 @@ class DriveMonitorService : NotificationListenerService() {
                     state == PlaybackState.STATE_PLAYING -> {
                         DriveLog.log("START: success - YouTube Music is playing (after ~${tick * START_TICK_MS / 1000}s)")
                         startRunnable = null
+                        onMusicStarted()
                         return
                     }
                     c != null && (state == PlaybackState.STATE_BUFFERING || state == PlaybackState.STATE_CONNECTING) &&
@@ -350,6 +376,21 @@ class DriveMonitorService : NotificationListenerService() {
         }
         startRunnable = r
         handler.postDelayed(r, delayMs)
+    }
+
+    /** Called once when a start attempt succeeds: announces the song if the greeting couldn't. */
+    private fun onMusicStarted() {
+        if (!announceSongAfterStart) return
+        announceSongAfterStart = false
+        val gen = connectGen
+        // Give the player a moment to publish the track info, then announce it.
+        handler.postDelayed({
+            val song = currentSong()
+            if (song != null && carConnected && gen == connectGen) {
+                suppressPauseUntil = SystemClock.elapsedRealtime() + 15_000
+                SongAnnouncer.announce(this@DriveMonitorService, song, prefs.greetingDutch)
+            }
+        }, 2_500)
     }
 
     private fun cancelStart() {
@@ -456,8 +497,14 @@ class DriveMonitorService : NotificationListenerService() {
                 .setFullScreenIntent(pi, true)
                 .setAutoCancel(true)
                 .build()
+            if (!nm.areNotificationsEnabled()) {
+                DriveLog.log("Drive Mode: can't open - notifications are off for Drive Music (allow them in the app checklist)")
+                return
+            }
             nm.notify(7, n)
-            DriveLog.log("Drive Mode: opening on connect")
+            val fullScreenOk = android.os.Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent()
+            DriveLog.log(if (fullScreenOk) "Drive Mode: opening on connect"
+                else "Drive Mode: shown as a tap notification - allow 'full-screen notifications' to make it pop up by itself")
         } catch (e: Exception) {
             DriveLog.log("Drive Mode: could not open (${e.message})")
         }
@@ -504,17 +551,7 @@ class DriveMonitorService : NotificationListenerService() {
                 // "fight" a pause that happens right after (pause handling deals with that).
                 DriveLog.log("START: success - YouTube Music is playing")
                 cancelStart()
-                if (announceSongAfterStart) {
-                    announceSongAfterStart = false
-                    // Give the player a moment to publish the track info, then announce it.
-                    handler.postDelayed({
-                        val song = currentSong()
-                        if (song != null && carConnected) {
-                            suppressPauseUntil = SystemClock.elapsedRealtime() + 15_000
-                            SongAnnouncer.announce(this@DriveMonitorService, song, prefs.greetingDutch)
-                        }
-                    }, 2_500)
-                }
+                onMusicStarted()
             }
             if (!carConnected) return
 

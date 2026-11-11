@@ -681,7 +681,12 @@ class MainActivity : Activity() {
         (LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)).also {
             it.topMargin = dp(8); layoutParams = it
         }
-        setOnCheckedChangeListener { _, v -> onChange(v); DriveLog.log("Setting changed: $label = $v") }
+        setOnCheckedChangeListener { sw, v ->
+            // Keep the colours in step with the new state.
+            (sw as Switch).thumbTintList = Style.tint(if (v) Style.PRIMARY else Style.TEXT2)
+            sw.trackTintList = Style.tint(if (v) 0x66_4F8CFF else Style.SURFACE2)
+            onChange(v); DriveLog.log("Setting changed: $label = $v")
+        }
     })
 
     companion object {
