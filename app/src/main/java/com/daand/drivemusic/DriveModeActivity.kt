@@ -41,7 +41,56 @@ class DriveModeActivity : Activity() {
         super.onCreate(savedInstanceState)
         DriveLog.init(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        setContentView(buildUi())
+        val frame = android.widget.FrameLayout(this).apply { setBackgroundColor(Style.BG) }
+        frame.addView(buildUi())
+        setContentView(frame)
+        if (Prefs(this).showSplash) playIntro(frame)
+    }
+
+    /** Original animated intro: the car name scales in with an accent sweep, then fades away.
+     *  Deliberately not a manufacturer emblem - just a clean custom motion piece. */
+    private fun playIntro(frame: android.widget.FrameLayout) {
+        val name = Prefs(this).carName.ifBlank { "Drive" }
+        val overlay = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Style.BG)
+            isClickable = true
+        }
+        val bar = View(this).apply {
+            background = Style.rounded(Style.PRIMARY, dp(3).toFloat())
+            layoutParams = LinearLayout.LayoutParams(0, dp(5)).apply { topMargin = dp(14) }
+        }
+        val nameTv = TextView(this).apply {
+            text = name.uppercase(); setTextColor(Color.WHITE); textSize = 56f
+            setTypeface(typeface, Typeface.BOLD); letterSpacing = 0.2f
+            alpha = 0f; scaleX = 0.8f; scaleY = 0.8f
+        }
+        val sub = TextView(this).apply {
+            text = "DRIVE MODE"; setTextColor(Style.TEXT2); textSize = 14f
+            letterSpacing = 0.4f; alpha = 0f; setPadding(0, dp(10), 0, 0)
+        }
+        overlay.addView(nameTv)
+        overlay.addView(bar)
+        overlay.addView(sub)
+        frame.addView(overlay, android.widget.FrameLayout.LayoutParams(-1, -1))
+
+        val remove = Runnable {
+            overlay.animate().alpha(0f).setDuration(400).withEndAction {
+                (overlay.parent as? android.widget.FrameLayout)?.removeView(overlay)
+            }.start()
+        }
+        overlay.setOnClickListener { handler.removeCallbacksAndMessages(null); remove.run() }
+
+        nameTv.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(420).start()
+        sub.animate().alpha(1f).setStartDelay(250).setDuration(400).start()
+        val fullW = resources.displayMetrics.widthPixels / 3
+        android.animation.ValueAnimator.ofInt(0, fullW).apply {
+            duration = 520; startDelay = 150
+            addUpdateListener { bar.layoutParams = (bar.layoutParams as LinearLayout.LayoutParams).apply { width = it.animatedValue as Int }; bar.requestLayout() }
+            start()
+        }
+        handler.postDelayed(remove, 1700)
     }
 
     override fun onResume() {

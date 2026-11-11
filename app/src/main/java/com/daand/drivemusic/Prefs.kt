@@ -154,6 +154,15 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("auto_open_drive_mode", false)
         set(v) = sp.edit().putBoolean("auto_open_drive_mode", v).apply()
 
+    /** Shown in the Drive Mode intro animation. */
+    var carName: String
+        get() = sp.getString("car_name", "ASX") ?: "ASX"
+        set(v) = sp.edit().putString("car_name", v).apply()
+
+    var showSplash: Boolean
+        get() = sp.getBoolean("show_splash", true)
+        set(v) = sp.edit().putBoolean("show_splash", v).apply()
+
     var lastCarState: String
         get() = sp.getString("last_car_state", "unknown") ?: "unknown"
         set(v) = sp.edit().putString("last_car_state", v).apply()

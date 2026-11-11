@@ -278,6 +278,31 @@ class MainActivity : Activity() {
                 "Android Auto's safety-approved buttons and lists.)"
         )
 
+        // ---------------- audio
+        header("Audio & sound")
+        text("The app can't process other apps' audio or change hands-free call quality (that's the Bluetooth " +
+            "Hands-Free Profile, handled by the phone and car). But your phone's own equalizer affects everything, " +
+            "which is the best lever for simple car speakers.")
+        button("🎚 Open equalizer", accent = true) { openEqualizer() }
+        button("Phone sound settings") {
+            try { startActivity(Intent(Settings.ACTION_SOUND_SETTINGS)) } catch (e: Exception) { toast("Open Settings → Sounds") }
+        }
+        text("Tips:\n" +
+            "• Music too quiet in the car? Turn on 'Set media volume when connecting' above.\n" +
+            "• Quiet/robotic hands-free calls: enable HD Voice / VoLTE (Settings → Mobile network), make sure Bluetooth " +
+            "wideband/HD audio is on, and raise the volume during the call.\n" +
+            "• The car head unit may have its own bass/treble/balance settings — worth a look.\n" +
+            "• On Samsung, Dolby Atmos and the Equalizer live in Settings → Sounds and vibration → Sound quality and effects.")
+
+        // ---------------- drive mode intro
+        header("Drive Mode intro")
+        switch("Show the ${prefs.carName} intro animation", prefs.showSplash) { prefs.showSplash = it }
+        stepperLike("Car name: ${prefs.carName.ifBlank { "(none)" }}", "Change") {
+            askText("Name shown in the intro", "e.g. ASX", prefs.carName) { prefs.carName = it.take(12); render() }
+        }
+        text("An original animated intro shown when Drive Mode opens (not Mitsubishi's badge — that's their trademark). " +
+            "It plays on the phone, not the car's boot screen.")
+
         header("Things only you can change")
         text(
             "• Samsung: Settings → Battery → Background usage limits → make sure YouTube Music, Android Auto and Drive Music " +
@@ -661,6 +686,19 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQ_LOCATION = 3
+    }
+
+    private fun openEqualizer() {
+        val i = Intent(android.media.audiofx.AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL).apply {
+            putExtra(android.media.audiofx.AudioEffect.EXTRA_AUDIO_SESSION, 0)
+            putExtra(android.media.audiofx.AudioEffect.EXTRA_PACKAGE_NAME, packageName)
+            putExtra(android.media.audiofx.AudioEffect.EXTRA_CONTENT_TYPE, android.media.audiofx.AudioEffect.CONTENT_TYPE_MUSIC)
+        }
+        if (i.resolveActivity(packageManager) != null) startActivity(i)
+        else {
+            toast("No system equalizer found - opening sound settings")
+            try { startActivity(Intent(Settings.ACTION_SOUND_SETTINGS)) } catch (e: Exception) {}
+        }
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
