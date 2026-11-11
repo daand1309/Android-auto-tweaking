@@ -20,7 +20,7 @@ class GreetingTest {
 
     @Test fun greetsByNameWithTimeOfDay() {
         val t = GreetingText.build("Mr. Smith", false, at(8), null, "", Random(1))
-        assertTrue(t, t.startsWith("Good morning, Mr. Smith. Welcome back."))
+        assertTrue(t, t.startsWith("Good morning, Mister Smith. Welcome back."))
         assertTrue(t, t.endsWith("Starting your music. Have a great drive!"))
     }
 
@@ -60,7 +60,7 @@ class GreetingTest {
     @Test fun dutchWeatherAndIcyWarning() {
         val icy = sunny.copy(tempNow = -2.0, code = 71, rainChance = 80)
         val t = GreetingText.weatherSentence(icy, "Utrecht", true)
-        assertTrue(t, t.contains("In Utrecht is het nu -2 graden met sneeuw."))
+        assertTrue(t, t.contains("In Utrecht is het nu min 2 graden met sneeuw."))
         assertTrue(t, t.contains("80 procent kans op regen"))
         assertTrue(t, t.contains("glad"))
     }
@@ -108,7 +108,7 @@ class GreetingTest {
 
     @Test fun lightsWhenDarkOrSunsetSoon() {
         assertTrue(GreetingText.roadSentence(clearDay.copy(isDay = false), false).contains("It's dark out, so lights on."))
-        assertTrue(GreetingText.roadSentence(clearDay.copy(nowTime = "16:20"), false).contains("The sun sets at 17:05"))
+        assertTrue(GreetingText.roadSentence(clearDay.copy(nowTime = "16:20"), false).contains("The sun sets at 5:05 PM"))
         assertFalse(GreetingText.roadSentence(clearDay, false).contains("sun sets"))
     }
 
@@ -138,7 +138,7 @@ class GreetingTest {
         assertTrue(t, t.contains("black ice"))
         assertTrue(t, t.contains("visibility is only 800 metres"))
         assertTrue(t, t.contains("gusts up to 65"))
-        assertTrue(t, t.contains("sun sets at 16:58"))
+        assertTrue(t, t.contains("sun sets at 4:58 PM"))
     }
 
     // ---------------- song

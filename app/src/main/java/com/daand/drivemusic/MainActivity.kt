@@ -183,6 +183,31 @@ class MainActivity : Activity() {
                     Button(this).apply { text = "🔎 Type a city"; isAllCaps = false; setOnClickListener { askCity() } },
                 )
             }
+            // ---- voice & pronunciation
+            text("Voice & pronunciation")
+            stepperLike("Pronounce name as: ${prefs.namePronunciation.ifBlank { "(same as name)" }}", "Change") { askPronunciation() }
+            stepperLike("Voice: ${prefs.voiceName.ifBlank { "automatic (best available)" }}", "Choose") { pickVoice() }
+            stepper("Speed", "%.2fx".format(prefs.speechRate),
+                { prefs.speechRate = (prefs.speechRate - 0.05f).coerceAtLeast(0.6f) },
+                { prefs.speechRate = (prefs.speechRate + 0.05f).coerceAtMost(1.4f) })
+            stepper("Pitch", "%.2f".format(prefs.speechPitch),
+                { prefs.speechPitch = (prefs.speechPitch - 0.05f).coerceAtLeast(0.6f) },
+                { prefs.speechPitch = (prefs.speechPitch + 0.05f).coerceAtMost(1.4f) })
+            button("▶ Preview voice") { previewVoice() }
+            if (!MusicApps.isInstalled(packageManager, VoicePicker.GOOGLE_TTS)) {
+                text("Tip: for a much more natural voice, install 'Speech Services by Google' and choose it as the voice engine.")
+                button("Get Speech Services by Google") {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${VoicePicker.GOOGLE_TTS}")))
+                    } catch (e: Exception) {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=${VoicePicker.GOOGLE_TTS}")))
+                    }
+                }
+            }
+            button("Download better voices (phone speech settings)") {
+                try { startActivity(Intent("com.android.settings.TTS_SETTINGS")) } catch (e: Exception) { toast("Open Settings → General management → Text-to-speech") }
+            }
+
             button("🔊 Test greeting now") {
                 toast("Speaking... turn up the media volume")
                 WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong())
@@ -270,6 +295,85 @@ class MainActivity : Activity() {
             .setTitle(title)
             .setView(input)
             .setPositiveButton("OK") { _, _ -> onOk(input.text.toString().trim()) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun askPronunciation() = askText(
+        "How should the name sound?",
+        "e.g. Mister Dik-hof (leave empty to use the name)",
+        prefs.namePronunciation
+    ) {
+        prefs.namePronunciation = it
+        render()
+        previewVoice()
+    }
+
+    private fun sampleText(): String {
+        val dutch = prefs.greetingDutch
+        val name = SpeechText.spokenName(prefs.namePronunciation.ifBlank { prefs.greetingName }, dutch)
+        val hello = GreetingText.timeGreeting(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY), dutch)
+        return if (dutch) "$hello${if (name.isNotBlank()) ", $name" else ""}. Zo klink ik. Het is nu min 2 graden en de zon gaat om 17.05 uur onder."
+        else "$hello${if (name.isNotBlank()) ", $name" else ""}. This is how I sound. It's currently minus 2 degrees and the sun sets at 5:05 PM."
+    }
+
+    private fun previewVoice() {
+        toast("Speaking... turn up the media volume")
+        Greeter(this).speak(sampleText(), prefs.greetingDutch) {}
+    }
+
+    /** Lists installed voices for the greeting language (best first) and previews the one you pick. */
+    private fun pickVoice() {
+        val dutch = prefs.greetingDutch
+        var tts: android.speech.tts.TextToSpeech? = null
+        val onInit = android.speech.tts.TextToSpeech.OnInitListener { status ->
+            runOnUiThread {
+                val engine = tts ?: return@runOnUiThread
+                if (status != android.speech.tts.TextToSpeech.SUCCESS) { toast("No text-to-speech engine found"); engine.shutdown(); return@runOnUiThread }
+                val voices = VoicePicker.usable(engine.voices.orEmpty(), dutch)
+                val best = VoicePicker.best(voices, dutch)
+                val sorted = voices.sortedWith(compareByDescending<android.speech.tts.Voice> { it == best }
+                    .thenBy { it.isNetworkConnectionRequired }.thenByDescending { it.quality }.thenBy { it.name })
+                val engines = engine.engines
+                engine.shutdown()
+                if (sorted.isEmpty()) {
+                    toast("No ${if (dutch) "Dutch" else "English"} voices installed - tap 'Download better voices'")
+                    return@runOnUiThread
+                }
+                val labels = listOf("Automatic (recommended)") + sorted.map { VoicePicker.label(it) } +
+                    (if (engines.size > 1) listOf("Change voice engine…") else emptyList())
+                AlertDialog.Builder(this)
+                    .setTitle("Choose a voice")
+                    .setItems(labels.toTypedArray()) { _, i ->
+                        when {
+                            i == 0 -> prefs.voiceName = ""
+                            i <= sorted.size -> prefs.voiceName = sorted[i - 1].name
+                            else -> { pickEngine(engines); return@setItems }
+                        }
+                        DriveLog.log("Setting changed: voice = ${prefs.voiceName.ifBlank { "automatic" }}")
+                        render()
+                        previewVoice()
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+        }
+        val engineName = VoicePicker.preferredEngine(this, prefs.ttsEngine)
+        tts = if (engineName != null) android.speech.tts.TextToSpeech(this, onInit, engineName)
+        else android.speech.tts.TextToSpeech(this, onInit)
+    }
+
+    private fun pickEngine(engines: List<android.speech.tts.TextToSpeech.EngineInfo>) {
+        val labels = listOf("Automatic (Google if installed)") + engines.map { it.label }
+        AlertDialog.Builder(this)
+            .setTitle("Voice engine")
+            .setItems(labels.toTypedArray()) { _, i ->
+                prefs.ttsEngine = if (i == 0) "" else engines[i - 1].name
+                prefs.voiceName = ""  // voices belong to an engine
+                DriveLog.log("Setting changed: voice engine = ${prefs.ttsEngine.ifBlank { "automatic" }}")
+                render()
+                previewVoice()
+            }
             .setNegativeButton("Cancel", null)
             .show()
     }

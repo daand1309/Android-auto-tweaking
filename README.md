@@ -26,7 +26,8 @@ When Android Auto connects, a voice welcomes you by name (e.g. "Good morning, Mr
 
 - Set your name, language and weather location under **Welcome greeting** in the app, and tap **Test greeting now** to hear it.
 - Weather comes from [Open-Meteo](https://open-meteo.com) (free, no account). Only an approximate location (rounded to ~10 km) is sent. Location is set from the app ("Use my location" or "Type a city") and is never tracked in the background.
-- Uses the phone's own text-to-speech voice and plays through the car like a navigation prompt. If the voice isn't available, music still starts.
+- Uses the phone's text-to-speech (Google's engine if installed, otherwise the phone default), picks the best installed offline voice for the language automatically, and plays through the car like a navigation prompt. If the voice isn't available, music still starts.
+- **Voice & pronunciation** settings: choose a voice (with preview), speed and pitch, and "Pronounce name as" for a phonetic spelling. Titles are spoken properly ("Mr." → "Mister" / "meneer"), negative temperatures as "minus"/"min", times as "5:05 PM" / "17.05 uur", and YouTube song titles are cleaned ("(Official Video)", "[4K]", "- Topic", "VEVO", emojis, "feat." → "featuring"). Sentences are spoken one at a time with short pauses.
 - Not repeated if Android Auto reconnects within 10 minutes.
 
 ## Patched YouTube Music (Morphe / ReVanced)

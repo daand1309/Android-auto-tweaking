@@ -185,7 +185,7 @@ class DriveFlowTest {
         waitFor("music to start after the greeting", 60_000) { currentState == PlaybackState.STATE_PLAYING }
         val log = log()
         assertTrue(log, log.contains("GREETING: \"Good"))
-        assertTrue(log, log.contains("Mr. Test"))
+        assertTrue(log, log.contains("Mister Test"))
         assertTrue(log, log.contains("Up first: Test Song by Test Artist."))
         assertTrue(log, Regex("GREETING: (spoken|no text-to-speech|speech|timed out)").containsMatchIn(log))
     }

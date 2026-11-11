@@ -107,6 +107,30 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("announce_song", true)
         set(v) = sp.edit().putBoolean("announce_song", v).apply()
 
+    // ---- voice
+    /** Text-to-speech engine package ("" = Google if installed, else phone default). */
+    var ttsEngine: String
+        get() = sp.getString("tts_engine", "") ?: ""
+        set(v) = sp.edit().putString("tts_engine", v).apply()
+
+    /** Chosen voice name ("" = pick the best automatically). */
+    var voiceName: String
+        get() = sp.getString("voice_name", "") ?: ""
+        set(v) = sp.edit().putString("voice_name", v).apply()
+
+    var speechRate: Float
+        get() = sp.getFloat("speech_rate", 0.95f)
+        set(v) = sp.edit().putFloat("speech_rate", v).apply()
+
+    var speechPitch: Float
+        get() = sp.getFloat("speech_pitch", 1.0f)
+        set(v) = sp.edit().putFloat("speech_pitch", v).apply()
+
+    /** Optional phonetic spelling of the name, e.g. "Mister Dik-hof". Overrides the name when speaking. */
+    var namePronunciation: String
+        get() = sp.getString("name_pronunciation", "") ?: ""
+        set(v) = sp.edit().putString("name_pronunciation", v).apply()
+
     var lastGreetingAt: Long
         get() = sp.getLong("last_greeting", 0L)
         set(v) = sp.edit().putLong("last_greeting", v).apply()

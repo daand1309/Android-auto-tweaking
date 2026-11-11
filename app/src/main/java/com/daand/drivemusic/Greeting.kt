@@ -48,7 +48,7 @@ object GreetingText {
         val day = cal.get(Calendar.DAY_OF_WEEK)
         val parts = mutableListOf<String>()
 
-        val who = name.trim()
+        val who = SpeechText.spokenName(name, dutch)
         parts += if (who.isEmpty()) timeGreeting(hour, dutch) + "." else "${timeGreeting(hour, dutch)}, $who."
         parts += if (dutch) "Welkom terug." else "Welcome back."
 
@@ -99,8 +99,8 @@ object GreetingText {
     }
 
     fun songSentence(song: Song, dutch: Boolean, upFirst: Boolean): String {
-        val t = song.title.trim()
-        val a = song.artist.trim()
+        val a = SpeechText.cleanArtist(song.artist)
+        val t = SpeechText.cleanTitle(song.title, a, dutch)
         val what = when {
             a.isEmpty() -> t
             dutch -> "$t van $a"
@@ -140,7 +140,7 @@ object GreetingText {
         val lights = when {
             !w.isDay -> if (dutch) "Het is donker, dus lichten aan." else "It's dark out, so lights on."
             minutesUntil(w.nowTime, w.sunset)?.let { it in 0..90 } == true ->
-                if (dutch) "De zon gaat om ${w.sunset} onder." else "The sun sets at ${w.sunset}, so you'll need your lights soon."
+                if (dutch) "De zon gaat om ${SpeechText.time(w.sunset, true)} onder." else "The sun sets at ${SpeechText.time(w.sunset, false)}, so you'll need your lights soon."
             else -> null
         }
         val head = if (issues.isEmpty()) {
@@ -160,9 +160,9 @@ object GreetingText {
     }
 
     fun weatherSentence(w: WeatherNow, place: String, dutch: Boolean, withAdvice: Boolean = true): String {
-        val now = w.tempNow.roundToInt()
-        val lo = w.tempMin.roundToInt()
-        val hi = w.tempMax.roundToInt()
+        val now = SpeechText.number(w.tempNow.roundToInt(), dutch)
+        val lo = SpeechText.number(w.tempMin.roundToInt(), dutch)
+        val hi = SpeechText.number(w.tempMax.roundToInt(), dutch)
         val desc = describe(w.code, dutch)
         val sb = StringBuilder()
         if (dutch) {
@@ -244,6 +244,96 @@ object GreetingText {
     )
 }
 
+/** Makes text sound right when spoken: titles, names, numbers, times and messy YouTube song titles. */
+object SpeechText {
+    private val TITLES_EN = mapOf(
+        "mr" to "Mister", "mister" to "Mister", "mrs" to "Missus", "ms" to "Miz", "miss" to "Miss",
+        "dr" to "Doctor", "sir" to "Sir", "dhr" to "Mister", "mevr" to "Missus", "meneer" to "Mister", "mevrouw" to "Missus",
+    )
+    private val TITLES_NL = mapOf(
+        "mr" to "meneer", "mister" to "meneer", "dhr" to "meneer", "meneer" to "meneer",
+        "mrs" to "mevrouw", "ms" to "mevrouw", "mevr" to "mevrouw", "mevrouw" to "mevrouw", "miss" to "juffrouw",
+        "dr" to "dokter", "sir" to "meneer",
+    )
+
+    /** "Mr. Dickhoff" -> "Mister Dickhoff" (English) / "meneer Dickhoff" (Dutch). */
+    fun spokenName(name: String, dutch: Boolean): String {
+        val words = name.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (words.isEmpty()) return ""
+        val key = words[0].trimEnd('.').lowercase()
+        val title = (if (dutch) TITLES_NL else TITLES_EN)[key]
+        return if (title != null) (listOf(title) + words.drop(1)).joinToString(" ") else words.joinToString(" ")
+    }
+
+    /** -2 -> "minus 2" / "min 2", so it isn't read as "dash two". */
+    fun number(n: Int, dutch: Boolean) = if (n < 0) (if (dutch) "min ${-n}" else "minus ${-n}") else n.toString()
+
+    /** "17:05" -> "5:05 PM" (English) / "17.05 uur" (Dutch). */
+    fun time(hhmm: String, dutch: Boolean): String {
+        val m = Regex("""(\d{1,2}):(\d{2})""").find(hhmm) ?: return hhmm
+        val h = m.groupValues[1].toInt()
+        val min = m.groupValues[2]
+        if (dutch) return if (min == "00") "$h uur" else "$h.$min uur"
+        val h12 = if (h % 12 == 0) 12 else h % 12
+        val ampm = if (h < 12) "AM" else "PM"
+        return if (min == "00") "$h12 $ampm" else "$h12:$min $ampm"
+    }
+
+    /** "Queen - Topic" -> "Queen", "QueenVEVO" -> "Queen". */
+    fun cleanArtist(artist: String): String = tidy(
+        artist.replace(Regex("""\s*-\s*Topic\s*$""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""VEVO\s*$"""), "")
+            .replace(Regex("""\s*\(?official\)?\s*$""", RegexOption.IGNORE_CASE), "")
+    )
+
+    private val JUNK = Regex(
+        """\b(official|video|audio|lyrics?|visuali[sz]er|remaster(ed)?|hd|hq|4k|8k|explicit|clip|mv|m/v)\b""",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** "Queen - Bohemian Rhapsody (Official Video Remastered) [4K]" -> "Bohemian Rhapsody". */
+    fun cleanTitle(title: String, artist: String, dutch: Boolean): String {
+        var t = title
+        // Bracketed bits that are only video/audio labels.
+        t = t.replace(Regex("""[(\[【][^)\]】]*[)\]】]""")) { if (JUNK.containsMatchIn(it.value)) "" else it.value }
+        // "Song - Remastered 2011", "Song | Official Video"
+        t = t.replace(Regex("""\s+[-|]\s+[^-|]*$""")) { if (JUNK.containsMatchIn(it.value)) "" else it.value }
+        // "Artist - Song" (common in YouTube video titles)
+        if (artist.isNotBlank()) t = t.replace(Regex("^" + Regex.escape(artist) + """\s*[-–:]\s*""", RegexOption.IGNORE_CASE), "")
+        // Featuring
+        val feat = if (dutch) " met " else " featuring "
+        t = t.replace(Regex("""\s+(ft\.?|feat\.?)\s+""", RegexOption.IGNORE_CASE), feat)
+        t = t.replace(Regex("""[(\[]\s*(ft\.?|feat\.?)\s+([^)\]]+)[)\]]""", RegexOption.IGNORE_CASE)) { "${feat.trimEnd()} ${it.groupValues[2]}" }
+        t = tidy(t)
+        if (t.length > 70) t = t.take(70).substringBeforeLast(' ')
+        return t.ifBlank { tidy(title) }
+    }
+
+    /** Removes emojis, hashtags and symbols that voices read out oddly. */
+    fun tidy(s: String): String = s
+        .replace(Regex("""#\w+"""), "")
+        .replace(Regex("""[\p{So}\p{Cn}\p{Cs}|*_~^<>{}]"""), " ")
+        .replace(Regex("""\s+"""), " ")
+        .trim(' ', '-', '–', ':', ',')
+
+    /** Splits text into sentences so the voice can pause naturally between them. */
+    fun sentences(text: String): List<String> {
+        val pieces = text.split(Regex("""(?<=[.!?])\s+""")).map { it.trim() }.filter { it.isNotEmpty() }
+        val out = mutableListOf<String>()
+        for (p in pieces) {
+            val prev = out.lastOrNull()
+            // Don't break after abbreviations or initials ("Mr. Brightside", "Guns N' Roses Vol. 2", "J. Cole").
+            if (prev != null && ABBREVIATION.containsMatchIn(prev)) out[out.size - 1] = "$prev $p" else out += p
+        }
+        return out
+    }
+
+    private val ABBREVIATION = Regex(
+        """(\b(mr|mrs|ms|dr|st|vs|vol|no|ft|feat|jr|sr|dhr|mevr|nr|blz|ca)\.|\b[A-Z]\.)$""",
+        RegexOption.IGNORE_CASE
+    )
+}
+
 /** Weather from Open-Meteo (free, no account or API key). Call off the main thread. */
 object Weather {
     /** Coordinates are rounded to ~10 km before being sent, for privacy. */
@@ -304,7 +394,61 @@ object Weather {
     }
 }
 
-/** Speaks the welcome through the car speakers, then calls [onDone] (always, even if speech fails). */
+/** Chooses the best-sounding voice. Pure logic, unit tested. */
+object VoicePicker {
+    const val GOOGLE_TTS = "com.google.android.tts"
+
+    fun localeFor(dutch: Boolean): Locale = if (dutch) Locale("nl", "NL") else Locale.UK
+
+    /** Installed voices that speak the right language (not ones that still need downloading). */
+    fun usable(voices: Collection<android.speech.tts.Voice>, dutch: Boolean): List<android.speech.tts.Voice> {
+        val lang = localeFor(dutch).language
+        return voices.filter { v ->
+            v.locale.language == lang &&
+                !v.features.orEmpty().contains(android.speech.tts.TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)
+        }
+    }
+
+    /**
+     * Best voice: the saved choice if still available; otherwise prefer the exact country
+     * (UK English / Netherlands Dutch), offline (works without signal), highest quality, lowest latency.
+     */
+    fun best(voices: Collection<android.speech.tts.Voice>, dutch: Boolean, preferred: String = ""): android.speech.tts.Voice? {
+        val ok = usable(voices, dutch)
+        ok.firstOrNull { it.name == preferred }?.let { return it }
+        val country = localeFor(dutch).country
+        return ok.sortedWith(
+            compareByDescending<android.speech.tts.Voice> { it.locale.country == country }
+                .thenBy { it.isNetworkConnectionRequired }
+                .thenByDescending { it.quality }
+                .thenBy { it.latency }
+                .thenBy { it.name }
+        ).firstOrNull()
+    }
+
+    /** Human-friendly label, e.g. "English (UK) · voice gbb · offline · very high quality". */
+    fun label(v: android.speech.tts.Voice): String {
+        val q = when {
+            v.quality >= android.speech.tts.Voice.QUALITY_VERY_HIGH -> "very high quality"
+            v.quality >= android.speech.tts.Voice.QUALITY_HIGH -> "high quality"
+            v.quality >= android.speech.tts.Voice.QUALITY_NORMAL -> "normal quality"
+            else -> "low quality"
+        }
+        val short = Regex("""-x-([a-z0-9]+)""").find(v.name)?.groupValues?.get(1) ?: v.name
+        val net = if (v.isNetworkConnectionRequired) "needs internet" else "offline"
+        return "${v.locale.getDisplayName(Locale.ENGLISH)} · voice $short · $net · $q"
+    }
+
+    fun preferredEngine(context: Context, saved: String): String? {
+        if (saved.isNotEmpty()) return saved
+        val hasGoogle = try {
+            context.packageManager.getPackageInfo(GOOGLE_TTS, 0); true
+        } catch (e: Exception) { false }
+        return if (hasGoogle) GOOGLE_TTS else null  // null = phone's default engine
+    }
+}
+
+/** Speaks text through the car speakers, then calls [onDone] (always, even if speech fails). */
 class Greeter(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
     private var tts: TextToSpeech? = null
@@ -312,6 +456,7 @@ class Greeter(private val context: Context) {
     private var focus: AudioFocusRequest? = null
 
     fun speak(text: String, dutch: Boolean, onDone: () -> Unit) {
+        val prefs = Prefs(context)
         val audio = context.getSystemService(AudioManager::class.java)
         val attrs = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)  // plays through the car like nav prompts
@@ -330,33 +475,51 @@ class Greeter(private val context: Context) {
         }
 
         // Never let the greeting block the music for long.
-        handler.postDelayed({ finish("timed out - continuing") }, 45_000)
+        handler.postDelayed({ finish("timed out - continuing") }, 60_000)
 
-        tts = TextToSpeech(context.applicationContext) { status ->
+        val engineName = VoicePicker.preferredEngine(context, prefs.ttsEngine)
+        val listener = TextToSpeech.OnInitListener { status ->
             handler.post {
                 val engine = tts ?: return@post
                 if (status != TextToSpeech.SUCCESS) { finish("no text-to-speech engine available"); return@post }
-                val locale = if (dutch) Locale("nl", "NL") else Locale.UK
-                val res = engine.setLanguage(locale)
-                if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    DriveLog.log("GREETING: voice for $locale not installed, using the phone's default voice")
+                val locale = VoicePicker.localeFor(dutch)
+                val voice = try { VoicePicker.best(engine.voices.orEmpty(), dutch, prefs.voiceName) } catch (e: Exception) { null }
+                if (voice != null) {
+                    engine.voice = voice
+                    DriveLog.log("GREETING: voice ${voice.name} (engine ${engine.defaultEngine.takeIf { engineName == null } ?: engineName})")
+                } else {
+                    val res = engine.setLanguage(locale)
+                    if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
+                        DriveLog.log("GREETING: no ${locale.displayLanguage} voice installed - using the phone's default voice")
+                    }
                 }
                 engine.setAudioAttributes(attrs)
-                engine.setSpeechRate(0.95f)
+                engine.setSpeechRate(prefs.speechRate)
+                engine.setPitch(prefs.speechPitch)
+
+                val parts = SpeechText.sentences(text)
+                val lastId = "s${parts.size - 1}"
                 engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(id: String?) {}
-                    override fun onDone(id: String?) { handler.post { finish("spoken") } }
+                    override fun onDone(id: String?) { if (id == lastId) handler.post { finish("spoken") } }
                     @Deprecated("Deprecated in Java")
                     override fun onError(id: String?) { handler.post { finish("speech failed") } }
                     override fun onError(id: String?, code: Int) { handler.post { finish("speech failed ($code)") } }
                 })
                 focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
                     .setAudioAttributes(attrs).build().also { audio.requestAudioFocus(it) }
-                if (engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "welcome") != TextToSpeech.SUCCESS) {
-                    finish("speech could not start")
+
+                // One sentence at a time with a short natural pause in between.
+                var ok = true
+                parts.forEachIndexed { i, sentence ->
+                    if (i > 0) engine.playSilentUtterance(250, TextToSpeech.QUEUE_ADD, "p$i")
+                    if (engine.speak(sentence, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "s$i") != TextToSpeech.SUCCESS) ok = false
                 }
+                if (!ok || parts.isEmpty()) finish("speech could not start")
             }
         }
+        tts = if (engineName != null) TextToSpeech(context.applicationContext, listener, engineName)
+        else TextToSpeech(context.applicationContext, listener)
     }
 }
 
@@ -380,7 +543,7 @@ object WelcomeAnnouncer {
                 }
             }
             val text = GreetingText.build(
-                p.greetingName, p.greetingDutch, Calendar.getInstance(), weather, p.weatherPlace,
+                p.namePronunciation.ifBlank { p.greetingName }, p.greetingDutch, Calendar.getInstance(), weather, p.weatherPlace,
                 roads = p.roadConditionsEnabled, song = song.takeIf { p.announceSong },
             )
             p.lastGreetingAt = System.currentTimeMillis()
