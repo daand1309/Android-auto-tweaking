@@ -90,6 +90,22 @@ class ObdFeaturesTest {
         assertFalse("not enough days yet", CarAlerts.batteryTrendWeak((1L..3L).map { it to 11.9 }))
     }
 
+    @Test fun serviceSyncedWithTheCarsDashboard() {
+        val day = 86_400_000L
+        // Dashboard said 3,200 km / 60 days on day 100.
+        assertEquals(1_000 to 40, CarAlerts.serviceLeft(100 * day, 3_200, 60, 2_200.0, 120 * day))
+        fun status(kmSinceSync: Double, now: Long, serviceDate: Long = 0) =
+            CarAlerts.serviceStatus(serviceDate, 0.0, 15_000, 12, 100 * day, 3_200, 60, kmSinceSync, now)
+        assertNull(status(2_000.0, 130 * day))
+        assertEquals("km", status(3_250.0, 130 * day))
+        assertEquals("time", status(500.0, 161 * day))
+        // A last-service date set after the sync takes over again.
+        assertNull(status(9_999.0, 200 * day, serviceDate = 150 * day))
+        assertEquals(45, CarAlerts.parseDays("45 days")); assertEquals(60, CarAlerts.parseDays("2 months"))
+        assertEquals(60, CarAlerts.parseDays("2 maanden")); assertEquals(14, CarAlerts.parseDays("2 weeks"))
+        assertEquals(30, CarAlerts.parseDays("30")); assertNull(CarAlerts.parseDays("soon"))
+    }
+
     @Test fun serviceDue() {
         val day = 86_400_000L
         assertNull(CarAlerts.serviceDue(0, 99_999.0, 15_000, 12, 400 * day))      // not set

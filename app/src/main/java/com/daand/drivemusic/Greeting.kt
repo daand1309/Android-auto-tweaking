@@ -1008,8 +1008,9 @@ object WelcomeAnnouncer {
     private fun serviceReminderIfDue(ctx: Context, p: Prefs, realDrive: Boolean): String? = try {
         val now = System.currentTimeMillis()
         val trips = com.daand.drivemusic.obd.TripHistory.load(ctx)
-        val due = com.daand.drivemusic.obd.CarAlerts.serviceDue(p.serviceDate,
-            com.daand.drivemusic.obd.TripHistory.kmSince(trips, p.serviceDate), p.serviceKm, p.serviceMonths, now)
+        val due = if (!p.serviceReminderOn) null else com.daand.drivemusic.obd.CarAlerts.serviceStatus(
+            p.serviceDate, com.daand.drivemusic.obd.TripHistory.kmSince(trips, p.serviceDate), p.serviceKm, p.serviceMonths,
+            p.serviceSyncAt, p.serviceSyncKm, p.serviceSyncDays, com.daand.drivemusic.obd.TripHistory.kmSince(trips, p.serviceSyncAt), now)
         if (due == null || now - p.lastServiceReminder < 7 * 86_400_000L) null
         else {
             if (realDrive) p.lastServiceReminder = now

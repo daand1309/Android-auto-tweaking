@@ -416,6 +416,38 @@ class CarAlerts(
             return older.size >= 3 && older.average() - recent >= 0.3
         }
 
+        /**
+         * Service status from the car's own dashboard reminder: you type in what it shows (km and days
+         * left) and the app counts down from that moment with the km of your drives and the calendar.
+         * Returns (km left, days left); either can go negative when overdue.
+         */
+        fun serviceLeft(syncAt: Long, kmLeftAtSync: Int, daysLeftAtSync: Int, kmSinceSync: Double, now: Long): Pair<Int, Int> =
+            (kmLeftAtSync - Math.round(kmSinceSync).toInt()) to (daysLeftAtSync - ((now - syncAt) / 86_400_000L).toInt())
+
+        /** The dashboard sync wins when it's newer than the "last service" date; null = not due. */
+        fun serviceStatus(serviceDate: Long, kmSinceService: Double, intervalKm: Int, months: Int,
+                          syncAt: Long, kmLeftAtSync: Int, daysLeftAtSync: Int, kmSinceSync: Double, now: Long): String? {
+            if (syncAt > 0 && syncAt >= serviceDate) {
+                val (km, days) = serviceLeft(syncAt, kmLeftAtSync, daysLeftAtSync, kmSinceSync, now)
+                return when { km <= 0 -> "km"; days <= 0 -> "time"; else -> null }
+            }
+            return serviceDue(serviceDate, kmSinceService, intervalKm, months, now)
+        }
+
+        /** "45 days", "2 months", "2 maanden", "45" (days) -> days; null if unreadable. Pure, unit tested. */
+        fun parseDays(input: String): Int? {
+            val m = Regex("""(-?\d+)\s*([a-zA-Z]*)""").find(input.trim()) ?: return null
+            val n = m.groupValues[1].toIntOrNull() ?: return null
+            val unit = m.groupValues[2].lowercase()
+            val days = when {
+                unit.startsWith("m") -> n * 30          // months / maanden
+                unit.startsWith("w") -> n * 7           // weeks / weken
+                unit.startsWith("y") || unit.startsWith("j") -> n * 365
+                else -> n
+            }
+            return days.takeIf { it in -3650..3650 }
+        }
+
         /** Service due: km driven since the last service or time passed. null = not set / not due. */
         fun serviceDue(serviceDate: Long, kmSince: Double, intervalKm: Int, months: Int, now: Long): String? {
             if (serviceDate <= 0) return null

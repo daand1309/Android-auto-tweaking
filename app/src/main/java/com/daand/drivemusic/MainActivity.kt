@@ -458,14 +458,30 @@ class MainActivity : Activity() {
         stepperLike("Fuel price: " + (if (prefs.fuelPrice > 0) "€%.2f per litre".format(java.util.Locale.ROOT, prefs.fuelPrice) else "not set"), "Change") {
             askNumber("Fuel price per litre (€)", "e.g. 2.05 - leave empty to hide costs", prefs.fuelPrice) { prefs.fuelPrice = it.coerceIn(0.0, 10.0) }
         }
-        val svc = if (prefs.serviceDate > 0) java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(prefs.serviceDate)) else "not set"
-        stepperLike("Last service: $svc", "Set") { pickServiceDate() }
-        if (prefs.serviceDate > 0) {
-            val km = com.daand.drivemusic.obd.TripHistory.kmSince(com.daand.drivemusic.obd.TripHistory.load(this), prefs.serviceDate)
-            stepper("Service every", "%,d km".format(java.util.Locale.ROOT, prefs.serviceKm),
-                { prefs.serviceKm = (prefs.serviceKm - 1000).coerceAtLeast(1000) },
-                { prefs.serviceKm = (prefs.serviceKm + 1000).coerceAtMost(60000) })
-            text("Driven since: %,d km (counted from your drives). Reminder in the greeting when due, at most weekly.".format(java.util.Locale.ROOT, Math.round(km)))
+        header("Service")
+        switch("Remind me in the greeting when it's due", prefs.serviceReminderOn) { prefs.serviceReminderOn = it; render() }
+        if (prefs.serviceReminderOn) {
+            val trips = com.daand.drivemusic.obd.TripHistory.load(this)
+            val synced = prefs.serviceSyncAt > 0 && prefs.serviceSyncAt >= prefs.serviceDate
+            val left = if (synced) com.daand.drivemusic.obd.CarAlerts.serviceLeft(prefs.serviceSyncAt, prefs.serviceSyncKm, prefs.serviceSyncDays,
+                com.daand.drivemusic.obd.TripHistory.kmSince(trips, prefs.serviceSyncAt), System.currentTimeMillis()) else null
+            stepperLike("Same as the car's dashboard: " + when {
+                left == null -> "not synced"
+                left.first <= 0 || left.second <= 0 -> "service due now"
+                else -> "≈ %,d km · %d days left".format(java.util.Locale.ROOT, left.first, left.second)
+            }, "Sync") { syncServiceWithCar() }
+            text("The ASX keeps its own service reminder in the instrument cluster, which an OBD adapter can't read " +
+                "(and the app never writes to the car). Type in what the dashboard shows and the app counts down " +
+                "with your drives, so both remind you at the same time. After a service, sync again.")
+            val svc = if (prefs.serviceDate > 0) java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(prefs.serviceDate)) else "not set"
+            stepperLike("Or by date - last service: $svc", "Set") { pickServiceDate() }
+            if (prefs.serviceDate > 0 && !synced) {
+                val km = com.daand.drivemusic.obd.TripHistory.kmSince(trips, prefs.serviceDate)
+                stepper("Service every", "%,d km".format(java.util.Locale.ROOT, prefs.serviceKm),
+                    { prefs.serviceKm = (prefs.serviceKm - 1000).coerceAtLeast(1000) },
+                    { prefs.serviceKm = (prefs.serviceKm + 1000).coerceAtMost(60000) })
+                text("Driven since: %,d km (counted from your drives with the adapter).".format(java.util.Locale.ROOT, Math.round(km)))
+            }
         }
         val battery = prefs.batteryLog.takeLast(7)
         if (battery.isNotEmpty()) text("Battery before starting (last ${battery.size} days): " +
@@ -1224,6 +1240,20 @@ class MainActivity : Activity() {
                 setPadding(dp(12), dp(8), dp(4), dp(8))
             })
         })
+    }
+
+    /** Copy the car's own service reminder: km left, then time left (days, weeks or months). */
+    private fun syncServiceWithCar() = askText("Service: km left", "What the dashboard shows, e.g. 3200", "") { kmIn ->
+        val km = kmIn.filter { it.isDigit() || it == '-' }.toIntOrNull()
+        if (km == null) { toast("Type the km the dashboard shows"); return@askText }
+        askText("Service: time left", "e.g. 45 days or 2 months", "") { timeIn ->
+            val days = com.daand.drivemusic.obd.CarAlerts.parseDays(timeIn)
+            if (days == null) { toast("Type e.g. 45 days or 2 months"); return@askText }
+            prefs.serviceSyncKm = km.coerceIn(-60_000, 60_000); prefs.serviceSyncDays = days
+            prefs.serviceSyncAt = System.currentTimeMillis(); prefs.lastServiceReminder = 0L
+            DriveLog.log("Setting changed: service synced with the dashboard ($km km, $days days)")
+            render()
+        }
     }
 
     /** A number input (comma or dot both fine); empty = 0. */

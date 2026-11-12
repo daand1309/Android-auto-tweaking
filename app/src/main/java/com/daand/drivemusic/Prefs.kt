@@ -166,6 +166,20 @@ class Prefs(context: Context) {
     var serviceMonths: Int
         get() = sp.getInt("service_months", 12).coerceIn(1, 36)
         set(v) = sp.edit().putInt("service_months", v).apply()
+    /** Remind me in the greeting when the service is due (off = the car's own reminder is enough). */
+    var serviceReminderOn: Boolean
+        get() = sp.getBoolean("service_reminder_on", true)
+        set(v) = sp.edit().putBoolean("service_reminder_on", v).apply()
+    /** Synced with the car's dashboard: when, and the km / days it showed then (0 = never synced). */
+    var serviceSyncAt: Long
+        get() = sp.getLong("service_sync_at", 0L)
+        set(v) = sp.edit().putLong("service_sync_at", v).apply()
+    var serviceSyncKm: Int
+        get() = sp.getInt("service_sync_km", 0).coerceIn(-60_000, 60_000)
+        set(v) = sp.edit().putInt("service_sync_km", v).apply()
+    var serviceSyncDays: Int
+        get() = sp.getInt("service_sync_days", 0).coerceIn(-3650, 3650)
+        set(v) = sp.edit().putInt("service_sync_days", v).apply()
     var lastServiceReminder: Long
         get() = sp.getLong("service_reminded", 0L)
         set(v) = sp.edit().putLong("service_reminded", v).apply()
@@ -325,10 +339,10 @@ class Prefs(context: Context) {
         "auto_update" to "bool", "greeting" to "bool", "greeting_dutch" to "bool", "pause_on_disconnect" to "bool",
         "remember_parking" to "bool", "road_conditions" to "bool", "set_volume" to "bool", "show_splash" to "bool",
         "weather" to "bool", "updates_weather" to "bool", "updates_news" to "bool", "ask_before_updates" to "bool",
-        "obd_enabled" to "bool", "obd_warmup" to "bool", "obd_fuel" to "bool",
-        "resume_delay" to "int", "start_delay" to "int", "volume_pct" to "int", "obd_ready_s" to "int", "service_km" to "int", "service_months" to "int",
+        "obd_enabled" to "bool", "service_reminder_on" to "bool", "obd_warmup" to "bool", "obd_fuel" to "bool",
+        "resume_delay" to "int", "start_delay" to "int", "volume_pct" to "int", "obd_ready_s" to "int", "service_km" to "int", "service_months" to "int", "service_sync_km" to "int", "service_sync_days" to "int",
         "speech_pitch" to "float", "speech_rate" to "float", "obd_engine_l" to "float",
-        "tank_l" to "float", "fuel_price" to "float", "service_date" to "long", "weather_lat" to "float", "weather_lon" to "float",
+        "tank_l" to "float", "fuel_price" to "float", "service_date" to "long", "service_sync_at" to "long", "weather_lat" to "float", "weather_lon" to "float",
         "birthday" to "string", "car_name" to "string", "greeting_name" to "string", "music_pkg" to "string",
         "name_pronunciation" to "string", "theme" to "string", "tts_engine" to "string", "voice_name" to "string",
         "weather_place" to "string", "greeting_style" to "string",
