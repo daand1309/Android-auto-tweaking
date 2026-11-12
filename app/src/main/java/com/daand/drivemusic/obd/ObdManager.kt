@@ -141,6 +141,10 @@ object ObdManager {
 
     @Volatile var readySeconds = 30
 
+    /** The Drive Mode car tab is on screen: read the fast values more often so the numbers feel live. */
+    @Volatile var liveView = false
+    const val LIVE_POLL_MS = 1_500L
+
     private fun poll(session: ObdSession, myGen: Int, onAlert: (CarAlerts.Alert) -> Unit) {
         val alerts = this.alerts ?: CarAlerts(readySeconds).also { this.alerts = it }
         var n = 0
@@ -159,7 +163,7 @@ object ObdManager {
                 onAlert(a)
             }
             n++
-            sleep(if (alerts.countingDown()) FAST_POLL_MS else POLL_MS)
+            sleep(when { liveView -> LIVE_POLL_MS; alerts.countingDown() -> FAST_POLL_MS; else -> POLL_MS })
         }
     }
 

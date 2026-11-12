@@ -482,6 +482,79 @@ class DriveFlowTest {
     }
 
     @Test
+    fun driveModeTabsSwipeBetweenMusicAndCar() {
+        prefs.showSplash = false
+        ctx.startActivity(android.content.Intent(ctx, DriveModeActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        waitFor("Drive Mode to open", 10_000) { driveModeResumed() }
+        var activity: DriveModeActivity? = null
+        onMain {
+            activity = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filterIsInstance<DriveModeActivity>().first()
+        }
+        val a = activity!!
+        assertEquals(0, a.currentTab())
+        val instr = InstrumentationRegistry.getInstrumentation()
+
+        /** A real finger swipe across the screen, starting at (startX, y). */
+        fun swipe(fromX: Float, toX: Float, y: Float) {
+            val t0 = SystemClock.uptimeMillis()
+            instr.sendPointerSync(android.view.MotionEvent.obtain(t0, t0, android.view.MotionEvent.ACTION_DOWN, fromX, y, 0))
+            for (i in 1..10) {
+                val x = fromX + (toX - fromX) * i / 10
+                instr.sendPointerSync(android.view.MotionEvent.obtain(t0, t0 + i * 15L, android.view.MotionEvent.ACTION_MOVE, x, y, 0))
+            }
+            instr.sendPointerSync(android.view.MotionEvent.obtain(t0, t0 + 180, android.view.MotionEvent.ACTION_UP, toX, y, 0))
+            instr.waitForIdleSync()
+            SystemClock.sleep(400)
+        }
+        val pager = a.pagerForTest()
+        val loc = IntArray(2)
+        onMain { pager.getLocationOnScreen(loc) }
+        val w = pager.width.toFloat()
+        val midY = loc[1] + pager.height * 0.5f
+
+        // Swipe left -> car tab.
+        swipe(loc[0] + w * 0.85f, loc[0] + w * 0.1f, midY)
+        assertEquals("swipe left opens the car tab", 1, a.currentTab())
+        // Swipe right -> back to music.
+        swipe(loc[0] + w * 0.1f, loc[0] + w * 0.85f, midY)
+        assertEquals(0, a.currentTab())
+
+        // A swipe that STARTS on a big button still switches tabs (and doesn't press it).
+        var play: android.widget.Button? = null
+        onMain {
+            fun find(v: android.view.View) {
+                if (v is android.widget.Button && (v.text == "▶" || v.text == "⏸") && v.isShown) play = v
+                if (v is android.view.ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i))
+            }
+            find(a.window.decorView)
+        }
+        val b = IntArray(2)
+        onMain { play!!.getLocationOnScreen(b) }
+        val playCallsBefore = playCalls
+        swipe(b[0] + play!!.width * 0.9f, b[0] - w * 0.6f, b[1] + play!!.height / 2f)
+        assertEquals("swipe from a button switches tabs", 1, a.currentTab())
+        assertEquals("...without pressing the button", playCallsBefore, playCalls)
+
+        // Tapping a tab name switches too; the car tab shows its guidance without OBD.
+        onMain { pager.goTo(0) }
+        SystemClock.sleep(400)
+        assertEquals(0, a.currentTab())
+        onMain { pager.goTo(1) }
+        SystemClock.sleep(1_500)
+        var guidance = ""
+        onMain {
+            fun find(v: android.view.View) {
+                if (v is android.widget.TextView && v.text.contains("Car data (OBD)")) guidance = v.text.toString()
+                if (v is android.view.ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i))
+            }
+            find(a.window.decorView)
+        }
+        assertTrue("car tab explains how to get data: '$guidance'", guidance.isNotEmpty())
+        closeDriveMode()
+    }
+
+    @Test
     fun parkedSpotIsDeletedWhenTheCarDrivesAgain() {
         prefs.parkedSpot = Parking.Spot(52.09, 5.12, 8f, System.currentTimeMillis()).encode()
         assertTrue(Parking.spot(ctx) != null)

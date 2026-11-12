@@ -75,8 +75,117 @@ class DriveModeActivity : Activity() {
     private val tick = object : Runnable {
         override fun run() {
             if (closeIfLeftCar()) return
-            updateDynamic()
-            handler.postDelayed(this, 3000)
+            if (::pager.isInitialized && pager.current == TAB_CAR) updateCarPage() else updateDynamic()
+            // The car tab shows live numbers: refresh every second while it's on screen.
+            handler.postDelayed(this, if (::pager.isInitialized && pager.current == TAB_CAR) 1000L else 3000L)
+        }
+    }
+
+    // ---------------------------------------------------------------- tabs
+
+    private lateinit var pager: SwipePager
+    private val tabLabels = mutableListOf<TextView>()
+
+    private fun buildTabs(): View {
+        val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Style.BG) }
+        val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(dp(12), dp(8), dp(12), 0) }
+        listOf("🎵  Music", "📊  Car").forEachIndexed { i, label ->
+            val tv = TextView(this).apply {
+                text = label; textSize = 18f; gravity = Gravity.CENTER; setPadding(dp(8), dp(10), dp(8), dp(10))
+                setOnClickListener { pager.goTo(i) }
+            }
+            tabLabels += tv
+            bar.addView(tv, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(dp(4), 0, dp(4), 0) })
+        }
+        column.addView(bar, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
+        pager = SwipePager(this)
+        pager.addPage(buildUi())
+        pager.addPage(buildCarPage())
+        pager.onPageChanged = { i ->
+            highlightTab(i)
+            com.daand.drivemusic.obd.ObdManager.liveView = i == TAB_CAR
+            handler.removeCallbacks(tick); handler.post(tick)
+        }
+        column.addView(pager, LinearLayout.LayoutParams(-1, 0, 1f))
+        highlightTab(0)
+        return column
+    }
+
+    private fun highlightTab(i: Int) {
+        tabLabels.forEachIndexed { idx, tv ->
+            val on = idx == i
+            tv.setTextColor(if (on) Color.WHITE else Style.TEXT2)
+            tv.setTypeface(null, if (on) Typeface.BOLD else Typeface.NORMAL)
+            tv.background = if (on) Style.rounded(Style.PRIMARY, dp(14).toFloat()) else null
+        }
+    }
+
+    /** Test hook: which tab is showing / switch tab. */
+    @androidx.annotation.VisibleForTesting internal fun currentTab() = pager.current
+    @androidx.annotation.VisibleForTesting internal fun pagerForTest() = pager
+
+    // ---------------------------------------------------------------- car tab (live OBD data)
+
+    private val carValues = HashMap<String, TextView>()
+    private lateinit var carWarning: TextView
+    private lateinit var carStatus: TextView
+
+    private fun buildCarPage(): View {
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Style.BG); setPadding(dp(14), dp(8), dp(14), dp(14)) }
+        carWarning = TextView(this).apply {
+            setTextColor(Color.WHITE); textSize = 16f; setTypeface(typeface, Typeface.BOLD)
+            background = Style.rounded(0xFFB71C1C.toInt(), dp(12).toFloat()); setPadding(dp(14), dp(10), dp(14), dp(10))
+            visibility = View.GONE
+        }
+        root.addView(carWarning, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
+        val tiles = listOf(
+            listOf("speed" to "Speed", "rpm" to "RPM"),
+            listOf("coolant" to "Engine", "fuel" to "Fuel now"),
+            listOf("trip" to "This trip", "battery" to "Battery"),
+            listOf("load" to "Throttle · load", "temps" to "Outside · intake"),
+        )
+        for (row in tiles) {
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            for ((key, label) in row) r.addView(carTile(key, label), hLp(1f))
+            root.addView(r, vLp(weight = 1f))
+        }
+        carStatus = TextView(this).apply { setTextColor(Style.TEXT2); textSize = 14f; gravity = Gravity.CENTER; setPadding(0, dp(6), 0, 0) }
+        root.addView(carStatus, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
+        return root
+    }
+
+    private fun carTile(key: String, label: String) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        background = Style.rounded(Style.SURFACE, dp(18).toFloat())
+        addView(TextView(this@DriveModeActivity).apply { text = label; textSize = 14f; setTextColor(Style.TEXT2); gravity = Gravity.CENTER })
+        val value = TextView(this@DriveModeActivity).apply {
+            text = "—"; textSize = 34f; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT); gravity = Gravity.CENTER
+            maxLines = 2
+        }
+        carValues[key] = value
+        addView(value)
+    }
+
+    private fun updateCarPage() {
+        val p = Prefs(this)
+        val obd = com.daand.drivemusic.obd.ObdManager
+        val s = if (p.obdEnabled) obd.live() else null
+        val v = CarDash.values(s, obd.trip, p.greetingDutch)
+        for ((key, tv) in carValues) {
+            val (text, color) = v[key] ?: ("—" to null)
+            if (tv.text != text) tv.text = text
+            tv.setTextColor(color ?: Style.TEXT)
+            // Long texts (trip, temps) get a smaller font so they fit the tile.
+            tv.textSize = if (text.length > 9) 22f else 34f
+        }
+        val warning = CarDash.warning(s, p.greetingDutch)
+        carWarning.visibility = if (warning == null) View.GONE else View.VISIBLE
+        if (warning != null && carWarning.text != warning) carWarning.text = warning
+        carStatus.text = when {
+            !p.obdEnabled -> "Set up \"Car data (OBD)\" in the app to see live engine data here."
+            s == null -> "Waiting for the car… (${obd.status})"
+            else -> "Live from the car · swipe right for music"
         }
     }
 
@@ -106,8 +215,9 @@ class DriveModeActivity : Activity() {
         val locked = getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked
         DriveLog.log("Drive Mode: opened" + if (locked) " over the lock screen" else "")
         val frame = android.widget.FrameLayout(this).apply { setBackgroundColor(Style.BG) }
+        // Tabs: music controls and live car data, swipe between them (or tap the tab names).
         // MATCH_PARENT so the weighted button rows get real height (not collapsed to zero).
-        frame.addView(buildUi(), android.widget.FrameLayout.LayoutParams(-1, -1))
+        frame.addView(buildTabs(), android.widget.FrameLayout.LayoutParams(-1, -1))
         rootFrame = frame
         UpdatePrompt.addListener(promptChanged)
         promptChanged()
@@ -175,6 +285,7 @@ class DriveModeActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (::pager.isInitialized) com.daand.drivemusic.obd.ObdManager.liveView = pager.current == TAB_CAR
         goImmersive()
         handler.post(tick)
     }
@@ -182,6 +293,7 @@ class DriveModeActivity : Activity() {
     override fun onPause() {
         super.onPause()
         handler.removeCallbacks(tick)
+        com.daand.drivemusic.obd.ObdManager.liveView = false
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -243,6 +355,11 @@ class DriveModeActivity : Activity() {
     }
 
     private var lastShown = ""
+
+    private companion object {
+        const val TAB_MUSIC = 0
+        const val TAB_CAR = 1
+    }
 
     /** Refreshes song / status / buttons - only touching the views when something changed (saves redraws). */
     private fun updateDynamic() {
