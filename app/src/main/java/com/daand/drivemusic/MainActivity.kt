@@ -40,6 +40,13 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         // Screen stays on while the app is open (it sits in a car holder); normal timeout again once you leave.
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (intent?.action == android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) {
+            // "Play <song> on Drive Music": pass the words to YouTube Music, then get out of the way.
+            com.daand.drivemusic.car.MediaMenu.playFromSearch(DriveMonitorService.instance?.musicController(),
+                DriveMonitorService.instance, intent.getStringExtra(android.app.SearchManager.QUERY), intent.extras)
+            finish()
+            return
+        }
         DriveLog.init(this)
         prefs = Prefs(this)
         root = LinearLayout(this).apply {

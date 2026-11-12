@@ -5,8 +5,11 @@
     installed from Google Play - its "Unknown sources" setting does not cover templated apps.
   - notification: the briefing / update pop-ups on the car screen. Unlike "template", this type IS
     allowed for sideloaded apps when "Unknown sources" is on.
+  - media: Drive Music in the car's app list as a media app (also allowed for sideloaded apps). It
+    mirrors and controls YouTube Music and adds a small menu.
 -->
 <automotiveApp>
     <uses name="template" />
     <uses name="notification" />
+    <uses name="media" />
 </automotiveApp>

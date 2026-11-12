@@ -77,6 +77,18 @@
             </intent-filter>
         </service>
 
+        <!-- Drive Music as a media app in Android Auto (the type its "Unknown sources" setting allows
+             for sideloaded apps). Mirrors and controls YouTube Music; plays nothing itself. -->
+        <service
+            android:name=".car.DriveMediaService"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="Drive Music">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -84,6 +96,11 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Voice search for the car media app (Android Auto requirement); passed on to YouTube Music. -->
+            <intent-filter>
+                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 

@@ -288,7 +288,7 @@ class DriveMonitorService : NotificationListenerService() {
                         // If Android Auto auto-started music, pause it so the welcome is heard clearly,
                         // and don't count that stop as a pause.
                         suppressPauseUntil = SystemClock.elapsedRealtime() + 90_000L
-                        val c = ytm?.takeIf { it.packageName == musicPkg } ?: findYtm()
+                        val c = ytm?.takeIf { isMusic(it) } ?: findYtm()
                         val pausedForWelcome = c?.playbackState?.state == PlaybackState.STATE_PLAYING
                         if (pausedForWelcome) {
                             DriveLog.log("GREETING: music already playing (Android Auto auto-start?) - pausing it for the welcome")
@@ -433,7 +433,7 @@ class DriveMonitorService : NotificationListenerService() {
         val r = object : Runnable {
             override fun run() {
                 if (requireCar && !carConnected) { startRunnable = null; return }
-                val c = ytm?.takeIf { it.packageName == musicPkg } ?: findYtm()?.also { attachYtm(it) }
+                val c = ytm?.takeIf { isMusic(it) } ?: findYtm()?.also { attachYtm(it) }
                 val state = c?.playbackState?.state
                 when {
                     state == PlaybackState.STATE_PLAYING -> {
@@ -535,7 +535,7 @@ class DriveMonitorService : NotificationListenerService() {
             val others = list.filter { it.packageName != musicPkg && it.playbackState?.state == PlaybackState.STATE_PLAYING }
             if (others.isNotEmpty()) DriveLog.log("Other media playing: " + others.joinToString { it.packageName })
         }
-        val found = list.firstOrNull { it.packageName == musicPkg }
+        val found = list.firstOrNull { isMusic(it) }
         if (found == null) {
             if (ytm != null) {
                 DriveLog.log("YouTube Music media session closed")
@@ -547,8 +547,13 @@ class DriveMonitorService : NotificationListenerService() {
     }
 
     // ---- media controls (used by the car screen) ----
-    private fun musicController(): MediaController? =
-        ytm?.takeIf { it.packageName == musicPkg } ?: findYtm()
+    /** Is this YouTube Music's session? (Never Drive Music's own car-media mirror.) */
+    private fun isMusic(c: MediaController) =
+        c.packageName == musicPkg && c.sessionToken != com.daand.drivemusic.car.DriveMediaService.ownToken
+
+    /** YouTube Music's controller (also used by the car media screen to mirror and control it). */
+    internal fun musicController(): MediaController? =
+        ytm?.takeIf { isMusic(it) } ?: findYtm()
 
     fun isPlaying(): Boolean = musicController()?.playbackState?.state == PlaybackState.STATE_PLAYING
 
@@ -565,6 +570,21 @@ class DriveMonitorService : NotificationListenerService() {
     }
 
     /** Toggle play/pause from the car screen. A pause here won't be auto-resumed. */
+    /** Pause pressed on a car screen: you meant it, so auto-resume leaves it alone. */
+    fun pauseByUser(where: String) {
+        userPausedViaUi = true
+        musicController()?.transportControls?.pause()
+        DriveLog.log("$where: pause (you asked - won't auto-resume)")
+    }
+
+    /** Play pressed on a car screen. */
+    fun playByUser(where: String) {
+        userPausedViaUi = false
+        val c = musicController()
+        if (c == null) startMusic("$where play", requireCar = false) else c.transportControls.play()
+        DriveLog.log("$where: play")
+    }
+
     fun playPause() {
         val c = musicController()
         if (c == null) { startMusic("car screen play", requireCar = false); return }
@@ -626,7 +646,7 @@ class DriveMonitorService : NotificationListenerService() {
 
     /** The song YouTube Music has loaded (playing or queued), if it tells us. */
     fun currentSong(): GreetingText.Song? {
-        val md = (ytm?.takeIf { it.packageName == musicPkg } ?: findYtm())?.metadata ?: return null
+        val md = (ytm?.takeIf { isMusic(it) } ?: findYtm())?.metadata ?: return null
         val title = md.getString(android.media.MediaMetadata.METADATA_KEY_TITLE)
             ?: md.getString(android.media.MediaMetadata.METADATA_KEY_DISPLAY_TITLE) ?: return null
         val artist = md.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST)
@@ -636,7 +656,8 @@ class DriveMonitorService : NotificationListenerService() {
     }
 
     private fun findYtm(): MediaController? = try {
-        sessions.getActiveSessions(listenerComponent).firstOrNull { it.packageName == musicPkg }
+        sessions.getActiveSessions(listenerComponent)
+            .firstOrNull { isMusic(it) }
     } catch (e: SecurityException) {
         null
     }
@@ -697,7 +718,7 @@ class DriveMonitorService : NotificationListenerService() {
                         // Wait out a possible self-recovering blip before treating it as a real pause.
                         val r = Runnable {
                             pendingPauseRunnable = null
-                            val cur = (ytm?.takeIf { it.packageName == musicPkg } ?: findYtm())?.playbackState?.state
+                            val cur = (ytm?.takeIf { isMusic(it) } ?: findYtm())?.playbackState?.state
                             if (cur != PlaybackState.STATE_PLAYING) onConfirmedPause()
                         }
                         pendingPauseRunnable = r
@@ -811,7 +832,8 @@ class DriveMonitorService : NotificationListenerService() {
     /** Package of another media app that is currently playing, if any. */
     private fun otherAppPlaying(): String? = try {
         sessions.getActiveSessions(listenerComponent)
-            .firstOrNull { it.packageName != musicPkg && it.playbackState?.state == PlaybackState.STATE_PLAYING }
+            // Not YouTube Music, and not our own car media screen (which only mirrors YouTube Music).
+            .firstOrNull { it.packageName != musicPkg && it.packageName != packageName && it.playbackState?.state == PlaybackState.STATE_PLAYING }
             ?.packageName
     } catch (e: SecurityException) { null }
 

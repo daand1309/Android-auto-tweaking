@@ -401,6 +401,55 @@ class DriveFlowTest {
     }
 
     @Test
+    fun carMediaAppShowsTheMenuControlsMusicAndDoesNotBlockAutoResume() {
+        prefs.autoResume = true
+        var browser: android.media.browse.MediaBrowser? = null
+        var children: List<String> = emptyList()
+        onMain {
+            browser = android.media.browse.MediaBrowser(ctx,
+                ComponentName(ctx, com.daand.drivemusic.car.DriveMediaService::class.java),
+                object : android.media.browse.MediaBrowser.ConnectionCallback() {
+                    override fun onConnected() {
+                        browser!!.subscribe(browser!!.root, object : android.media.browse.MediaBrowser.SubscriptionCallback() {
+                            override fun onChildrenLoaded(parentId: String, items: MutableList<android.media.browse.MediaBrowser.MediaItem>) {
+                                children = items.map { it.mediaId!! }
+                            }
+                        })
+                    }
+                }, null)
+            browser!!.connect()
+        }
+        try {
+            waitFor("the car media menu", 10_000) { children.isNotEmpty() }
+            assertTrue(children.toString(), children.containsAll(listOf(com.daand.drivemusic.car.MediaMenu.WELCOME, com.daand.drivemusic.car.MediaMenu.RESUME)))
+
+            // Menu item toggles auto-resume (and back).
+            val controller = android.media.session.MediaController(ctx, browser!!.sessionToken)
+            onMain { controller.transportControls.playFromMediaId(com.daand.drivemusic.car.MediaMenu.RESUME, null) }
+            waitFor("auto-resume off", 5_000) { !prefs.autoResume }
+            onMain { controller.transportControls.playFromMediaId(com.daand.drivemusic.car.MediaMenu.RESUME, null) }
+            waitFor("auto-resume on", 5_000) { prefs.autoResume }
+
+            // Drive with the media app open: its mirror must NOT count as "another app playing".
+            connectCar()
+            SystemClock.sleep(3_500)  // let the mirror pick up "playing"
+            val playsBefore = playCalls
+            onMain { setState(PlaybackState.STATE_PAUSED) }
+            waitFor("auto-resume with the car media app open", 15_000) { currentState == PlaybackState.STATE_PLAYING && playCalls > playsBefore }
+            assertTrue(!log().contains("another app is playing (${ctx.packageName})"))
+
+            // Its pause button reaches the music - and it STAYS paused (no auto-resume over your own pause).
+            onMain { controller.transportControls.pause() }
+            waitFor("pause from the car media app", 5_000) { currentState == PlaybackState.STATE_PAUSED }
+            SystemClock.sleep(6_000)  // longer than the 2 s resume delay used in tests
+            assertEquals("auto-resume must respect a pause from the car", PlaybackState.STATE_PAUSED, currentState)
+            assertTrue(log().contains("Car media: pause (you asked - won't auto-resume)"))
+        } finally {
+            onMain { browser?.disconnect() }
+        }
+    }
+
+    @Test
     fun parkedSpotIsDeletedWhenTheCarDrivesAgain() {
         prefs.parkedSpot = Parking.Spot(52.09, 5.12, 8f, System.currentTimeMillis()).encode()
         assertTrue(Parking.spot(ctx) != null)
