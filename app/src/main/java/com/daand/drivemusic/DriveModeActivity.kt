@@ -51,7 +51,7 @@ class DriveModeActivity : Activity() {
     private fun buildPrompt(question: String): View = LinearLayout(this).apply {
         orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
         gravity = Gravity.CENTER
-        setBackgroundColor(0xF20A0A0B.toInt())
+        setBackgroundColor(Style.BG)  // solid: nothing shows through behind the question
         isClickable = true  // don't let taps fall through to the music buttons
         val pad = if (wide) dp(14) else dp(24)
         setPadding(pad, pad, pad, pad)
@@ -154,7 +154,7 @@ class DriveModeActivity : Activity() {
         root.addView(carWarning, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
         val all = listOf(
             "speed" to "Speed", "rpm" to "RPM", "coolant" to "Engine", "fuel" to "Fuel now",
-            "trip" to "This trip", "battery" to "Battery", "load" to "Throttle · load", "temps" to "Outside · intake",
+            "trip" to "Trip · L/100", "battery" to "Battery", "load" to "Throttle · load", "temps" to "Outside · intake",
         )
         // Portrait: 4 rows of 2. Landscape: 2 rows of 4, so every tile stays tall enough to read.
         val tiles = all.chunked(if (wide) 4 else 2)

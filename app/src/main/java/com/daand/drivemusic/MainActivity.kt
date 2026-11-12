@@ -146,8 +146,11 @@ class MainActivity : Activity() {
             SetupItem("Drive Music: battery Unrestricted",
                 "Battery → Unrestricted. Samsung: also check Settings → Battery → Background usage limits - Drive Music must not be under Sleeping apps.",
                 pm.isIgnoringBatteryOptimizations(packageName), "Open") { openAppSettings(packageName) },
-            SetupItem("${MusicApps.label(this, music)}: battery Unrestricted", "Battery → Unrestricted.",
-                pm.isIgnoringBatteryOptimizations(music), "Open") { openAppSettings(music) },
+        )
+        // The music app's own battery step (skipped if it is this app, so it isn't listed twice).
+        if (music != packageName) items += SetupItem("${MusicApps.label(this, music)}: battery Unrestricted", "Battery → Unrestricted.",
+            pm.isIgnoringBatteryOptimizations(music), "Open") { openAppSettings(music) }
+        items += listOf(
             SetupItem("Android Auto: battery Unrestricted", "Battery → Unrestricted.",
                 pm.isIgnoringBatteryOptimizations(DriveMonitorService.ANDROID_AUTO), "Open") { openAppSettings(DriveMonitorService.ANDROID_AUTO) },
         )
@@ -1019,7 +1022,7 @@ class MainActivity : Activity() {
         val allTiles = if (car == null) tiles else tiles + listOf(
             Triple("🌡", "Engine", car.coolantC?.let { "$it °C" } ?: "—"),
             when {
-                car.codes.isNotEmpty() -> Triple("🔋", "⚠ Fault code", car.codes.first())
+                car.codes.isNotEmpty() -> Triple("⚠", "Fault code", car.codes.first())
                 car.volts != null -> Triple("🔋", "Battery", "%.1f V".format(java.util.Locale.ROOT, car.volts))
                 else -> Triple("🔋", "Battery", "—")
             },
@@ -1032,7 +1035,7 @@ class MainActivity : Activity() {
                         "☁" -> { { go(Page.GREETING) } }
                         "⏱" -> { { lastDriveDetails() } }
                         "📍" -> { { whereIsMyCar() } }
-                        "🌡", "🔋" -> { { go(Page.OBD) } }
+                        "🌡", "🔋", "⚠" -> { { go(Page.OBD) } }
                         else -> null
                     }
                     if (action != null) { background = Style.button(Style.SURFACE, dp(12).toFloat()); setOnClickListener { action() } }
@@ -1273,7 +1276,7 @@ class MainActivity : Activity() {
         if (price <= 0) text("Set the fuel price on the Car data page to see costs.")
         header("Recent drives")
         val fmt = java.text.SimpleDateFormat("EEE d MMM, HH:mm", java.util.Locale.getDefault())
-        for (t in trips.takeLast(30).reversed()) {
+        for (t in trips.sortedBy { it.at }.takeLast(30).reversed()) {  // newest first
             statRow(fmt.format(java.util.Date(t.at)), com.daand.drivemusic.obd.TripNotice.text(t, price, prefs.greetingDutch) +
                 if (t.codes.isNotEmpty()) "  ·  ⚠ ${t.codes.joinToString()}" else "")
         }
