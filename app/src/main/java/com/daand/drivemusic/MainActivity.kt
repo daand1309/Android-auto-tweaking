@@ -38,6 +38,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Screen stays on while the app is open (it sits in a car holder); normal timeout again once you leave.
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         DriveLog.init(this)
         prefs = Prefs(this)
         root = LinearLayout(this).apply {
