@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  What Drive Music does on the car screen.
+  - template: the Drive Music car screen (Car App Library). Android Auto only lists this for apps
+    installed from Google Play - its "Unknown sources" setting does not cover templated apps.
+  - notification: the briefing / update pop-ups on the car screen. Unlike "template", this type IS
+    allowed for sideloaded apps when "Unknown sources" is on.
+-->
 <automotiveApp>
     <uses name="template" />
+    <uses name="notification" />
 </automotiveApp>

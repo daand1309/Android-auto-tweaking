@@ -54,7 +54,7 @@
         android:label="@string/app_name"
         android:theme="@android:style/Theme.DeviceDefault.DayNight">
 
-        <!-- Tells Android Auto this app provides a templated car screen. -->
+        <!-- Tells Android Auto what this app shows on the car (car screen + pop-ups), see the xml. -->
         <meta-data
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />
