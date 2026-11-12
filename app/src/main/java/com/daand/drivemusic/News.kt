@@ -15,7 +15,9 @@ import java.util.Locale
  */
 object News {
     /** [regional] = from the search for your own town (counts a bit more). */
-    data class Item(val title: String, val description: String, val published: Long?, val regional: Boolean = false)
+    data class Item(val title: String, val description: String, val published: Long?, val regional: Boolean = false,
+                    /** Newsroom to credit when read out ("NU.nl reports ..."); empty if not needed. */
+                    val source: String = "")
 
     /** Domestic-only feeds (no foreign news), matched to the greeting language. */
     fun feedsFor(dutch: Boolean): List<String> =
@@ -31,9 +33,23 @@ object News {
             "https://feeds.nos.nl/nosnieuwspolitiek" to "NOS", "https://feeds.nos.nl/nosnieuwsbinnenland" to "NOS",
         ) else listOf("https://nltimes.nl/rssfeed2" to "NL Times")
 
-    /** "kabinet, coalitie,Jetten" -> [kabinet, coalitie, jetten] (2-30 chars each, max 8). */
+    /** Words that would match nearly every headline. */
+    private val STOP = setOf("de", "het", "een", "en", "van", "in", "op", "te", "is", "met", "voor", "naar", "bij", "aan", "om",
+        "dat", "die", "er", "niet", "ook", "nog", "maar", "the", "a", "an", "and", "of", "to", "in", "on", "for", "with", "at", "by")
+
+    /** "kabinet, coalitie,Jetten" -> [kabinet, coalitie, jetten] (2-30 chars, no stop words, max 8). */
     fun keywords(topic: String): List<String> =
-        topic.split(',', ';').map { it.trim().lowercase() }.filter { it.length in 2..30 }.distinct().take(8)
+        topic.split(',', ';').map { it.trim().lowercase() }.filter { it.length in 2..30 && it !in STOP }.distinct().take(8)
+
+    /**
+     * Does [title] mention [k]? Long keywords also match longer words ("kabinet" -> "kabinetscrisis");
+     * short ones (VVD, D66, PVV) only whole words, or every "den..." / "vvd..." word would count.
+     */
+    private fun mentions(title: String, k: String): Boolean {
+        if (' ' in k) return title.lowercase().contains(k)
+        val ws = words(title) + words(title.replace('-', ' '))
+        return if (k.length >= 4) ws.any { it.startsWith(k) } else k in ws
+    }
 
     /** Headline prefixes: "Live | " is fine (we drop it), video clips and recaps aren't news updates. */
     private val SKIP_PREFIX = listOf("video |", "teruglezen", "live | teruglezen", "podcast |", "column |", "analyse |", "opinie |")
@@ -53,14 +69,17 @@ object News {
         return items.asSequence()
             .filter { it.published != null && now - it.published in -MAX_SKEW_MS..FOLLOW_MAX_AGE_MS }
             .mapNotNull { i -> cleanFollowTitle(i.title)?.let { i.copy(title = it) } }
-            .filter { i ->
-                val ws = words(i.title)
-                keywords.any { k -> if (' ' in k) i.title.lowercase().contains(k) else ws.any { w -> w.startsWith(k) } }
-            }
+            .filter { i -> keywords.any { k -> mentions(i.title, k) } }
             .filter { i -> alreadyTold.none { sameStory(it, i.title) } }
             .sortedByDescending { it.published }
             .firstOrNull()
     }
+
+    /** All follow feeds, each item credited to its newsroom. */
+    fun fetchFollow(dutch: Boolean, onError: (String?) -> Unit): List<Item> =
+        followFeeds(dutch).flatMap { (url, source) ->
+            try { fetch(url).map { it.copy(source = source) } } catch (e: Exception) { onError(e.message); emptyList() }
+        }
 
     /** Regional: a news search for your town (Dutch only - the results are Dutch articles). */
     fun regionalFeed(place: String): String? =
@@ -275,6 +294,10 @@ object News {
     /** Fetches a feed (HTTPS, short timeouts, size-capped). Throws on failure. */
     fun fetch(url: String): List<Item> = parse(fetchXml(url))
 
+    /** Last copy of each feed + its validators, so unchanged feeds cost a few bytes ("304 Not Modified"). */
+    private data class Cached(val etag: String?, val lastModified: String?, val xml: String)
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, Cached>()
+
     private fun fetchXml(url: String): String {
         require(url.startsWith("https://")) { "news must use https" }
         val conn = URL(url).openConnection() as HttpURLConnection
@@ -282,13 +305,19 @@ object News {
         conn.readTimeout = 5000
         conn.instanceFollowRedirects = true
         conn.setRequestProperty("User-Agent", "DriveMusic")
+        val old = cache[url]
+        old?.etag?.let { conn.setRequestProperty("If-None-Match", it) }
+        old?.lastModified?.let { conn.setRequestProperty("If-Modified-Since", it) }
         try {
+            if (conn.responseCode == 304 && old != null) return old.xml
             if (conn.responseCode != 200) throw IllegalStateException("news feed returned HTTP ${conn.responseCode}")
             val xml = conn.inputStream.bufferedReader().use { r ->
                 val buf = CharArray(8192); val sb = StringBuilder()
                 while (sb.length < 1_500_000) { val n = r.read(buf); if (n < 0) break; sb.append(buf, 0, n) }
                 sb.toString()
             }
+            if (cache.size > 12) cache.clear()
+            cache[url] = Cached(conn.getHeaderField("ETag"), conn.getHeaderField("Last-Modified"), xml)
             return xml
         } finally {
             conn.disconnect()

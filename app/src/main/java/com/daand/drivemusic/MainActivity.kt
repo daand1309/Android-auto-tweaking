@@ -363,13 +363,10 @@ class MainActivity : Activity() {
             var followed: News.Item? = null
             var source = ""
             if (p.followActive) {
-                val all = mutableListOf<Pair<News.Item, String>>()
-                for ((url, src) in News.followFeeds(p.greetingDutch)) {
-                    try { all += News.fetch(url).map { it to src } } catch (e: Exception) { failed++ }
-                }
-                followed = News.pickFollowed(all.map { it.first }, News.keywords(p.followTopic), System.currentTimeMillis(), emptyList())
-                source = followed?.let { f -> all.firstOrNull { it.first.published == f.published && f.title in it.first.title }?.second } ?: ""
-                items += all.map { it.first }
+                val all = News.fetchFollow(p.greetingDutch) { failed++ }
+                followed = News.pickFollowed(all, News.keywords(p.followTopic), System.currentTimeMillis(), emptyList())
+                source = followed?.source ?: ""
+                items += all
             }
             runOnUiThread {
                 newsCheckRunning = false

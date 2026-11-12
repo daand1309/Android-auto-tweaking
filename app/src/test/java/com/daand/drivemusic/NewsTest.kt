@@ -169,4 +169,30 @@ class NewsTest {
         assertTrue(nl, nl.startsWith("Over het verhaal dat je volgt, meldt NU.nl: VVD stapt uit het kabinet."))
         assertTrue(DriveUpdates.askLine(false, true, followedOnly = true).contains("the story you're following"))
     }
+
+    // ------------------------------------------------------------------ red team: follow a story
+
+    @Test fun stopWordsAndShortKeywordsDontMatchEverything() {
+        assertEquals(listOf("kabinet"), News.keywords("de, het, kabinet, the, en"))  // stop words dropped
+        val headlines = listOf(item("Debat over de derde dinsdag"), item("Den Haag in de ban van regen"))
+        // "der" is short: whole word only, so "derde" doesn't count (before: "de"/"der" matched nearly everything).
+        assertNull(News.pickFollowed(headlines, News.keywords("de, der"), now, emptyList()))
+        assertEquals("Den Haag in de ban van regen", News.pickFollowed(headlines, listOf("den haag"), now, emptyList())?.title)
+    }
+
+    @Test fun shortPartyNamesMatchWholeWordsOnly() {
+        val kws = News.keywords("VVD, D66")
+        assertEquals("VVD stapt uit kabinet", News.pickFollowed(listOf(item("VVD stapt uit kabinet")), kws, now, emptyList())?.title)
+        assertNull(News.pickFollowed(listOf(item("VVDers vieren feest"), item("D666 is geen partij")), kws, now, emptyList()))
+    }
+
+    @Test fun theRightNewsroomGetsTheCredit() {
+        // Two newsrooms, same minute, both "Live |" (so titles are rewritten): the credit must follow the item.
+        val t = now - 60_000
+        val nu = News.Item("Live | Kabinet in crisis, Kamer vergadert", "", t - 60_000, source = "NU.nl")
+        val nos = News.Item("Live | VVD-fractie bijeen over coalitie", "", t, source = "NOS")
+        val pick = News.pickFollowed(listOf(nu, nos), listOf("kabinet", "coalitie"), now, emptyList())!!
+        assertEquals("VVD-fractie bijeen over coalitie", pick.title)
+        assertEquals("NOS", pick.source)
+    }
 }

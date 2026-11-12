@@ -140,15 +140,11 @@ object DriveUpdates {
             story = News.pick(items, System.currentTimeMillis(), p.toldNews)
             DriveLog.log("UPDATE CHECK: ${items.size} headlines, ${if (story == null) "none urgent enough" else "1 worth telling"}")
         }
-        var followed: Pair<News.Item, String>? = null
+        var followed: News.Item? = null
         if (p.followActive && followedThisDrive < MAX_FOLLOW_PER_DRIVE) {
-            val items = mutableListOf<Pair<News.Item, String>>()
-            for ((url, source) in News.followFeeds(dutch)) {
-                try { items += News.fetch(url).map { it to source } } catch (e: Exception) { DriveLog.log("UPDATE CHECK: feed unavailable (${e.message})") }
-            }
+            val items = News.fetchFollow(dutch) { DriveLog.log("UPDATE CHECK: feed unavailable ($it)") }
             val told = p.toldNews + listOfNotNull(story?.title)
-            val pick = News.pickFollowed(items.map { it.first }, News.keywords(p.followTopic), System.currentTimeMillis(), told)
-            followed = pick?.let { i -> i to (items.firstOrNull { it.first.published == i.published && i.title in it.first.title }?.second ?: "") }
+            followed = News.pickFollowed(items, News.keywords(p.followTopic), System.currentTimeMillis(), told)
             DriveLog.log("UPDATE CHECK: following '${p.followTopic}' - ${if (followed == null) "nothing new" else "new headline"}")
         }
         if (weatherLines.isEmpty() && story == null && followed == null) {
@@ -159,10 +155,10 @@ object DriveUpdates {
             newsThisDrive++
         }
         if (followed != null) {
-            p.toldNews = (p.toldNews + followed.first.title).takeLast(100)
+            p.toldNews = (p.toldNews + followed.title).takeLast(100)
             followedThisDrive++
         }
-        return Found(weatherLines, story, followed?.first, followed?.second ?: "")
+        return Found(weatherLines, story, followed, followed?.source ?: "")
     }
 
     /** What a check found worth telling. */
