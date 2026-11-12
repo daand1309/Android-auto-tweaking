@@ -38,7 +38,9 @@ class ObdSession(private val link: ObdLink, private val log: (String) -> Unit = 
         val coolant = pid(Elm327.PID_COOLANT)?.let { Elm327.coolantC(it) }
         val rpm = pid(Elm327.PID_RPM)?.let { Elm327.rpm(it) }
         val speed = pid(Elm327.PID_SPEED)?.let { Elm327.speedKmh(it) }
-        if (!full) return (previous ?: CarSnapshot(now)).copy(at = now, coolantC = coolant ?: previous?.coolantC, rpm = rpm, speedKmh = speed)
+        // Seconds since start: only interesting in the first minutes (the "ready to drive" countdown).
+        val runtime = if ((previous?.runtimeS ?: 0) < 300 && Elm327.PID_RUNTIME in supported) pid(Elm327.PID_RUNTIME)?.let { Elm327.runtimeS(it) } else previous?.runtimeS
+        if (!full) return (previous ?: CarSnapshot(now)).copy(at = now, coolantC = coolant ?: previous?.coolantC, rpm = rpm, speedKmh = speed, runtimeS = runtime)
         val fuel = pid(Elm327.PID_FUEL)?.let { Elm327.fuelPct(it) }
         val volts = pid(Elm327.PID_VOLTAGE)?.let { Elm327.moduleVolts(it) }
             ?: Elm327.atrvVolts(Elm327.lines(link.send("ATRV", 1_500)))
@@ -50,7 +52,7 @@ class ObdSession(private val link: ObdLink, private val log: (String) -> Unit = 
             codes = if (Elm327.isError(ans)) emptyList() else Elm327.dtcs(ans)
         }
         if (status?.first == false && status.second == 0) codes = emptyList()
-        return CarSnapshot(now, coolant, rpm, speed, fuel, volts, ambient, status?.first, codes)
+        return CarSnapshot(now, coolant, rpm, speed, fuel, volts, ambient, status?.first, codes, runtime)
     }
 
     fun close() { runCatching { link.close() } }

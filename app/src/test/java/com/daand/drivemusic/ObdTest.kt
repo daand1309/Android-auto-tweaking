@@ -112,7 +112,7 @@ class ObdTest {
         // Quick reads only ask for the fast values.
         fake.sent.clear()
         val quick = session.read(snap, full = false, readCodes = false)
-        assertEquals(listOf("0105", "010C", "010D"), fake.sent)
+        assertEquals(listOf("0105", "010C", "010D", "011F"), fake.sent)  // + engine run time while it's young
         assertEquals(snap.codes, quick.codes)
     }
 
@@ -161,43 +161,46 @@ class ObdTest {
 
     // ------------------------------------------------------------------ what the voice says, and when
 
+    /** These older tests are about the other alerts; "ready to drive" is tested separately. */
+    private fun CarAlerts.checkOthers(s: CarSnapshot) = check(s).filter { it.kind != CarAlerts.Kind.READY_TO_DRIVE }
+
     @Test fun alertsComeOncePerTopicAndOnlyWhenTheyMatter() {
         val a = CarAlerts()
         val t0 = 1_000_000L
-        assertTrue(a.check(CarSnapshot(t0, coolantC = 20, rpm = 800, volts = 14.2)).isEmpty())       // cold start
-        val warm = a.check(CarSnapshot(t0 + 60_000, coolantC = 80, rpm = 2000, volts = 14.2))
+        assertTrue(a.checkOthers(CarSnapshot(t0, coolantC = 20, rpm = 800, volts = 14.2)).isEmpty())       // cold start
+        val warm = a.checkOthers(CarSnapshot(t0 + 60_000, coolantC = 80, rpm = 2000, volts = 14.2))
         assertEquals(listOf(CarAlerts.Kind.ENGINE_WARM), warm.map { it.kind })
-        assertTrue(a.check(CarSnapshot(t0 + 70_000, coolantC = 85, rpm = 2000, volts = 14.2)).isEmpty())  // said once
-        val hot = a.check(CarSnapshot(t0 + 80_000, coolantC = 112, rpm = 2000))
+        assertTrue(a.checkOthers(CarSnapshot(t0 + 70_000, coolantC = 85, rpm = 2000, volts = 14.2)).isEmpty())  // said once
+        val hot = a.checkOthers(CarSnapshot(t0 + 80_000, coolantC = 112, rpm = 2000))
         assertEquals(CarAlerts.Kind.OVERHEAT, hot.single().kind); assertTrue(hot.single().urgent)
-        assertTrue(a.check(CarSnapshot(t0 + 90_000, coolantC = 113, rpm = 2000)).isEmpty())         // not every 5 s
-        assertEquals(1, a.check(CarSnapshot(t0 + 80_000 + 6 * 60_000, coolantC = 113, rpm = 2000)).size)  // again after 5 min
+        assertTrue(a.checkOthers(CarSnapshot(t0 + 90_000, coolantC = 113, rpm = 2000)).isEmpty())         // not every 5 s
+        assertEquals(1, a.checkOthers(CarSnapshot(t0 + 80_000 + 6 * 60_000, coolantC = 113, rpm = 2000)).size)  // again after 5 min
     }
 
     @Test fun warmEngineAtStartIsNotAnnounced() {
         val a = CarAlerts()
-        assertTrue(a.check(CarSnapshot(0, coolantC = 85, rpm = 900)).isEmpty())
-        assertTrue(a.check(CarSnapshot(5_000, coolantC = 88, rpm = 900)).isEmpty())
+        assertTrue(a.checkOthers(CarSnapshot(0, coolantC = 85, rpm = 900)).isEmpty())
+        assertTrue(a.checkOthers(CarSnapshot(5_000, coolantC = 88, rpm = 900)).isEmpty())
     }
 
     @Test fun checkEngineOnlyForNewCodes() {
         val a = CarAlerts()
-        val first = a.check(CarSnapshot(0, checkEngine = true, codes = listOf("P0420")))
+        val first = a.checkOthers(CarSnapshot(0, checkEngine = true, codes = listOf("P0420")))
         assertEquals(listOf("P0420"), first.single().codes)
-        assertTrue(a.check(CarSnapshot(5_000, checkEngine = true, codes = listOf("P0420"))).isEmpty())
-        assertEquals(listOf("P0133"), a.check(CarSnapshot(10_000, checkEngine = true, codes = listOf("P0420", "P0133"))).single().codes)
+        assertTrue(a.checkOthers(CarSnapshot(5_000, checkEngine = true, codes = listOf("P0420"))).isEmpty())
+        assertEquals(listOf("P0133"), a.checkOthers(CarSnapshot(10_000, checkEngine = true, codes = listOf("P0420", "P0133"))).single().codes)
     }
 
     @Test fun batteryAndChargingAndFuel() {
         val a = CarAlerts()
-        assertEquals(CarAlerts.Kind.LOW_BATTERY, a.check(CarSnapshot(0, rpm = 0, volts = 11.7)).single().kind)
-        assertTrue(a.check(CarSnapshot(5_000, rpm = 900, volts = 12.5)).isEmpty())          // low charge: wait a minute
-        assertEquals(CarAlerts.Kind.WEAK_CHARGING, a.check(CarSnapshot(70_000, rpm = 900, volts = 12.5)).single().kind)
-        assertEquals(CarAlerts.Kind.LOW_FUEL, a.check(CarSnapshot(80_000, rpm = 900, volts = 14.0, fuelPct = 9)).single().kind)
-        assertTrue(a.check(CarSnapshot(90_000, rpm = 900, volts = 14.0, fuelPct = 8)).isEmpty())
+        assertEquals(CarAlerts.Kind.LOW_BATTERY, a.checkOthers(CarSnapshot(0, rpm = 0, volts = 11.7)).single().kind)
+        assertTrue(a.checkOthers(CarSnapshot(5_000, rpm = 900, volts = 12.5)).isEmpty())          // low charge: wait a minute
+        assertEquals(CarAlerts.Kind.WEAK_CHARGING, a.checkOthers(CarSnapshot(70_000, rpm = 900, volts = 12.5)).single().kind)
+        assertEquals(CarAlerts.Kind.LOW_FUEL, a.checkOthers(CarSnapshot(80_000, rpm = 900, volts = 14.0, fuelPct = 9)).single().kind)
+        assertTrue(a.checkOthers(CarSnapshot(90_000, rpm = 900, volts = 14.0, fuelPct = 8)).isEmpty())
         // A healthy alternator never triggers the charging warning.
         val b = CarAlerts()
-        assertTrue((0..20).flatMap { b.check(CarSnapshot(it * 5_000L, rpm = 2000, volts = 14.1)) }.isEmpty())
+        assertTrue((0..20).flatMap { b.checkOthers(CarSnapshot(it * 5_000L, rpm = 2000, volts = 14.1)) }.isEmpty())
     }
 
     @Test fun wordsTheVoiceUses() {
@@ -210,5 +213,55 @@ class ObdTest {
         val status = CarStatusText.spoken(CarSnapshot(0, coolantC = 90, volts = 14.1, fuelPct = 40, checkEngine = false), false, true)
         assertEquals("The car, sir: engine 90 degrees, battery 14 point 1 volts, fuel 40 percent. No warning lights.", status)
         assertNotNull(CarStatusText.spoken(null, true, false))
+    }
+
+    // ------------------------------------------------------------------ ready to drive (oil has circulated)
+
+    private fun kinds(a: CarAlerts, s: CarSnapshot) = a.check(s).map { it.kind }
+
+    @Test fun readyToDriveAfterTheIdleTimeUsingTheCarsOwnClock() {
+        val a = CarAlerts(readySeconds = 30)
+        // We connect 12 s after the engine started (Android Auto + adapter take a moment).
+        assertTrue(CarAlerts.Kind.READY_TO_DRIVE !in kinds(a, CarSnapshot(0, coolantC = 15, rpm = 1100, speedKmh = 0, runtimeS = 12)))
+        assertTrue(a.countingDown())
+        assertTrue(CarAlerts.Kind.READY_TO_DRIVE !in kinds(a, CarSnapshot(10_000, coolantC = 16, rpm = 1050, speedKmh = 0, runtimeS = 28)))
+        val ready = a.check(CarSnapshot(12_000, coolantC = 17, rpm = 1000, speedKmh = 0, runtimeS = 30)).single { it.kind == CarAlerts.Kind.READY_TO_DRIVE }
+        assertTrue(ready.timely)
+        assertTrue(CarAlerts.Kind.READY_TO_DRIVE !in kinds(a, CarSnapshot(20_000, coolantC = 18, rpm = 1000, runtimeS = 38)))  // once
+        assertFalse(a.countingDown())
+    }
+
+    @Test fun withoutTheCarsClockItCountsFromTheFirstReading() {
+        val a = CarAlerts(readySeconds = 30)
+        assertTrue(a.check(CarSnapshot(1_000, coolantC = 15, rpm = 1100)).none { it.kind == CarAlerts.Kind.READY_TO_DRIVE })
+        assertTrue(a.check(CarSnapshot(29_000, coolantC = 16, rpm = 1100)).none { it.kind == CarAlerts.Kind.READY_TO_DRIVE })
+        assertTrue(a.check(CarSnapshot(31_000, coolantC = 16, rpm = 1100)).any { it.kind == CarAlerts.Kind.READY_TO_DRIVE })
+    }
+
+    @Test fun longerInTheColdSkippedWhenWarmOrAlreadyDriving() {
+        assertEquals(30, CarAlerts.waitFor(15, 12, 30))
+        assertEquals(45, CarAlerts.waitFor(10, 1, 30))     // near freezing outside
+        assertEquals(60, CarAlerts.waitFor(-8, -9, 30))    // proper winter
+        assertEquals(90, CarAlerts.waitFor(-8, -9, 90))    // your own longer setting wins
+        val warm = CarAlerts(30)  // short stop: engine still warm
+        assertTrue((0..20).flatMap { warm.check(CarSnapshot(it * 2_000L, coolantC = 85, rpm = 900, runtimeS = it * 2)) }.none { it.kind == CarAlerts.Kind.READY_TO_DRIVE })
+        val driving = CarAlerts(30)  // pulled away before the time was up
+        driving.check(CarSnapshot(0, coolantC = 15, rpm = 1100, speedKmh = 0, runtimeS = 5))
+        assertTrue(driving.check(CarSnapshot(15_000, coolantC = 16, rpm = 2000, speedKmh = 30, runtimeS = 20)).none { it.kind == CarAlerts.Kind.READY_TO_DRIVE })
+        assertTrue(driving.check(CarSnapshot(30_000, coolantC = 17, rpm = 900, speedKmh = 0, runtimeS = 35)).none { it.kind == CarAlerts.Kind.READY_TO_DRIVE })
+        val late = CarAlerts(30)  // connected long after starting: nothing to say
+        assertTrue(late.check(CarSnapshot(0, coolantC = 40, rpm = 900, speedKmh = 0, runtimeS = 400)).none { it.kind == CarAlerts.Kind.READY_TO_DRIVE })
+    }
+
+    @Test fun readyToDriveWordsAndRuntimeDecoding() {
+        val r = CarAlerts.Alert(CarAlerts.Kind.READY_TO_DRIVE, false, 30.0, timely = true)
+        assertTrue(CarAlerts.message(r, dutch = false, butler = true).startsWith("The oil has had its moment, sir. You may proceed."))
+        assertTrue(CarAlerts.message(r, dutch = true, butler = true).contains("U kunt rustig wegrijden"))
+        assertEquals(300, Elm327.runtimeS(listOf(0x01, 0x2C)))
+        // The session reads the engine's run time while it's young.
+        val fake = FakeElm(FakeElm.ASX + mapOf("011F" to "411F0012\r\r"))  // 18 s
+        val session = ObdSession(fake)
+        assertNull(session.start())
+        assertEquals(18, session.read(null, full = false, readCodes = false).runtimeS)
     }
 }

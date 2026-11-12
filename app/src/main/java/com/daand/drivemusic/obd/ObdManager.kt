@@ -48,6 +48,7 @@ object ObdManager {
         latest = null; maxCoolant = null; maxSpeed = null
         val app = ctx.applicationContext
         val address = p.obdDevice
+        readySeconds = p.obdReadySeconds
         thread = Thread({ loop(app, address, onAlert) }, "obd").apply { isDaemon = true; start() }
     }
 
@@ -98,8 +99,13 @@ object ObdManager {
         if (running && tries >= CONNECT_TRIES) { status = "Gave up for this drive - adapter not reachable"; DriveLog.log("OBD: gave up for this drive") }
     }
 
+    /** Poll faster while counting down to "ready to drive", so it's said on time. */
+    const val FAST_POLL_MS = 2_000L
+
+    @Volatile var readySeconds = 30
+
     private fun poll(session: ObdSession, onAlert: (CarAlerts.Alert) -> Unit) {
-        val alerts = CarAlerts()
+        val alerts = CarAlerts(readySeconds)
         var n = 0
         var lastCodes = 0L
         while (running) {
@@ -115,7 +121,7 @@ object ObdManager {
                 onAlert(a)
             }
             n++
-            sleep(POLL_MS)
+            sleep(if (alerts.countingDown()) FAST_POLL_MS else POLL_MS)
         }
     }
 

@@ -428,6 +428,16 @@ class MainActivity : Activity() {
 
         header("Tell me")
         text("Always: overheating, the check-engine light (with the fault code explained), a weak battery or charging.")
+        switch("When the engine is ready to drive (after a cold start)", prefs.obdReadySeconds > 0) {
+            prefs.obdReadySeconds = if (it) 30 else 0; render()
+        }
+        if (prefs.obdReadySeconds > 0) {
+            stepper("Idle first for", "${prefs.obdReadySeconds} s",
+                { prefs.obdReadySeconds = (prefs.obdReadySeconds - 5).coerceAtLeast(10) },
+                { prefs.obdReadySeconds = (prefs.obdReadySeconds + 5).coerceAtMost(120) })
+            text("Longer automatically in the cold: at least 45 s near freezing, 60 s below -5 °C. " +
+                "Skipped after a short stop (warm engine) or if you're already driving.")
+        }
         switch("When the engine has warmed up", prefs.obdWarmup) { prefs.obdWarmup = it }
         switch("When fuel gets low", prefs.obdFuel) { prefs.obdFuel = it }
         text("Fault codes are only read, never cleared - clearing hides a problem instead of fixing it.")

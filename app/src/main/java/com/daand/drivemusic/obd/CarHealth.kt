@@ -11,6 +11,8 @@ data class CarSnapshot(
     val ambientC: Int? = null,
     val checkEngine: Boolean? = null,
     val codes: List<String> = emptyList(),
+    /** Seconds since the engine started (from the car, if it reports it). */
+    val runtimeS: Int? = null,
 ) {
     val engineRunning get() = (rpm ?: 0) > 400
 }
@@ -74,9 +76,14 @@ object TroubleCodes {
  * When to say something about the car - once per drive per topic, so it never nags.
  * Pure state machine (unit tested): feed it snapshots, it returns what's worth saying.
  */
-class CarAlerts {
-    enum class Kind { OVERHEAT, CHECK_ENGINE, LOW_BATTERY, WEAK_CHARGING, ENGINE_WARM, LOW_FUEL }
-    data class Alert(val kind: Kind, val urgent: Boolean, val value: Double? = null, val codes: List<String> = emptyList())
+class CarAlerts(
+    /** How long the engine should idle after a cold start before driving off (your setting). */
+    private val readySeconds: Int = 30,
+) {
+    enum class Kind { READY_TO_DRIVE, OVERHEAT, CHECK_ENGINE, LOW_BATTERY, WEAK_CHARGING, ENGINE_WARM, LOW_FUEL }
+    /** [timely] = only useful right now (say it as soon as possible, or not at all). */
+    data class Alert(val kind: Kind, val urgent: Boolean, val value: Double? = null, val codes: List<String> = emptyList(),
+                     val timely: Boolean = false)
 
     private var coldAtStart: Boolean? = null
     private var warmDone = false
@@ -87,9 +94,13 @@ class CarAlerts {
     private val reportedCodes = mutableSetOf<String>()
     private var lowChargeSince = 0L
     private var lastCheckEngine = false
+    private var readyDone = false
+    private var engineSeen = false
+    private var engineSeenAt = 0L
 
     fun check(s: CarSnapshot): List<Alert> {
         val out = mutableListOf<Alert>()
+        readyToDrive(s)?.let { out += it }
         s.coolantC?.let { c ->
             if (coldAtStart == null) coldAtStart = c < 50
             if (c >= OVERHEAT_C && s.at - lastOverheatAt > 5 * 60_000L) {
@@ -117,7 +128,44 @@ class CarAlerts {
         return out
     }
 
+    /**
+     * "Oil has had its moment": the engine has idled long enough after a cold start. Uses the car's
+     * own "seconds since start" when it reports it (Android Auto and the adapter connect a few seconds
+     * after you start the engine), otherwise our own clock from the first running reading.
+     */
+    private fun readyToDrive(s: CarSnapshot): Alert? {
+        if (readyDone || !s.engineRunning) return null
+        if (!engineSeen) {
+            engineSeen = true
+            engineSeenAt = s.at
+            // Warm engine (short stop) or already well past the wait when we connected: nothing to say.
+            if ((s.coolantC ?: 0) >= WARM_RESTART_C || (s.runtimeS ?: 0) > 3 * 60) { readyDone = true; return null }
+        }
+        if ((s.speedKmh ?: 0) > 5) { readyDone = true; return null }  // already driving: too late to be useful
+        val need = waitFor(s.coolantC, s.ambientC, readySeconds)
+        val ran = s.runtimeS ?: ((s.at - engineSeenAt) / 1000).toInt()
+        if (ran < need) return null
+        readyDone = true
+        return Alert(Kind.READY_TO_DRIVE, urgent = false, value = need.toDouble(), timely = true)
+    }
+
+    /** True while we're still counting down (the manager polls faster then). */
+    fun countingDown() = engineSeen && !readyDone
+
     companion object {
+        /** Coolant at or above this when the engine starts = it was only a short stop. */
+        const val WARM_RESTART_C = 60
+
+        /** Your setting, but longer when it's cold: at least 45 s near freezing, 60 s below -5 °C. */
+        fun waitFor(coolantC: Int?, ambientC: Int?, setting: Int): Int {
+            val coldest = listOfNotNull(coolantC, ambientC).minOrNull() ?: return setting
+            return when {
+                coldest < -5 -> maxOf(setting, 60)
+                coldest < 3 -> maxOf(setting, 45)
+                else -> setting
+            }
+        }
+
         const val OVERHEAT_C = 110
         const val WARM_C = 75
         const val LOW_BATTERY_V = 12.0     // engine off: a healthy battery rests around 12.4-12.7 V
@@ -156,6 +204,12 @@ class CarAlerts {
                     dutch -> "De accu wordt niet goed geladen, maar ${volts(a.value)} volt terwijl de motor draait. Laat de dynamo eens controleren."
                     butler -> "The battery is not charging properly: only ${volts(a.value)} volts with the engine running. The alternator may want a look."
                     else -> "The battery isn't charging properly: only ${volts(a.value)} volts with the engine running. Have the alternator checked."
+                }
+                Kind.READY_TO_DRIVE -> when {
+                    dutch && butler -> "De olie is rondgepompt, meneer. U kunt rustig wegrijden."
+                    dutch -> "De olie is rond. Je kunt rustig wegrijden."
+                    butler -> "The oil has had its moment, sir. You may proceed. Gently, for the first few minutes."
+                    else -> "Oil's had its moment. You're good to go, take it easy for the first few minutes."
                 }
                 Kind.ENGINE_WARM -> when {
                     dutch -> "De motor is op temperatuur."

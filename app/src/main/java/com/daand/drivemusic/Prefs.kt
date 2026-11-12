@@ -128,6 +128,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("obd_warmup", true)
         set(v) = sp.edit().putBoolean("obd_warmup", v).apply()
 
+    /** After a cold start, say when the engine has idled long enough to drive off. 0 = off. */
+    var obdReadySeconds: Int
+        get() = sp.getInt("obd_ready_s", 30).let { if (it == 0) 0 else it.coerceIn(10, 120) }
+        set(v) = sp.edit().putInt("obd_ready_s", v).apply()
+
     /** Say when fuel gets low. */
     var obdFuel: Boolean
         get() = sp.getBoolean("obd_fuel", true)
@@ -273,7 +278,7 @@ class Prefs(context: Context) {
         "remember_parking" to "bool", "road_conditions" to "bool", "set_volume" to "bool", "show_splash" to "bool",
         "weather" to "bool", "updates_weather" to "bool", "updates_news" to "bool", "ask_before_updates" to "bool",
         "obd_enabled" to "bool", "obd_warmup" to "bool", "obd_fuel" to "bool",
-        "resume_delay" to "int", "start_delay" to "int", "volume_pct" to "int",
+        "resume_delay" to "int", "start_delay" to "int", "volume_pct" to "int", "obd_ready_s" to "int",
         "speech_pitch" to "float", "speech_rate" to "float", "weather_lat" to "float", "weather_lon" to "float",
         "birthday" to "string", "car_name" to "string", "greeting_name" to "string", "music_pkg" to "string",
         "name_pronunciation" to "string", "theme" to "string", "tts_engine" to "string", "voice_name" to "string",

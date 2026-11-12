@@ -54,6 +54,7 @@ object Elm327 {
     const val PID_SUPPORTED_01_20 = 0x00
     const val PID_STATUS = 0x01          // check-engine light + number of codes
     const val PID_COOLANT = 0x05
+    const val PID_RUNTIME = 0x1F          // seconds since the engine started
     const val PID_RPM = 0x0C
     const val PID_SPEED = 0x0D
     const val PID_FUEL = 0x2F
@@ -63,6 +64,7 @@ object Elm327 {
     fun coolantC(d: List<Int>) = d.getOrNull(0)?.let { it - 40 }
     fun rpm(d: List<Int>) = if (d.size >= 2) (d[0] * 256 + d[1]) / 4 else null
     fun speedKmh(d: List<Int>) = d.getOrNull(0)
+    fun runtimeS(d: List<Int>) = if (d.size >= 2) d[0] * 256 + d[1] else null
     fun fuelPct(d: List<Int>) = d.getOrNull(0)?.let { Math.round(it * 100 / 255f) }
     fun moduleVolts(d: List<Int>) = if (d.size >= 2) (d[0] * 256 + d[1]) / 1000.0 else null
     fun ambientC(d: List<Int>) = d.getOrNull(0)?.let { it - 40 }
