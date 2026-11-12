@@ -942,10 +942,11 @@ class MainActivity : Activity() {
             text = when {
                 svc == null -> "●  Setup needed"
                 driving -> "●  Driving  ·  Android Auto connected"
+                prefs.lastCarState == DriveHold.STATE -> "●  Android Auto reconnecting…"
                 else -> "●  Parked"
             }
             textSize = 14f
-            setTextColor(when { svc == null -> Style.AMBER; driving -> Style.GREEN; else -> Style.TEXT2 })
+            setTextColor(when { svc == null -> Style.AMBER; driving -> Style.GREEN; prefs.lastCarState == DriveHold.STATE -> Style.AMBER; else -> Style.TEXT2 })
             setPadding(dp(4), dp(2), 0, 0)
         })
         val photo = IntroImage.load(this, IntroImage.HERO)

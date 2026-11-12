@@ -29,6 +29,15 @@ object ObdManager {
     @Volatile private var link: ObdLink? = null
     private var thread: Thread? = null
 
+    /** When the car's computer last answered (it only does with the ignition on). */
+    @Volatile private var lastEcuAnswerAt = 0L
+
+    /** The adapter is connected and polling. */
+    fun isConnected() = running && status == "Connected"
+
+    /** How long the car's computer has been silent (ignition off), or Long.MAX_VALUE if never heard. */
+    fun ecuSilentMs(): Long = if (lastEcuAnswerAt == 0L) Long.MAX_VALUE else System.currentTimeMillis() - lastEcuAnswerAt
+
     // Trip stats for the log at the end of the drive.
     @Volatile private var maxCoolant: Int? = null
     @Volatile private var maxSpeed: Int? = null
@@ -45,7 +54,7 @@ object ObdManager {
         if (running || !p.obdEnabled || p.obdDevice.isBlank()) return
         if (!hasPermission(ctx)) { status = "Needs the 'Nearby devices' permission"; DriveLog.log("OBD: no Bluetooth permission"); return }
         running = true
-        latest = null; maxCoolant = null; maxSpeed = null
+        latest = null; maxCoolant = null; maxSpeed = null; lastEcuAnswerAt = 0L
         val app = ctx.applicationContext
         val address = p.obdDevice
         readySeconds = p.obdReadySeconds
@@ -114,6 +123,7 @@ object ObdManager {
             val snap = session.read(latest, full, readCodes = codesDue)
             if (codesDue) lastCodes = System.currentTimeMillis()
             latest = snap
+            if (snap.coolantC != null || snap.rpm != null || snap.speedKmh != null) lastEcuAnswerAt = snap.at
             snap.coolantC?.let { c -> maxCoolant = maxOf(maxCoolant ?: c, c) }
             snap.speedKmh?.let { v -> maxSpeed = maxOf(maxSpeed ?: v, v) }
             alerts.check(snap).forEach { a ->

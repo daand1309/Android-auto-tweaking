@@ -58,6 +58,8 @@ class DriveFlowTest {
             showSplash = true
             greetingStyle = "sassy"
         }
+        // Old tests expect "left the car" right away; the stall test sets its own hold.
+        DriveHold.holdWithoutObdMs = 0L
 
         val component = ComponentName(ctx, DriveMonitorService::class.java)
         shell("cmd notification allow_listener ${component.flattenToString()}")
@@ -447,6 +449,36 @@ class DriveFlowTest {
         } finally {
             onMain { browser?.disconnect() }
         }
+    }
+
+    @Test
+    fun stallAndRestartRebootingTheRadioKeepsTheSameDrive() {
+        DriveHold.holdWithoutObdMs = 60_000L
+        prefs.rememberParking = false
+        connectCar()
+        val newDrives = { log().split("=== CAR: Android Auto connected ===").size - 1 }
+        val drivesBefore = newDrives()
+
+        // Stall + restart: the starter's voltage dip reboots the head unit, Android Auto drops.
+        onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_NOT_CONNECTED) }
+        waitFor("music paused on the drop", 5_000) { currentState == PlaybackState.STATE_PAUSED }
+        assertEquals(DriveHold.STATE, prefs.lastCarState)
+        assertTrue(log().contains("holding the drive"))
+
+        // The radio is back ~20 s later (shortened here): same drive, no new greeting, music back on.
+        SystemClock.sleep(2_000)
+        onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_PROJECTION) }
+        waitFor("music back after the radio rebooted", 10_000) { currentState == PlaybackState.STATE_PLAYING }
+        assertTrue(log().contains("same drive continues"))
+        assertEquals("no new drive started", drivesBefore, newDrives())
+        assertTrue(!log().contains("drive ended"))
+        assertEquals("Android Auto connected", prefs.lastCarState)
+
+        // Really leaving: the drive ends once the hold runs out.
+        DriveHold.holdWithoutObdMs = 0L
+        onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_NOT_CONNECTED) }
+        waitFor("drive to end", 10_000) { log().contains("drive ended") }
+        assertEquals("not connected", prefs.lastCarState)
     }
 
     @Test

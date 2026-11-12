@@ -183,6 +183,9 @@ class DriveMonitorService : NotificationListenerService() {
 
     private fun cleanup() {
         if (instance !== this) return
+        // Stopped while a drive was on hold: wrap it up properly (else OBD keeps running and the app
+        // keeps saying "reconnecting").
+        if (holdingSince > 0) endDrive("monitor stopped")
         instance = null
         cancelStart()
         cancelResume()
@@ -236,6 +239,10 @@ class DriveMonitorService : NotificationListenerService() {
         carConnected = nowConnected
         val gen = ++connectGen
 
+        if (nowConnected && holdingSince > 0) {
+            resumeHeldDrive(name)
+            return
+        }
         if (nowConnected) {
             carConnectedAt = SystemClock.elapsedRealtime()
             pausesThisDrive = 0
@@ -308,21 +315,9 @@ class DriveMonitorService : NotificationListenerService() {
                 }, prefs.startDelaySec * 1000L)
             }
         } else {
-            val mins = (SystemClock.elapsedRealtime() - carConnectedAt) / 60000
-            val brief = if (briefInterruptions > 0) ", $briefInterruptions brief blip(s) ignored" else ""
-            DriveLog.log("=== CAR: disconnected after ${mins} min. Pauses: $pausesThisDrive, auto-resumes: $resumesThisDrive$brief ===")
-            prefs.lastDrive = java.text.SimpleDateFormat("EEE d MMM HH:mm", java.util.Locale.getDefault()).format(java.util.Date()) +
-                " - ${mins} min, $pausesThisDrive pause(s), $resumesThisDrive auto-resume(s)" +
-                if (lastPauseClue.isNotEmpty()) "\nLast pause: $lastPauseClue" else ""
-            Parking.capture(this)
-            if (driveDataStart >= 0) {
-                val used = appBytes() - driveDataStart
-                if (used >= 0) DriveLog.log("Data used by Drive Music this drive: ${used / 1024} KB")
-                driveDataStart = -1
-            }
-            Briefing.endNow(this)  // don't leave the welcome pop-up behind if you left mid-greeting
-            News.clearCache()  // free the memory until the next drive
-            com.daand.drivemusic.obd.ObdManager.stop()
+            // Android Auto dropped. Stop what needs the car right now, but don't end the drive yet:
+            // a stall + restart reboots the head unit (voltage dip) and Android Auto comes back.
+            Briefing.endNow(this)
             UpdatePrompt.cancel(this)
             handler.removeCallbacks(driveUpdate)
             cancelStart()
@@ -331,14 +326,80 @@ class DriveMonitorService : NotificationListenerService() {
             announceSongAfterStart = false
             suppressPauseUntil = 0L
             getSystemService(NotificationManager::class.java).cancel(DRIVE_MODE_NOTIFICATION)
+            pausedAtDrop = false
             if (prefs.pauseOnDisconnect) {
                 val c = findYtm()
                 if (c?.playbackState?.state == PlaybackState.STATE_PLAYING) {
                     c.transportControls.pause()
-                    DriveLog.log("Paused music because you left the car")
+                    pausedAtDrop = true
+                    DriveLog.log("Paused music because you left the car (or Android Auto dropped)")
                 }
             }
+            holdingSince = SystemClock.elapsedRealtime()
+            prefs.lastCarState = DriveHold.STATE
+            DriveLog.log("CAR: Android Auto dropped - holding the drive in case it's a stall/restart " +
+                if (com.daand.drivemusic.obd.ObdManager.isConnected()) "(OBD will tell if the ignition is off)" else "(no OBD: waiting ${DriveHold.holdWithoutObdMs / 1000}s)")
+            handler.removeCallbacks(holdCheck)
+            handler.post(holdCheck)
         }
+    }
+
+    // ---------------------------------------------------------------- stall / head-unit reboot safeguard
+
+    /** >0 while Android Auto is gone but the drive is kept (stall + restart reboots the radio). */
+    private var holdingSince = 0L
+    /** We paused the music when Android Auto dropped - play it again if the drive continues. */
+    private var pausedAtDrop = false
+
+    private val holdCheck = object : Runnable {
+        override fun run() {
+            if (holdingSince == 0L) return
+            val since = SystemClock.elapsedRealtime() - holdingSince
+            val obd = com.daand.drivemusic.obd.ObdManager
+            when (val d = DriveHold.decide(since, obd.isConnected(), obd.ecuSilentMs())) {
+                is DriveHold.Decision.End -> endDrive(d.reason)
+                DriveHold.Decision.Hold -> handler.postDelayed(this, 3_000)
+            }
+        }
+    }
+
+    /** Android Auto is back within the hold: same drive, nothing restarts. */
+    private fun resumeHeldDrive(name: String) {
+        val secs = (SystemClock.elapsedRealtime() - holdingSince) / 1000
+        holdingSince = 0L
+        handler.removeCallbacks(holdCheck)
+        prefs.lastCarState = name
+        DriveLog.log("=== CAR: Android Auto is back after ${secs}s - same drive continues (no new greeting) ===")
+        handler.postDelayed(driveUpdate, DriveUpdates.INTERVAL_MS)
+        if (pausedAtDrop) {
+            pausedAtDrop = false
+            // Give Android Auto a moment to settle, then put the music back.
+            handler.postDelayed({
+                if (carConnected) { musicController()?.transportControls?.play(); DriveLog.log("Music resumed after Android Auto came back") }
+            }, 3_000)
+        }
+    }
+
+    /** You really left (ignition off, or Android Auto stayed away): wrap up the drive. */
+    private fun endDrive(reason: String) {
+        holdingSince = 0L
+        pausedAtDrop = false
+        handler.removeCallbacks(holdCheck)
+        prefs.lastCarState = "not connected"
+        val mins = (SystemClock.elapsedRealtime() - carConnectedAt) / 60000
+        val brief = if (briefInterruptions > 0) ", $briefInterruptions brief blip(s) ignored" else ""
+        DriveLog.log("=== CAR: drive ended ($reason) after ${mins} min. Pauses: $pausesThisDrive, auto-resumes: $resumesThisDrive$brief ===")
+        prefs.lastDrive = java.text.SimpleDateFormat("EEE d MMM HH:mm", java.util.Locale.getDefault()).format(java.util.Date()) +
+            " - ${mins} min, $pausesThisDrive pause(s), $resumesThisDrive auto-resume(s)" +
+            if (lastPauseClue.isNotEmpty()) "\nLast pause: $lastPauseClue" else ""
+        Parking.capture(this)
+        if (driveDataStart >= 0) {
+            val used = appBytes() - driveDataStart
+            if (used >= 0) DriveLog.log("Data used by Drive Music this drive: ${used / 1024} KB")
+            driveDataStart = -1
+        }
+        News.clearCache()  // free the memory until the next drive
+        com.daand.drivemusic.obd.ObdManager.stop()
     }
 
     /** Mobile/Wi-Fi bytes this app sent + received (Android's own count), or -1 if unavailable. */

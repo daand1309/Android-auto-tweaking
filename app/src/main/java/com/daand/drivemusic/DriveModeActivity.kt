@@ -88,7 +88,8 @@ class DriveModeActivity : Activity() {
      * lock screen) in your pocket. Opened by hand while parked? Then it stays until you close it.
      */
     private fun closeIfLeftCar(): Boolean {
-        val connected = Prefs(this).lastCarState.let { it == "Android Auto connected" || it == "Android Automotive" }
+        // "Reconnecting" (stall + restart rebooted the radio) still counts as being in the car.
+        val connected = Prefs(this).lastCarState.let { it == "Android Auto connected" || it == "Android Automotive" || it == DriveHold.STATE }
         if (connected) { sawCarConnected = true; return false }
         if (!sawCarConnected) return false
         DriveLog.log("Drive Mode: closed - you left the car")
