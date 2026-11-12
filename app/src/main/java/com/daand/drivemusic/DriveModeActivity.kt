@@ -75,9 +75,11 @@ class DriveModeActivity : Activity() {
     private val tick = object : Runnable {
         override fun run() {
             if (closeIfLeftCar()) return
-            if (::pager.isInitialized && pager.current == TAB_CAR) updateCarPage() else updateDynamic()
-            // The car tab shows live numbers: refresh every second while it's on screen.
-            handler.postDelayed(this, if (::pager.isInitialized && pager.current == TAB_CAR) 1000L else 3000L)
+            val onCar = ::pager.isInitialized && pager.current == TAB_CAR
+            if (onCar) updateCarPage() else updateDynamic()
+            // Car tab with live data: every second. No data yet (or music tab): every 3 s.
+            val live = onCar && Prefs(this@DriveModeActivity).obdEnabled && com.daand.drivemusic.obd.ObdManager.live() != null
+            handler.postDelayed(this, if (live) 1000L else 3000L)
         }
     }
 
@@ -158,13 +160,16 @@ class DriveModeActivity : Activity() {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER
         background = Style.rounded(Style.SURFACE, dp(18).toFloat())
+        setPadding(dp(8), dp(8), dp(8), dp(8))
         addView(TextView(this@DriveModeActivity).apply { text = label; textSize = 14f; setTextColor(Style.TEXT2); gravity = Gravity.CENTER })
         val value = TextView(this@DriveModeActivity).apply {
-            text = "—"; textSize = 34f; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT); gravity = Gravity.CENTER
-            maxLines = 2
+            text = "—"; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT); gravity = Gravity.CENTER
+            maxLines = 1
+            // Fill the tile as large as the text allows, on any screen and in portrait or landscape.
+            setAutoSizeTextTypeUniformWithConfiguration(12, 48, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
         }
         carValues[key] = value
-        addView(value)
+        addView(value, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
     }
 
     private fun updateCarPage() {
@@ -175,9 +180,8 @@ class DriveModeActivity : Activity() {
         for ((key, tv) in carValues) {
             val (text, color) = v[key] ?: ("—" to null)
             if (tv.text != text) tv.text = text
-            tv.setTextColor(color ?: Style.TEXT)
-            // Long texts (trip, temps) get a smaller font so they fit the tile.
-            tv.textSize = if (text.length > 9) 22f else 34f
+            val c = color ?: Style.TEXT
+            if (tv.currentTextColor != c) tv.setTextColor(c)
         }
         val warning = CarDash.warning(s, p.greetingDutch)
         carWarning.visibility = if (warning == null) View.GONE else View.VISIBLE

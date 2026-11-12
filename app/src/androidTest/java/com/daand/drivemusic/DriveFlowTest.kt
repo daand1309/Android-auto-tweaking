@@ -57,7 +57,9 @@ class DriveFlowTest {
             autoOpenDriveMode = false  // each test starts clean (one test switches this on)
             showSplash = true
             greetingStyle = "sassy"
+            obdEnabled = false
         }
+        com.daand.drivemusic.obd.ObdManager.setLiveForTest(null)
         // Old tests expect "left the car" right away; the stall test sets its own hold.
         DriveHold.holdWithoutObdMs = 0L
 
@@ -551,6 +553,34 @@ class DriveFlowTest {
             find(a.window.decorView)
         }
         assertTrue("car tab explains how to get data: '$guidance'", guidance.isNotEmpty())
+
+        // With (long) live values, every number must fit its tile on this screen - nothing cut off.
+        prefs.obdEnabled = true
+        val trip = com.daand.drivemusic.obd.Trip()
+        for (i in 0..200) trip.add(com.daand.drivemusic.obd.CarSnapshot(i * 5_000L, rpm = 2500, speedKmh = 88, litresPerHour = 5.6))
+        com.daand.drivemusic.obd.ObdManager.setLiveForTest(com.daand.drivemusic.obd.CarSnapshot(System.currentTimeMillis(),
+            coolantC = 104, rpm = 6750, speedKmh = 188, volts = 14.35, ambientC = -12, litresPerHour = 12.4,
+            codes = listOf("P0420", "P0171"), checkEngine = true, extra = mapOf(0x11 to 100.0, 0x04 to 100.0, 0x0F to -8.0)), trip)
+        SystemClock.sleep(3_500)
+        val problems = mutableListOf<String>()
+        var tiles = 0
+        onMain {
+            fun check(v: android.view.View) {
+                if (v is android.widget.TextView && v.isShown && v.maxLines == 1 && v.text.isNotEmpty() && v.text != "—" && v.text.length >= 2 &&
+                    v.autoSizeTextType == android.widget.TextView.AUTO_SIZE_TEXT_TYPE_UNIFORM) {
+                    tiles++
+                    val fits = v.paint.measureText(v.text.toString()) <= v.width - v.paddingLeft - v.paddingRight + 1
+                    val layout = v.layout
+                    if (!fits || (layout != null && layout.getEllipsisCount(0) > 0)) problems += "'${v.text}' (${v.width}px)"
+                }
+                if (v is android.view.ViewGroup) for (i in 0 until v.childCount) check(v.getChildAt(i))
+            }
+            check(a.window.decorView)
+        }
+        assertTrue("expected the live tiles to show values, saw $tiles", tiles >= 6)
+        assertTrue("values cut off: $problems", problems.isEmpty())
+        com.daand.drivemusic.obd.ObdManager.setLiveForTest(null)
+        prefs.obdEnabled = false
         closeDriveMode()
     }
 

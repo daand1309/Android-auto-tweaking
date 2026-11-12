@@ -54,6 +54,10 @@ object ObdManager {
     fun hasPermission(ctx: Context) = Build.VERSION.SDK_INT < 31 ||
         ctx.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
 
+    /** Test hook: pretend the car sent this (and this trip). */
+    @androidx.annotation.VisibleForTesting
+    fun setLiveForTest(snapshot: CarSnapshot?, testTrip: Trip = Trip()) { latest = snapshot; trip = testTrip }
+
     /** Fresh reading (less than 20 s old) or null. */
     fun live(): CarSnapshot? = latest?.takeIf { System.currentTimeMillis() - it.at < 20_000 }
 
