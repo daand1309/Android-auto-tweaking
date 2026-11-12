@@ -55,6 +55,7 @@ object ObdManager {
     @Volatile var typicalPer100: Double? = null; private set
     @Volatile private var tankLitres = 60.0
     @Volatile private var batteryLogged = false
+    @Volatile private var restingMax: Double? = null
 
     fun hasPermission(ctx: Context) = Build.VERSION.SDK_INT < 31 ||
         ctx.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
@@ -77,7 +78,7 @@ object ObdManager {
         engineLitres = p.obdEngineLitres
         tankLitres = p.tankLitres
         appCtx = ctx.applicationContext
-        batteryLogged = false
+        batteryLogged = false; restingMax = null
         typicalPer100 = runCatching { TripHistory.typicalPer100(TripHistory.load(ctx)) }.getOrNull()
         val app = ctx.applicationContext
         val address = p.obdDevice
@@ -208,22 +209,29 @@ object ObdManager {
         val ctx = appCtx ?: return
         val t = trip
         if (t.km < 0.3) return
+        // Snapshot now (a new drive may start right away), write the file off the main thread.
         val rec = TripRecord(System.currentTimeMillis(), ((t.drivingSeconds + t.idleSeconds) / 60).toInt(), t.km, t.litres,
             t.score(), t.maxCoolant, latest?.codes ?: emptyList())
-        runCatching { TripHistory.add(ctx, rec) }
-        TripNotice.post(ctx, rec, Prefs(ctx))
+        Thread({
+            runCatching { TripHistory.add(ctx, rec) }.onFailure { DriveLog.log("OBD: couldn't save the trip (${it.javaClass.simpleName})") }
+            runCatching { TripNotice.post(ctx, rec, Prefs(ctx)) }
+        }, "trip-save").start()
     }
 
     /** km left on this tank (fuel level × tank ÷ typical consumption, else this trip's). */
     fun rangeKm(s: CarSnapshot? = latest): Int? = Range.km(s?.fuelPct, tankLitres, typicalPer100 ?: trip.avgPer100())
 
-    /** First reading with the engine off this drive = resting battery voltage; logged once per day. */
+    /**
+     * Resting battery voltage, logged once per day: the highest reading before the engine starts,
+     * saved the moment it starts. (Not just the first reading - that can land in the starter's dip
+     * and look like a dying battery.) If the adapter only connects once the engine runs: nothing.
+     */
     private fun recordRestingBattery(s: CarSnapshot, onAlert: (CarAlerts.Alert) -> Unit) {
         if (batteryLogged) return
         val ctx = appCtx ?: return
-        val v = s.volts ?: return
+        if (!s.engineRunning) { restingMax = RestingBattery.track(restingMax, s); return }
         batteryLogged = true
-        if (s.engineRunning) return  // already running: no resting value this time
+        val v = RestingBattery.value(restingMax) ?: return
         val day = System.currentTimeMillis() / 86_400_000L
         val p = Prefs(ctx)
         val log = p.batteryLog.filter { it.first != day } + (day to Math.round(v * 100) / 100.0)
@@ -356,4 +364,16 @@ object CarStatusText {
         val head = when { dutch -> "De auto: "; butler -> "The car, sir: "; else -> "Car status: " }
         return (head + parts.joinToString(", ") + ". " + faults).trim()
     }
+}
+
+/** Resting battery voltage before a start. Pure, unit tested. */
+object RestingBattery {
+    /** Highest reading while the engine is off and not cranking (rpm 0 / unknown). */
+    fun track(max: Double?, s: CarSnapshot): Double? {
+        val v = s.volts ?: return max
+        if (s.engineRunning || (s.rpm ?: 0) != 0) return max
+        return maxOf(max ?: v, v)
+    }
+    /** What to log once the engine starts: null if there was no believable reading. */
+    fun value(max: Double?): Double? = max?.takeIf { it in 9.0..16.0 }
 }

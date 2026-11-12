@@ -16,6 +16,8 @@ class Trip {
     var hardAccelerations = 0; private set
     var hardBrakes = 0; private set
     private var last: CarSnapshot? = null
+    private var inHardAccel = false
+    private var inHardBrake = false
 
     fun add(s: CarSnapshot) {
         val prev = last
@@ -31,12 +33,13 @@ class Trip {
         prev.litresPerHour?.let { litres += it * dt / 3600 }
         if (s.engineRunning) { if (speed < 1) idleSeconds += dt else drivingSeconds += dt }
         if ((s.rpm ?: 0) > HIGH_RPM) highRpmSeconds += dt
-        // Hard acceleration / braking: speed change per second between readings (m/s²).
+        // Hard acceleration / braking: speed change per second between readings (m/s²). Readings
+        // closer than 1 s apart are too coarse (1 km/h steps), and one long hard push counts once.
         val v0 = prev.speedKmh; val v1 = s.speedKmh
-        if (v0 != null && v1 != null) {
+        if (v0 != null && v1 != null && dt >= 1.0) {
             val accel = (v1 - v0) / 3.6 / dt
-            if (accel > HARD_ACCEL) hardAccelerations++
-            if (accel < -HARD_BRAKE) hardBrakes++
+            if (accel > HARD_ACCEL) { if (!inHardAccel) hardAccelerations++; inHardAccel = true } else inHardAccel = false
+            if (accel < -HARD_BRAKE) { if (!inHardBrake) hardBrakes++; inHardBrake = true } else inHardBrake = false
         }
     }
 

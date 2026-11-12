@@ -450,7 +450,10 @@ class MainActivity : Activity() {
 
         header("Your car")
         stepperLike("Fuel tank: ${Math.round(prefs.tankLitres)} L", "Change") {
-            askNumber("Fuel tank size (litres)", "The 2011 ASX has about 60 L", prefs.tankLitres) { prefs.tankLitres = it.coerceIn(20.0, 150.0) }
+            askNumber("Fuel tank size (litres)", "The 2011 ASX has about 60 L", prefs.tankLitres) {
+                // Empty or a typo: keep the old size rather than silently jumping to the minimum.
+                if (it >= 20 && it <= 150) prefs.tankLitres = it else toast("Enter a size between 20 and 150 litres")
+            }
         }
         stepperLike("Fuel price: " + (if (prefs.fuelPrice > 0) "€%.2f per litre".format(java.util.Locale.ROOT, prefs.fuelPrice) else "not set"), "Change") {
             askNumber("Fuel price per litre (€)", "e.g. 2.05 - leave empty to hide costs", prefs.fuelPrice) { prefs.fuelPrice = it.coerceIn(0.0, 10.0) }

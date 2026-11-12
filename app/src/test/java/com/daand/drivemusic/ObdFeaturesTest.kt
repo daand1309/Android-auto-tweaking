@@ -32,6 +32,32 @@ class ObdFeaturesTest {
         assertEquals("smooth", Trip.scoreWord(90, false)); assertEquals("sportief", Trip.scoreWord(40, true))
     }
 
+    @Test fun hardAccelerationCountsOncePerPushAndIgnoresJitter() {
+        // One long hard push (0 -> 100 in ~8 s, read every 1.5 s) is one event, not five.
+        val t = Trip(); var at = 0L
+        for (v in listOf(0, 0, 19, 38, 56, 75, 94, 100, 100)) { t.add(CarSnapshot(at, rpm = 3000, speedKmh = v)); at += 1_500 }
+        assertEquals(1, t.hardAccelerations)
+        // Readings 0.2 s apart with a 2 km/h step (coarse speed steps) aren't a hard acceleration.
+        val j = Trip(); at = 0L
+        for (v in listOf(50, 52, 50, 52, 50)) { j.add(CarSnapshot(at, rpm = 2000, speedKmh = v)); at += 200 }
+        assertEquals(0, j.hardAccelerations); assertEquals(0, j.hardBrakes)
+        // Two separate hard stops are two events.
+        val b = Trip(); at = 0L
+        for (v in listOf(80, 50, 20, 20, 20, 80, 80, 50, 20)) { b.add(CarSnapshot(at, rpm = 2000, speedKmh = v)); at += 2_000 }
+        assertEquals(2, b.hardBrakes)
+    }
+
+    @Test fun restingBatteryIgnoresTheStarterDip() {
+        var max: Double? = null
+        max = com.daand.drivemusic.obd.RestingBattery.track(max, CarSnapshot(0, rpm = 0, volts = 12.55))
+        max = com.daand.drivemusic.obd.RestingBattery.track(max, CarSnapshot(1, rpm = 250, volts = 9.8))   // cranking
+        max = com.daand.drivemusic.obd.RestingBattery.track(max, CarSnapshot(2, rpm = 0, volts = 10.4))    // dip read with rpm 0
+        max = com.daand.drivemusic.obd.RestingBattery.track(max, CarSnapshot(3, rpm = 800, volts = 14.2))  // running: ignored
+        assertEquals(12.55, com.daand.drivemusic.obd.RestingBattery.value(max)!!, 0.001)
+        assertNull("adapter connected after the start", com.daand.drivemusic.obd.RestingBattery.value(null))
+        assertNull("garbage", com.daand.drivemusic.obd.RestingBattery.value(3.1))
+    }
+
     @Test fun tripHistoryJsonTotalsAndTypicalConsumption() {
         val trips = listOf(
             TripRecord(1_000, 20, 18.4, 1.16, 86, 92, listOf("P0420")),
