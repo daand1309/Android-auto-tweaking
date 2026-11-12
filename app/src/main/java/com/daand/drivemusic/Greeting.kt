@@ -904,6 +904,8 @@ object WelcomeAnnouncer {
     /** One greeting at a time: mashing the Welcome button mustn't start a choir of voices. */
     private val busy = java.util.concurrent.atomic.AtomicBoolean(false)
 
+    val isBusy: Boolean get() = busy.get()
+
     fun run(context: Context, song: GreetingText.Song? = null, recordAsGreeted: Boolean = true, then: () -> Unit = {}) {
         val ctx = context.applicationContext
         val main = Handler(Looper.getMainLooper())
@@ -929,6 +931,7 @@ object WelcomeAnnouncer {
                 else -> fetchWithDeadline(lat, lon)
             }
             if (weather != null) {
+                DriveUpdates.lastWeather = weather  // baseline for "the weather changed" updates later
                 p.lastWeatherSummary = GreetingText.tileWeather(weather, p.greetingDutch)
                 p.lastWeatherAt = System.currentTimeMillis()
             }

@@ -288,6 +288,38 @@ class MainActivity : Activity() {
         }
         navRow("Voice & style", (if (prefs.butler) "🎩 Butler" else "😏 Sassy") + " · " +
             (if (prefs.voiceName.isBlank()) "automatic voice" else "your chosen voice") + " · tap to listen") { go(Page.VOICE) }
+
+        header("During the drive")
+        switch("Tell me when weather or roads change", prefs.updatesWeather) { prefs.updatesWeather = it }
+        switch("Breaking news (only what you need to know)", prefs.updatesNews) { prefs.updatesNews = it }
+        text("Checks every 15 minutes and stays quiet unless something matters: rain or snow starting, ice, fog, " +
+            "strong gusts - or major news in the Netherlands (alerts, disasters, big outages, closed motorways, " +
+            "the government falling). Animals, sport, celebs and other soft news are always filtered out. " +
+            "At most 3 news items per drive, never during a call.")
+        button("Check for news now") { testDriveUpdate() }
+    }
+
+    /** Runs the news check now and reads out whatever passes the filter (or says nothing passed). */
+    private fun testDriveUpdate() {
+        toast("Checking the news...")
+        Thread {
+            val p = prefs
+            val items = mutableListOf<News.Item>()
+            var failed = 0
+            items += News.fetchAll(p.greetingDutch, p.weatherPlace) { failed++ }
+            val story = News.pick(items, System.currentTimeMillis(), emptyList())
+            runOnUiThread {
+                when {
+                    items.isEmpty() && failed > 0 -> toast("Couldn't reach the news - no internet?")
+                    story == null -> toast("Checked ${items.size} headlines - nothing urgent enough to interrupt your music. 👍")
+                    else -> {
+                        val text = DriveUpdates.compose(emptyList(), story, p.greetingDutch, p.butler, p.greetingName)!!
+                        DriveLog.log("UPDATE (test): \"$text\"")
+                        Greeter(this).speak(text, p.greetingDutch) {}
+                    }
+                }
+            }
+        }.start()
     }
 
     private fun renderVoice() {
@@ -586,7 +618,8 @@ class MainActivity : Activity() {
             "• Logs show GOOGLE ASSISTANT before pauses? Lower 'Hey Google' sensitivity.\n" +
             "• Wired Android Auto dropping? Try a short, good USB cable.")
         header("Privacy")
-        text("• Internet only for update checks (GitHub) and weather (Open-Meteo, location rounded to ~10 km).\n" +
+        text("• Internet only for update checks (GitHub), weather (Open-Meteo, location rounded to ~10 km) and, if on, " +
+            "drive news (NOS / NL Times; Google News is searched for your town name).\n" +
             "• Notifications are never read. Logs stay on the phone unless you share them.\n" +
             "• Where's my car (optional): your parked spot is saved on the phone only, never sent anywhere.\n" +
             "• No overlay, accessibility, contacts, SMS or storage access.")

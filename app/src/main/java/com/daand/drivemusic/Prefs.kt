@@ -77,6 +77,21 @@ class Prefs(context: Context) {
         get() = sp.getString("greeting_name", "") ?: ""
         set(v) = sp.edit().putString("greeting_name", v).apply()
 
+    /** During a drive: speak up when weather / road conditions change. */
+    var updatesWeather: Boolean
+        get() = sp.getBoolean("updates_weather", true)
+        set(v) = sp.edit().putBoolean("updates_weather", v).apply()
+
+    /** During a drive: breaking news (strictly filtered). */
+    var updatesNews: Boolean
+        get() = sp.getBoolean("updates_news", true)
+        set(v) = sp.edit().putBoolean("updates_news", v).apply()
+
+    /** Headlines already read out, so a story is never told twice. */
+    var toldNews: List<String>
+        get() = (sp.getString("told_news", "") ?: "").split('\n').filter { it.isNotBlank() }
+        set(v) = sp.edit().putString("told_news", v.joinToString("\n")).apply()
+
     /** "sassy" (default) or "butler". */
     var greetingStyle: String
         get() = sp.getString("greeting_style", "sassy") ?: "sassy"
@@ -204,7 +219,7 @@ class Prefs(context: Context) {
     private val notBackedUp = setOf(
         "last_car_state", "last_drive", "last_greeting", "last_weather", "last_weather_at",
         "last_update_check", "notified_update", "update_status", "last_seen_music_app", "last_music_change_at",
-        "parked_spot",
+        "parked_spot", "told_news",
     )
 
     /**
@@ -215,7 +230,7 @@ class Prefs(context: Context) {
         "announce_song" to "bool", "auto_open_drive_mode" to "bool", "auto_resume" to "bool", "auto_start" to "bool",
         "auto_update" to "bool", "greeting" to "bool", "greeting_dutch" to "bool", "pause_on_disconnect" to "bool",
         "remember_parking" to "bool", "road_conditions" to "bool", "set_volume" to "bool", "show_splash" to "bool",
-        "weather" to "bool",
+        "weather" to "bool", "updates_weather" to "bool", "updates_news" to "bool",
         "resume_delay" to "int", "start_delay" to "int", "volume_pct" to "int",
         "speech_pitch" to "float", "speech_rate" to "float", "weather_lat" to "float", "weather_lon" to "float",
         "birthday" to "string", "car_name" to "string", "greeting_name" to "string", "music_pkg" to "string",
