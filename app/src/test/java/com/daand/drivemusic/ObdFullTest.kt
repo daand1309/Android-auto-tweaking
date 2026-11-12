@@ -159,4 +159,19 @@ class ObdFullTest {
         assertNull(s3.start())
         assertNull("0xFF = 255 km/h is the typical garbage byte", s3.read(null, false, false).speedKmh)
     }
+
+    @Test fun asxMivecCodesAreKnown() {
+        // Every code researched for the ASX 1.6 MIVEC (4A92) has a real description, in both languages.
+        val asx = listOf("P0010", "P0011", "P0012", "P0016", "P0031", "P0037", "P0068", "P0105", "P0222", "P0327", "P0336",
+            "P0341", "P0403", "P0451", "P0461", "P0513", "P0603", "P0627", "P0638", "P0657", "P0776", "P0841", "P0868",
+            "P0882", "P2101", "P2122", "P2135", "P2195", "P2228", "P1021", "P1400", "P1500", "P1530", "P1603", "P1610",
+            "P1751", "U0073", "U0100", "U0141", "U0155")
+        for (c in asx) for (nl in listOf(false, true)) {
+            val e = TroubleCodes.explain(c, nl)
+            assertTrue("$c ($nl) only has a generic description: $e", !e.startsWith("a fault in") && !e.startsWith("een storing in") &&
+                !e.contains("Mitsubishi-specific code") && !e.contains("Mitsubishi-specifieke code"))
+        }
+        assertTrue(TroubleCodes.explain("P1021", false).contains("oil level"))
+        assertEquals(TroubleCodes.Severity.INFO, TroubleCodes.explanation("P0603", false).severity)  // common after a battery change
+    }
 }
