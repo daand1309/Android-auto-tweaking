@@ -24,7 +24,9 @@ object DriveLog {
     }
 
     @Synchronized
-    fun log(msg: String) {
+    fun log(raw: String) {
+        // One entry = one line: text from outside (song titles, Bluetooth names) can't forge extra entries.
+        val msg = raw.replace('\r', ' ').replace('\n', ' ').replace('\u2028', ' ').replace('\u2029', ' ')
         Log.i(TAG, msg)
         if (!::dir.isInitialized) return
         try {

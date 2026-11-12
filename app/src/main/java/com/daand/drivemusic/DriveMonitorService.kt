@@ -536,7 +536,8 @@ class DriveMonitorService : NotificationListenerService() {
             ?: md.getString(android.media.MediaMetadata.METADATA_KEY_DISPLAY_TITLE) ?: return null
         val artist = md.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST)
             ?: md.getString(android.media.MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE) ?: ""
-        return GreetingText.Song(title, artist).takeIf { title.isNotBlank() }
+        val t = GreetingText.cleanMeta(title)
+        return GreetingText.Song(t, GreetingText.cleanMeta(artist)).takeIf { t.isNotBlank() }
     }
 
     private fun findYtm(): MediaController? = try {

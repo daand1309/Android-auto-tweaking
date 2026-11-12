@@ -116,6 +116,10 @@ object Briefing {
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setOnlyAlertOnce(true)
+            // Lock screen: just "Welcome briefing" - not your name / where you are.
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(NotificationCompat.Builder(ctx, CHANNEL).setSmallIcon(R.drawable.ic_stat_note)
+                .setContentTitle("Welcome briefing").build())
             .setTimeoutAfter(3 * 60 * 1000L)  // never left behind, even if something goes wrong
             .extend(car)
             .build()

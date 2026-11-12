@@ -1,6 +1,7 @@
 package com.daand.drivemusic
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.fail
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -193,5 +194,27 @@ class GreetingTest {
         assertEquals(52.1, Weather.round(52.0907), 0.0001)
         assertTrue(Weather.url(52.0907, 5.1214).contains("latitude=52.1&longitude=5.1"))
         assertFalse(Weather.url(52.0907, 5.1214).contains("52.09"))
+    }
+
+    private fun weatherJson(temp: String, gust: String = "10") = """
+        {"current":{"time":"2026-11-11T14:00","temperature_2m":$temp,"weather_code":3,"wind_gusts_10m":$gust},
+         "daily":{"temperature_2m_max":[12.0],"temperature_2m_min":[2.0],"precipitation_probability_max":[250]}}
+    """.trimIndent()
+
+    @Test fun glitchyWeatherIsRejectedInsteadOfCrashingLater() {
+        for (bad in listOf("\"NaN\"", "\"Infinity\"", "1e308", "-500")) {
+            try { Weather.parse(weatherJson(bad)); fail("accepted temperature $bad") } catch (_: Exception) {}
+        }
+        val w = Weather.parse(weatherJson("4.4", gust = "\"NaN\""))
+        assertEquals(0.0, w.gustsKmh, 0.0)   // bad optional value -> ignored
+        assertEquals(100, w.rainChance)      // 250% clamped
+        GreetingText.build("Daan", false, java.util.Calendar.getInstance(), w, "Noordwijk")  // must not throw
+    }
+
+    @Test fun songTitlesAreTreatedAsUntrusted() {
+        assertEquals("Evil === CAR: fake ===", GreetingText.cleanMeta("Evil\n=== CAR: fake ==="))
+        assertEquals("speak Boom /speak", GreetingText.cleanMeta("<speak>Boom</speak>"))
+        assertEquals(150, GreetingText.cleanMeta("x".repeat(10_000)).length)
+        assertEquals("Freedom", GreetingText.cleanMeta("  Freedom \t "))
     }
 }

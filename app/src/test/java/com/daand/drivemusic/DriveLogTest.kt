@@ -33,6 +33,12 @@ class DriveLogTest {
         assertTrue(DriveLog.readAll().contains("7999 "))  // newest line kept
     }
 
+    @Test fun outsideTextCannotForgeExtraLogLines() {
+        DriveLog.log("Now playing: Evil\n2026-01-01 00:00:00.000  === CAR: fake ===\r\u2028x")
+        val lines = DriveLog.readAll().trim().lines()
+        assertEquals(1, lines.size)
+    }
+
     @Test fun clearRemovesEverything() {
         DriveLog.log("something")
         DriveLog.clear()

@@ -90,6 +90,13 @@ object GreetingText {
     }
 
     /** Short weather line for the car screen, e.g. "Utrecht: 18 degrees, clear skies, rain 5%". */
+    /**
+     * Song titles come from whoever uploaded the track, so treat them as untrusted: no line breaks or
+     * control characters (they could forge log lines), no angle brackets (speech markup), sane length.
+     */
+    fun cleanMeta(raw: String): String =
+        raw.replace(Regex("""[\p{Cntrl}\u2028\u2029<>]"""), " ").replace(Regex("""\s+"""), " ").trim().take(150)
+
     /** Compact form for the home tile and car screen, e.g. "4° · overcast · 20% rain". */
     fun tileWeather(w: WeatherNow, dutch: Boolean): String {
         val desc = describe(w.code, dutch).removePrefix("een ").removePrefix("a ")
@@ -544,21 +551,27 @@ object Weather {
             "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunset" +
             "&forecast_days=1&timezone=auto"
 
+    /**
+     * Parses the forecast. Throws on anything implausible (e.g. "NaN", infinite or absurd values), so
+     * a glitchy response means "no weather" - never a crash later when rounding the numbers.
+     */
     fun parse(json: String): GreetingText.WeatherNow {
         val o = JSONObject(json)
         val cur = o.getJSONObject("current")
         val daily = o.getJSONObject("daily")
+        fun temp(v: Double) = v.also { require(it.isFinite() && it in -90.0..70.0) { "implausible temperature $it" } }
+        fun opt(v: Double, max: Double) = if (v.isFinite() && v in 0.0..max) v else 0.0
         return GreetingText.WeatherNow(
-            tempNow = cur.getDouble("temperature_2m"),
+            tempNow = temp(cur.getDouble("temperature_2m")),
             code = cur.getInt("weather_code"),
-            windKmh = cur.optDouble("wind_speed_10m", 0.0),
-            tempMin = daily.getJSONArray("temperature_2m_min").getDouble(0),
-            tempMax = daily.getJSONArray("temperature_2m_max").getDouble(0),
-            rainChance = daily.getJSONArray("precipitation_probability_max").optInt(0, 0),
-            precipMm = cur.optDouble("precipitation", 0.0),
-            snowfallCm = cur.optDouble("snowfall", 0.0),
-            gustsKmh = cur.optDouble("wind_gusts_10m", 0.0),
-            visibilityM = cur.optDouble("visibility").takeIf { !it.isNaN() },
+            windKmh = opt(cur.optDouble("wind_speed_10m", 0.0), 500.0),
+            tempMin = temp(daily.getJSONArray("temperature_2m_min").getDouble(0)),
+            tempMax = temp(daily.getJSONArray("temperature_2m_max").getDouble(0)),
+            rainChance = daily.getJSONArray("precipitation_probability_max").optInt(0, 0).coerceIn(0, 100),
+            precipMm = opt(cur.optDouble("precipitation", 0.0), 1000.0),
+            snowfallCm = opt(cur.optDouble("snowfall", 0.0), 1000.0),
+            gustsKmh = opt(cur.optDouble("wind_gusts_10m", 0.0), 500.0),
+            visibilityM = cur.optDouble("visibility").takeIf { it.isFinite() && it in 0.0..1_000_000.0 },
             isDay = cur.optInt("is_day", 1) == 1,
             nowTime = cur.optString("time").substringAfter('T', ""),
             sunset = daily.optJSONArray("sunset")?.optString(0)?.substringAfter('T', "") ?: "",
@@ -726,22 +739,32 @@ class Greeter(private val context: Context) {
 
 /** Fetches the weather (if enabled), builds the welcome text and speaks it, then calls [then]. */
 object WelcomeAnnouncer {
+    /** One greeting at a time: mashing the Welcome button mustn't start a choir of voices. */
+    private val busy = java.util.concurrent.atomic.AtomicBoolean(false)
+
     fun run(context: Context, song: GreetingText.Song? = null, recordAsGreeted: Boolean = true, then: () -> Unit = {}) {
         val ctx = context.applicationContext
-        val p = Prefs(ctx)
         val main = Handler(Looper.getMainLooper())
+        if (!busy.compareAndSet(false, true)) {
+            DriveLog.log("GREETING: already speaking - ignoring the extra request")
+            main.post(then)
+            return
+        }
+        val done: () -> Unit = { busy.set(false); then() }
+        runGuarded(ctx, song, recordAsGreeted, main, done)
+    }
+
+    private fun runGuarded(ctx: Context, song: GreetingText.Song?, recordAsGreeted: Boolean, main: Handler, then: () -> Unit) {
+        val p = Prefs(ctx)
         DriveLog.log("GREETING: preparing")
         Thread {
+          try {
             val lat = p.weatherLat
             val lon = p.weatherLon
             val weather = when {
                 !p.weatherEnabled -> null
                 lat.isNaN() || lon.isNaN() -> { DriveLog.log("GREETING: no weather location set"); null }
-                else -> try {
-                    Weather.fetch(lat, lon)
-                } catch (e: Exception) {
-                    DriveLog.log("GREETING: weather unavailable (${e.message})"); null
-                }
+                else -> fetchWithDeadline(lat, lon)
             }
             if (weather != null) {
                 p.lastWeatherSummary = GreetingText.tileWeather(weather, p.greetingDutch)
@@ -756,6 +779,7 @@ object WelcomeAnnouncer {
             val pron = p.namePronunciation
             val shown = Briefing.forScreen(text, pron, p.greetingName)
             main.post {
+              try {
                 DriveLog.log("GREETING: \"$text\"")
                 val (title, body) = Briefing.split(shown)
                 val shownToken = Briefing.start(ctx, title, body)
@@ -763,9 +787,37 @@ object WelcomeAnnouncer {
                     Briefing.end(ctx, shownToken)
                     then()
                 }
+              } catch (e: Exception) {
+                DriveLog.log("GREETING: couldn't speak (${e.message}) - skipping it")
+                then()
+              }
             }
+          } catch (e: Throwable) {
+            // Whatever went wrong, the greeting must never stop your music from starting.
+            DriveLog.log("GREETING: failed (${e.javaClass.simpleName}: ${e.message}) - skipping it")
+            main.post { then() }
+          }
         }.start()
     }
+
+    /**
+     * Weather with a hard time limit: with bad signal (parking garage) the lookup can hang far longer
+     * than the socket timeouts (DNS isn't covered by them). After [WEATHER_DEADLINE_MS] we greet without it.
+     */
+    private fun fetchWithDeadline(lat: Double, lon: Double): GreetingText.WeatherNow? {
+        val task = java.util.concurrent.FutureTask { Weather.fetch(lat, lon) }
+        Thread(task, "weather").apply { isDaemon = true }.start()
+        return try {
+            task.get(WEATHER_DEADLINE_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+        } catch (e: java.util.concurrent.TimeoutException) {
+            task.cancel(true)
+            DriveLog.log("GREETING: weather took too long (bad signal?) - greeting without it"); null
+        } catch (e: Exception) {
+            DriveLog.log("GREETING: weather unavailable (${(e.cause ?: e).message})"); null
+        }
+    }
+
+    private const val WEATHER_DEADLINE_MS = 8_000L
 }
 
 /** Short "Now playing: X by Y" announcement (used when the song wasn't known before the music started). */
