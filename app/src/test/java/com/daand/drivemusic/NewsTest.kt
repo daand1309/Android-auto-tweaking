@@ -138,4 +138,35 @@ class NewsTest {
     @Test fun englishPluralsCount() {
         assertTrue(passes(item("Floods force evacuations in Limburg, code red issued")))
     }
+
+    // ------------------------------------------------------------------ follow a story
+
+    @Test fun followKeywordsAreParsedSafely() {
+        assertEquals(listOf("kabinet", "coalitie", "jetten"), News.keywords(" kabinet, Coalitie ;Jetten,, k "))
+        assertEquals(8, News.keywords((1..20).joinToString(",") { "woord$it" }).size)
+    }
+
+    @Test fun followPicksTheNewestMatchingHeadline() {
+        val kws = News.keywords("kabinet, coalitie, Jetten")
+        val items = listOf(
+            item("Live | Kabinet-Jetten in totale coalitiecrisis richting cruciaal debat", minsAgo = 90),
+            item("VVD stapt uit het kabinet, Jetten naar de koning", minsAgo = 5),
+            item("Video | Jetten voor cruciaal belastingdebat", minsAgo = 2),          // clips aren't updates
+            item("Live | Teruglezen | Zo verliep de dag in Den Haag", minsAgo = 1),   // recap
+            item("Friese munt brengt recordbedrag op", minsAgo = 1),                  // not about the story
+            item("Kabinetscrisis: Kamer debatteert vanavond", minsAgo = 14 * 60),     // too old (>12 h)
+        )
+        assertEquals("VVD stapt uit het kabinet, Jetten naar de koning", News.pickFollowed(items, kws, now, emptyList())?.title)
+        // Already told -> the next newest, with "Live |" removed.
+        assertEquals("Kabinet-Jetten in totale coalitiecrisis richting cruciaal debat",
+            News.pickFollowed(items, kws, now, listOf("VVD stapt uit het kabinet, Jetten naar de koning"))?.title)
+        assertNull(News.pickFollowed(items, emptyList(), now, emptyList()))
+    }
+
+    @Test fun followedUpdateWording() {
+        val f = item("VVD stapt uit het kabinet")
+        val nl = DriveUpdates.compose(emptyList(), null, true, true, "", withIntro = false, followed = f, source = "NU.nl")!!
+        assertTrue(nl, nl.startsWith("Over het verhaal dat je volgt, meldt NU.nl: VVD stapt uit het kabinet."))
+        assertTrue(DriveUpdates.askLine(false, true, followedOnly = true).contains("the story you're following"))
+    }
 }

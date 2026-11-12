@@ -339,7 +339,7 @@ class DriveMonitorService : NotificationListenerService() {
         override fun run() {
             if (!carConnected) return
             val gen = connectGen
-            if (prefs.updatesWeather || prefs.updatesNews) {
+            if (prefs.updatesWeather || prefs.updatesNews || prefs.followActive) {
                 Thread {
                     val found = try { DriveUpdates.check(this@DriveMonitorService) } catch (e: Throwable) {
                         DriveLog.log("UPDATE CHECK: failed (${e.javaClass.simpleName}: ${e.message})"); null
@@ -370,16 +370,18 @@ class DriveMonitorService : NotificationListenerService() {
         val butler = prefs.butler
         suppressPauseUntil = SystemClock.elapsedRealtime() + 90_000L  // a brief duck/pause isn't "a pause"
         if (!prefs.askBeforeUpdates) {
-            speakUpdate(DriveUpdates.compose(found.weather, found.news, dutch, butler, prefs.greetingName)!!, found.title(dutch))
+            speakUpdate(DriveUpdates.compose(found.weather, found.news, dutch, butler, prefs.greetingName,
+                followed = found.followed, source = found.source)!!, found.title(dutch))
             return
         }
-        val question = DriveUpdates.askLine(dutch, butler)
+        val question = DriveUpdates.askLine(dutch, butler, followedOnly = found.followed != null && found.news == null && found.weather.isEmpty())
         DriveLog.log("UPDATE: asking - \"$question\"")
         UpdatePrompt.open(this, found.title(dutch), question)
         safeSpeak(question) {
             UpdatePrompt.awaitAnswer(this) { yes ->
                 if (!carConnected || gen != connectGen) return@awaitAnswer
-                if (yes) speakUpdate(DriveUpdates.compose(found.weather, found.news, dutch, butler, prefs.greetingName, withIntro = false)!!, found.title(dutch))
+                if (yes) speakUpdate(DriveUpdates.compose(found.weather, found.news, dutch, butler, prefs.greetingName, withIntro = false,
+                    followed = found.followed, source = found.source)!!, found.title(dutch))
                 else safeSpeak(DriveUpdates.declinedLine(dutch, butler)) { suppressPauseUntil = 0L }
             }
         }

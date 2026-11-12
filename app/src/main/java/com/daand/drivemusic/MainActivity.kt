@@ -293,12 +293,39 @@ class MainActivity : Activity() {
         switch("Tell me when weather or roads change", prefs.updatesWeather) { prefs.updatesWeather = it }
         switch("Breaking news (only what you need to know)", prefs.updatesNews) { prefs.updatesNews = it }
         switch("Ask first, with 🟢 / 🔴 buttons", prefs.askBeforeUpdates) { prefs.askBeforeUpdates = it }
+        if (prefs.followActive) {
+            val until = java.text.SimpleDateFormat("EEE d MMM HH:mm", java.util.Locale.getDefault()).format(java.util.Date(prefs.followUntil))
+            stepperLike("📰 Following: ${prefs.followTopic} (until $until)", "Change") { askFollowTopic() }
+            button("Stop following") {
+                prefs.followTopic = ""; prefs.followUntil = 0L
+                DriveLog.log("Setting changed: stopped following a story"); render()
+            }
+        } else {
+            navRow("📰  Follow a story", "New headlines about it from NU.nl and NOS during your drives (stops after 3 days)") { askFollowTopic() }
+        }
         text("Checks every 15 minutes and stays quiet unless something matters: rain or snow starting, ice, fog, " +
             "strong gusts - or major news in the Netherlands (alerts, disasters, big outages, closed motorways, " +
             "the government falling). Animals, sport, celebs and other soft news are always filtered out. " +
             "At most 3 news items per drive, never during a call.")
-        button("Check for news now") { testDriveUpdate() }
+        button(if (prefs.followActive) "Check for news now (incl. your story)" else "Check for news now") { testDriveUpdate() }
         if (prefs.askBeforeUpdates) button("Try the question (🟢 / 🔴)") { tryUpdateQuestion() }
+    }
+
+    private fun askFollowTopic() = askText(
+        "Follow a story",
+        "Keywords, separated by commas - e.g. kabinet, coalitie, Jetten",
+        prefs.followTopic.ifBlank { "kabinet, coalitie, Jetten" }
+    ) { input ->
+        val kws = News.keywords(input)
+        if (kws.isEmpty()) {
+            prefs.followTopic = ""; prefs.followUntil = 0L
+        } else {
+            prefs.followTopic = kws.joinToString(", ")
+            prefs.followUntil = System.currentTimeMillis() + 3L * 24 * 60 * 60 * 1000
+            toast("Following: ${prefs.followTopic}")
+        }
+        DriveLog.log("Setting changed: follow a story = '${prefs.followTopic}'")
+        render()
     }
 
     /** Plays the "there is an update" question with a sample update, so you can try the buttons. */
@@ -333,14 +360,26 @@ class MainActivity : Activity() {
             var failed = 0
             items += News.fetchAll(p.greetingDutch, p.weatherPlace) { failed++ }
             val story = News.pick(items, System.currentTimeMillis(), emptyList())
+            var followed: News.Item? = null
+            var source = ""
+            if (p.followActive) {
+                val all = mutableListOf<Pair<News.Item, String>>()
+                for ((url, src) in News.followFeeds(p.greetingDutch)) {
+                    try { all += News.fetch(url).map { it to src } } catch (e: Exception) { failed++ }
+                }
+                followed = News.pickFollowed(all.map { it.first }, News.keywords(p.followTopic), System.currentTimeMillis(), emptyList())
+                source = followed?.let { f -> all.firstOrNull { it.first.published == f.published && f.title in it.first.title }?.second } ?: ""
+                items += all.map { it.first }
+            }
             runOnUiThread {
                 newsCheckRunning = false
                 if (isDestroyed) return@runOnUiThread
                 when {
                     items.isEmpty() && failed > 0 -> toast("Couldn't reach the news - no internet?")
-                    story == null -> toast("Checked ${items.size} headlines - nothing urgent enough to interrupt your music. 👍")
+                    story == null && followed == null -> toast("Checked ${items.size} headlines - nothing urgent enough to interrupt your music. 👍")
                     else -> {
-                        val text = DriveUpdates.compose(emptyList(), story, p.greetingDutch, p.butler, p.greetingName)!!
+                        val text = DriveUpdates.compose(emptyList(), story, p.greetingDutch, p.butler, p.greetingName,
+                            followed = followed, source = source)!!
                         DriveLog.log("UPDATE (test): \"$text\"")
                         Greeter(this).speak(text, p.greetingDutch) {}
                     }

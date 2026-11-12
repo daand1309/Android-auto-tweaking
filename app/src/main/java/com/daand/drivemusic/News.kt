@@ -22,6 +22,46 @@ object News {
         if (dutch) listOf("https://feeds.nos.nl/nosnieuwsbinnenland")
         else listOf("https://nltimes.nl/rssfeed2")
 
+    // ------------------------------------------------------------------ "follow a story" (unit tested)
+
+    /** Feeds watched for a story you follow, with the name read out ("NU.nl reports: ..."). */
+    fun followFeeds(dutch: Boolean): List<Pair<String, String>> =
+        if (dutch) listOf(
+            "https://www.nu.nl/rss/Politiek" to "NU.nl", "https://www.nu.nl/rss/Algemeen" to "NU.nl",
+            "https://feeds.nos.nl/nosnieuwspolitiek" to "NOS", "https://feeds.nos.nl/nosnieuwsbinnenland" to "NOS",
+        ) else listOf("https://nltimes.nl/rssfeed2" to "NL Times")
+
+    /** "kabinet, coalitie,Jetten" -> [kabinet, coalitie, jetten] (2-30 chars each, max 8). */
+    fun keywords(topic: String): List<String> =
+        topic.split(',', ';').map { it.trim().lowercase() }.filter { it.length in 2..30 }.distinct().take(8)
+
+    /** Headline prefixes: "Live | " is fine (we drop it), video clips and recaps aren't news updates. */
+    private val SKIP_PREFIX = listOf("video |", "teruglezen", "live | teruglezen", "podcast |", "column |", "analyse |", "opinie |")
+
+    fun cleanFollowTitle(t: String): String? {
+        val low = t.lowercase()
+        if (SKIP_PREFIX.any { low.startsWith(it) }) return null
+        return t.replace(Regex("""^(live|liveblog)\s*\|\s*""", RegexOption.IGNORE_CASE), "").trim().ifBlank { null }
+    }
+
+    /**
+     * Newest headline about the story you follow: matches a keyword (words starting with it count -
+     * "kabinet" matches "kabinetscrisis" and "Kabinet-Jetten"), recent, not told before.
+     */
+    fun pickFollowed(items: List<Item>, keywords: List<String>, now: Long, alreadyTold: List<String>): Item? {
+        if (keywords.isEmpty()) return null
+        return items.asSequence()
+            .filter { it.published != null && now - it.published in -MAX_SKEW_MS..FOLLOW_MAX_AGE_MS }
+            .mapNotNull { i -> cleanFollowTitle(i.title)?.let { i.copy(title = it) } }
+            .filter { i ->
+                val ws = words(i.title)
+                keywords.any { k -> if (' ' in k) i.title.lowercase().contains(k) else ws.any { w -> w.startsWith(k) } }
+            }
+            .filter { i -> alreadyTold.none { sameStory(it, i.title) } }
+            .sortedByDescending { it.published }
+            .firstOrNull()
+    }
+
     /** Regional: a news search for your town (Dutch only - the results are Dutch articles). */
     fun regionalFeed(place: String): String? =
         place.trim().takeIf { it.length in 2..40 }?.let {
@@ -193,6 +233,8 @@ object News {
     const val MAX_AGE_MS = 3 * 60 * 60 * 1000L
     /** Feeds and phones disagree on the time a little; more than this "from the future" is bogus. */
     const val MAX_SKEW_MS = 10 * 60 * 1000L
+    /** A story you follow: catch up on the latest you haven't heard, up to half a day old. */
+    const val FOLLOW_MAX_AGE_MS = 12 * 60 * 60 * 1000L
 
     /** True when two headlines are about the same story (live blogs post many versions). */
     fun sameStory(a: String, b: String): Boolean {

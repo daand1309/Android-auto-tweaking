@@ -92,6 +92,18 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("ask_before_updates", true)
         set(v) = sp.edit().putBoolean("ask_before_updates", v).apply()
 
+    /** A story you follow during drives: comma-separated keywords ("kabinet, coalitie, Jetten"). */
+    var followTopic: String
+        get() = sp.getString("follow_topic", "") ?: ""
+        set(v) = sp.edit().putString("follow_topic", v).apply()
+
+    /** Following stops by itself at this time (so an old story doesn't keep nagging). */
+    var followUntil: Long
+        get() = sp.getLong("follow_until", 0L)
+        set(v) = sp.edit().putLong("follow_until", v).apply()
+
+    val followActive get() = followTopic.isNotBlank() && System.currentTimeMillis() < followUntil
+
     /** Headlines already read out, so a story is never told twice. */
     var toldNews: List<String>
         get() = (sp.getString("told_news", "") ?: "").split('\n').filter { it.isNotBlank() }
@@ -224,7 +236,7 @@ class Prefs(context: Context) {
     private val notBackedUp = setOf(
         "last_car_state", "last_drive", "last_greeting", "last_weather", "last_weather_at",
         "last_update_check", "notified_update", "update_status", "last_seen_music_app", "last_music_change_at",
-        "parked_spot", "told_news",
+        "parked_spot", "told_news", "follow_topic", "follow_until",
     )
 
     /**

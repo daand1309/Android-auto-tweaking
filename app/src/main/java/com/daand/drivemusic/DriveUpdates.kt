@@ -14,12 +14,14 @@ object DriveUpdates {
     const val FIRST_CHECK_MS = 12 * 60 * 1000L
     const val INTERVAL_MS = 15 * 60 * 1000L
     const val MAX_NEWS_PER_DRIVE = 3
+    const val MAX_FOLLOW_PER_DRIVE = 6
 
     /** Weather at the start of the drive (from the greeting) and after each check. */
     @Volatile var lastWeather: GreetingText.WeatherNow? = null
     @Volatile var newsThisDrive = 0
+    @Volatile var followedThisDrive = 0
 
-    fun newDrive() { lastWeather = null; newsThisDrive = 0 }
+    fun newDrive() { lastWeather = null; newsThisDrive = 0; followedThisDrive = 0 }
 
     // ------------------------------------------------------------------ weather change (unit tested)
 
@@ -62,7 +64,9 @@ object DriveUpdates {
     // ------------------------------------------------------------------ wording (unit tested)
 
     /** The polite question before an update ("I do apologise, sir, but there is an update..."). */
-    fun askLine(dutch: Boolean, butler: Boolean): String = when {
+    fun askLine(dutch: Boolean, butler: Boolean, followedOnly: Boolean = false): String = when {
+        butler && dutch && followedOnly -> "Neemt u mij niet kwalijk, meneer, maar er is nieuws over het verhaal dat u volgt. Zal ik het voorlezen?"
+        butler && followedOnly -> "I do apologise, sir, but there is an update on the story you're following. Shall I go ahead?"
         butler && dutch -> "Neemt u mij niet kwalijk, meneer, maar er is een update. Zal ik hem voorlezen?"
         butler -> "I do apologise, sir, but there is an update. Shall I go ahead?"
         dutch -> "Ik heb een update voor je. Wil je hem horen?"
@@ -81,8 +85,9 @@ object DriveUpdates {
      * The update itself. [withIntro] = false when it follows the question (then it starts with the
      * news straight away).
      */
-    fun compose(weather: List<String>, news: News.Item?, dutch: Boolean, butler: Boolean, name: String, withIntro: Boolean = true): String? {
-        if (weather.isEmpty() && news == null) return null
+    fun compose(weather: List<String>, news: News.Item?, dutch: Boolean, butler: Boolean, name: String, withIntro: Boolean = true,
+                followed: News.Item? = null, source: String = ""): String? {
+        if (weather.isEmpty() && news == null && followed == null) return null
         val who = SpeechText.spokenName(name, dutch)
         val intro = if (!withIntro) null else when {
             butler && dutch -> "Excuseert u mij${if (who.isNotEmpty()) ", $who" else ""}. Een korte update."
@@ -94,6 +99,15 @@ object DriveUpdates {
         if (intro != null) parts += intro
         parts += weather
         if (news != null) parts += if (dutch) "Belangrijk nieuws: ${news.title.trimEnd('.')}." else "Some news you should know: ${news.title.trimEnd('.')}."
+        if (followed != null) {
+            val h = followed.title.trimEnd('.')
+            parts += when {
+                dutch && source.isNotBlank() -> "Over het verhaal dat je volgt, meldt $source: $h."
+                dutch -> "Over het verhaal dat je volgt: $h."
+                source.isNotBlank() -> "On the story you're following, $source reports: $h."
+                else -> "On the story you're following: $h."
+            }
+        }
         if (butler) parts += if (dutch) "Dat was alles. Ik laat u weer verder genieten." else "That is all. I'll leave you to your music."
         return parts.joinToString(" ")
     }
@@ -126,20 +140,36 @@ object DriveUpdates {
             story = News.pick(items, System.currentTimeMillis(), p.toldNews)
             DriveLog.log("UPDATE CHECK: ${items.size} headlines, ${if (story == null) "none urgent enough" else "1 worth telling"}")
         }
-        if (weatherLines.isEmpty() && story == null) {
+        var followed: Pair<News.Item, String>? = null
+        if (p.followActive && followedThisDrive < MAX_FOLLOW_PER_DRIVE) {
+            val items = mutableListOf<Pair<News.Item, String>>()
+            for ((url, source) in News.followFeeds(dutch)) {
+                try { items += News.fetch(url).map { it to source } } catch (e: Exception) { DriveLog.log("UPDATE CHECK: feed unavailable (${e.message})") }
+            }
+            val told = p.toldNews + listOfNotNull(story?.title)
+            val pick = News.pickFollowed(items.map { it.first }, News.keywords(p.followTopic), System.currentTimeMillis(), told)
+            followed = pick?.let { i -> i to (items.firstOrNull { it.first.published == i.published && i.title in it.first.title }?.second ?: "") }
+            DriveLog.log("UPDATE CHECK: following '${p.followTopic}' - ${if (followed == null) "nothing new" else "new headline"}")
+        }
+        if (weatherLines.isEmpty() && story == null && followed == null) {
             DriveLog.log("UPDATE CHECK: nothing worth interrupting for"); return null
         }
         if (story != null) {
             p.toldNews = (p.toldNews + story.title).takeLast(100)  // also when you decline it: never asked twice
             newsThisDrive++
         }
-        return Found(weatherLines, story)
+        if (followed != null) {
+            p.toldNews = (p.toldNews + followed.first.title).takeLast(100)
+            followedThisDrive++
+        }
+        return Found(weatherLines, story, followed?.first, followed?.second ?: "")
     }
 
     /** What a check found worth telling. */
-    data class Found(val weather: List<String>, val news: News.Item?) {
+    data class Found(val weather: List<String>, val news: News.Item?, val followed: News.Item? = null, val source: String = "") {
         /** Short title for the buttons / car pop-up. */
         fun title(dutch: Boolean) = when {
+            followed != null && news == null && weather.isEmpty() -> if (dutch) "Verhaal dat je volgt" else "Story you follow"
             news != null && weather.isNotEmpty() -> if (dutch) "Weer en nieuws" else "Weather & news"
             news != null -> if (dutch) "Belangrijk nieuws" else "Breaking news"
             else -> if (dutch) "Weer en wegen" else "Weather & roads"
