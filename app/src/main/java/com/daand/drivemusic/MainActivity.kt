@@ -110,6 +110,13 @@ class MainActivity : Activity() {
     @androidx.annotation.VisibleForTesting
     internal fun pageNamesForTest(): List<String> = Page.values().map { it.name }
 
+    /** Test hook: scroll the current page to the top or bottom; returns true if the page is taller than the screen. */
+    @androidx.annotation.VisibleForTesting
+    internal fun scrollForTest(toBottom: Boolean): Boolean {
+        if (toBottom) scroll.fullScroll(android.view.View.FOCUS_DOWN) else scroll.scrollTo(0, 0)
+        return (scroll.getChildAt(0)?.height ?: 0) > scroll.height
+    }
+
     private fun go(p: Page) {
         page = p
         render()

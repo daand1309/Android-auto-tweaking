@@ -124,7 +124,8 @@ jobs:
           target: google_apis
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
-          script: ./gradlew connectedDebugAndroidTest --no-daemon
+          # Screenshots from the ScreenshotTour test are collected even if a test fails.
+          script: ./gradlew connectedDebugAndroidTest --no-daemon; status=$?; adb pull /data/local/tmp/screens screens || true; exit $status
 
       - name: Upload test results
         if: always()
@@ -134,6 +135,14 @@ jobs:
           path: |
             app/build/reports/androidTests/
             app/build/outputs/androidTest-results/
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screens/
+          if-no-files-found: ignore
 
   # Publishes a GitHub Release that the in-app updater picks up. Only when everything passed,
   # the APK is signed with the permanent key, and this is a push to the default branch.
