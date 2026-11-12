@@ -292,11 +292,30 @@ class MainActivity : Activity() {
         header("During the drive")
         switch("Tell me when weather or roads change", prefs.updatesWeather) { prefs.updatesWeather = it }
         switch("Breaking news (only what you need to know)", prefs.updatesNews) { prefs.updatesNews = it }
+        switch("Ask first, with 🟢 / 🔴 buttons", prefs.askBeforeUpdates) { prefs.askBeforeUpdates = it }
         text("Checks every 15 minutes and stays quiet unless something matters: rain or snow starting, ice, fog, " +
             "strong gusts - or major news in the Netherlands (alerts, disasters, big outages, closed motorways, " +
             "the government falling). Animals, sport, celebs and other soft news are always filtered out. " +
             "At most 3 news items per drive, never during a call.")
         button("Check for news now") { testDriveUpdate() }
+        if (prefs.askBeforeUpdates) button("Try the question (🟢 / 🔴)") { tryUpdateQuestion() }
+    }
+
+    /** Plays the "there is an update" question with a sample update, so you can try the buttons. */
+    private fun tryUpdateQuestion() {
+        val dutch = prefs.greetingDutch
+        val butler = prefs.butler
+        val sample = DriveUpdates.compose(
+            listOf(if (dutch) "Het is gaan regenen, dus de weg wordt nat." else "It has started to rain, so the roads will be wet."),
+            null, dutch, butler, prefs.greetingName, withIntro = false)!!
+        val question = DriveUpdates.askLine(dutch, butler)
+        UpdatePrompt.open(this, if (dutch) "Test" else "Test", question)
+        toast("Tap 🟢 or 🔴 in the notification (or open Drive Mode)")
+        Greeter(this).speak(question, dutch) {
+            UpdatePrompt.awaitAnswer(this) { yes ->
+                Greeter(this).speak(if (yes) sample else DriveUpdates.declinedLine(dutch, butler), dutch) {}
+            }
+        }
     }
 
     /** Runs the news check now and reads out whatever passes the filter (or says nothing passed). */

@@ -61,16 +61,37 @@ object DriveUpdates {
 
     // ------------------------------------------------------------------ wording (unit tested)
 
-    fun compose(weather: List<String>, news: News.Item?, dutch: Boolean, butler: Boolean, name: String): String? {
+    /** The polite question before an update ("I do apologise, sir, but there is an update..."). */
+    fun askLine(dutch: Boolean, butler: Boolean): String = when {
+        butler && dutch -> "Neemt u mij niet kwalijk, meneer, maar er is een update. Zal ik hem voorlezen?"
+        butler -> "I do apologise, sir, but there is an update. Shall I go ahead?"
+        dutch -> "Ik heb een update voor je. Wil je hem horen?"
+        else -> "I've got an update for you. Want to hear it?"
+    }
+
+    /** After the red button. */
+    fun declinedLine(dutch: Boolean, butler: Boolean): String = when {
+        butler && dutch -> "Uiteraard, meneer. Ik zwijg als het graf."
+        butler -> "Very good, sir. I shall say no more."
+        dutch -> "Prima, dan houd ik het voor me."
+        else -> "Fine, I'll keep it to myself."
+    }
+
+    /**
+     * The update itself. [withIntro] = false when it follows the question (then it starts with the
+     * news straight away).
+     */
+    fun compose(weather: List<String>, news: News.Item?, dutch: Boolean, butler: Boolean, name: String, withIntro: Boolean = true): String? {
         if (weather.isEmpty() && news == null) return null
         val who = SpeechText.spokenName(name, dutch)
-        val intro = when {
+        val intro = if (!withIntro) null else when {
             butler && dutch -> "Excuseert u mij${if (who.isNotEmpty()) ", $who" else ""}. Een korte update."
             butler -> "Pardon the interruption${if (who.isNotEmpty()) ", $who" else ""}. A brief update."
             dutch -> "Even een update."
             else -> "Quick update."
         }
-        val parts = mutableListOf(intro)
+        val parts = mutableListOf<String>()
+        if (intro != null) parts += intro
         parts += weather
         if (news != null) parts += if (dutch) "Belangrijk nieuws: ${news.title.trimEnd('.')}." else "Some news you should know: ${news.title.trimEnd('.')}."
         if (butler) parts += if (dutch) "Dat was alles. Ik laat u weer verder genieten." else "That is all. I'll leave you to your music."
@@ -79,8 +100,8 @@ object DriveUpdates {
 
     // ------------------------------------------------------------------ the check (network: background thread)
 
-    /** Builds the update to speak now, or null if there's nothing worth saying. */
-    fun check(ctx: Context): String? {
+    /** Looks for something worth saying now (network: background thread), or null. */
+    fun check(ctx: Context): Found? {
         val p = Prefs(ctx)
         val dutch = p.greetingDutch
         var weatherLines = emptyList<String>()
@@ -105,14 +126,24 @@ object DriveUpdates {
             story = News.pick(items, System.currentTimeMillis(), p.toldNews)
             DriveLog.log("UPDATE CHECK: ${items.size} headlines, ${if (story == null) "none urgent enough" else "1 worth telling"}")
         }
-        val text = compose(weatherLines, story, dutch, p.butler, p.greetingName) ?: run {
+        if (weatherLines.isEmpty() && story == null) {
             DriveLog.log("UPDATE CHECK: nothing worth interrupting for"); return null
         }
         if (story != null) {
-            p.toldNews = (p.toldNews + story.title).takeLast(100)
+            p.toldNews = (p.toldNews + story.title).takeLast(100)  // also when you decline it: never asked twice
             newsThisDrive++
         }
-        return text
+        return Found(weatherLines, story)
+    }
+
+    /** What a check found worth telling. */
+    data class Found(val weather: List<String>, val news: News.Item?) {
+        /** Short title for the buttons / car pop-up. */
+        fun title(dutch: Boolean) = when {
+            news != null && weather.isNotEmpty() -> if (dutch) "Weer en nieuws" else "Weather & news"
+            news != null -> if (dutch) "Belangrijk nieuws" else "Breaking news"
+            else -> if (dutch) "Weer en wegen" else "Weather & roads"
+        }
     }
 
     /** Where the car is now (rounded later), if location may be read in the background. */

@@ -129,6 +129,11 @@
             android:name=".UpdateInstallReceiver"
             android:exported="false" />
 
+        <!-- Green / red buttons on the "there is an update" question. Not exported. -->
+        <receiver
+            android:name=".UpdateAnswerReceiver"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

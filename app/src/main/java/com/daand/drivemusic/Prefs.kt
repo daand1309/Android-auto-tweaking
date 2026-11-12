@@ -87,6 +87,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("updates_news", true)
         set(v) = sp.edit().putBoolean("updates_news", v).apply()
 
+    /** Ask ("there is an update, shall I go ahead?") with green/red buttons before reading updates. */
+    var askBeforeUpdates: Boolean
+        get() = sp.getBoolean("ask_before_updates", true)
+        set(v) = sp.edit().putBoolean("ask_before_updates", v).apply()
+
     /** Headlines already read out, so a story is never told twice. */
     var toldNews: List<String>
         get() = (sp.getString("told_news", "") ?: "").split('\n').filter { it.isNotBlank() }
@@ -230,7 +235,7 @@ class Prefs(context: Context) {
         "announce_song" to "bool", "auto_open_drive_mode" to "bool", "auto_resume" to "bool", "auto_start" to "bool",
         "auto_update" to "bool", "greeting" to "bool", "greeting_dutch" to "bool", "pause_on_disconnect" to "bool",
         "remember_parking" to "bool", "road_conditions" to "bool", "set_volume" to "bool", "show_splash" to "bool",
-        "weather" to "bool", "updates_weather" to "bool", "updates_news" to "bool",
+        "weather" to "bool", "updates_weather" to "bool", "updates_news" to "bool", "ask_before_updates" to "bool",
         "resume_delay" to "int", "start_delay" to "int", "volume_pct" to "int",
         "speech_pitch" to "float", "speech_rate" to "float", "weather_lat" to "float", "weather_lon" to "float",
         "birthday" to "string", "car_name" to "string", "greeting_name" to "string", "music_pkg" to "string",

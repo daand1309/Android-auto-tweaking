@@ -369,6 +369,38 @@ class DriveFlowTest {
     }
 
     @Test
+    fun driveModeShowsBigRedAndGreenButtonsForAnUpdate() {
+        prefs.showSplash = false
+        ctx.startActivity(android.content.Intent(ctx, DriveModeActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        waitFor("Drive Mode to open", 10_000) { driveModeResumed() }
+        var answer: Boolean? = null
+        onMain {
+            UpdatePrompt.open(ctx, "News", "I do apologise, sir, but there is an update. Shall I go ahead?")
+            UpdatePrompt.awaitAnswer(ctx) { answer = it }
+        }
+        var red: android.widget.Button? = null
+        waitFor("the red button", 5_000) {
+            onMain {
+                androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filterIsInstance<DriveModeActivity>()
+                    .firstOrNull()?.let { a ->
+                        fun find(v: android.view.View) {
+                            if (v is android.widget.Button && v.text.contains("Not interested") && v.width > 0 && v.height > 0) red = v
+                            if (v is android.view.ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i))
+                        }
+                        find(a.window.decorView)
+                    }
+            }
+            red != null
+        }
+        onMain { red!!.performClick() }
+        waitFor("the answer", 3_000) { answer != null }
+        assertEquals(false, answer)
+        assertTrue(UpdatePrompt.question == null)
+        closeDriveMode()
+    }
+
+    @Test
     fun parkedSpotIsDeletedWhenTheCarDrivesAgain() {
         prefs.parkedSpot = Parking.Spot(52.09, 5.12, 8f, System.currentTimeMillis()).encode()
         assertTrue(Parking.spot(ctx) != null)

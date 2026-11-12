@@ -29,6 +29,48 @@ class DriveModeActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var playBtn: Button
     private lateinit var resumeBtn: Button
+    private lateinit var rootFrame: android.widget.FrameLayout
+    private var promptView: View? = null
+
+    /** "There is an update" -> big green / red buttons over the whole screen until you answer. */
+    private val promptChanged: () -> Unit = {
+        val q = UpdatePrompt.question
+        if (q == null) {
+            promptView?.let { rootFrame.removeView(it) }
+            promptView = null
+        } else if (promptView == null) {
+            promptView = buildPrompt(q).also { rootFrame.addView(it, android.widget.FrameLayout.LayoutParams(-1, -1)) }
+        }
+    }
+
+    override fun onDestroy() {
+        UpdatePrompt.removeListener(promptChanged)
+        super.onDestroy()
+    }
+
+    private fun buildPrompt(question: String): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        setBackgroundColor(0xF20A0A0B.toInt())
+        isClickable = true  // don't let taps fall through to the music buttons
+        setPadding(dp(24), dp(24), dp(24), dp(24))
+        addView(TextView(this@DriveModeActivity).apply {
+            text = (if (Prefs(this@DriveModeActivity).butler) "🎩  " else "") + question
+            setTextColor(Style.TEXT); textSize = 26f; gravity = Gravity.CENTER
+            setTypeface(typeface, Typeface.BOLD)
+        }, vLp(weight = 1.2f))
+        val row = LinearLayout(this@DriveModeActivity).apply { orientation = LinearLayout.HORIZONTAL }
+        row.addView(answerButton("✕\nNot interested", 0xFFD32F2F.toInt()) { UpdatePrompt.answer(this@DriveModeActivity, false) }, hLp(1f))
+        row.addView(answerButton("✓\nGo ahead", 0xFF2E7D32.toInt()) { UpdatePrompt.answer(this@DriveModeActivity, true) }, hLp(1f))
+        addView(row, vLp(weight = 2f))
+    }
+
+    private fun answerButton(label: String, color: Int, onClick: () -> Unit) = Button(this).apply {
+        text = label; textSize = 26f; isAllCaps = false; setTextColor(Color.WHITE)
+        setTypeface(typeface, Typeface.BOLD)
+        background = Style.button(color, dp(24).toFloat()); stateListAnimator = null
+        setOnClickListener { onClick() }
+    }
 
     private val tick = object : Runnable {
         override fun run() {
@@ -65,6 +107,9 @@ class DriveModeActivity : Activity() {
         val frame = android.widget.FrameLayout(this).apply { setBackgroundColor(Style.BG) }
         // MATCH_PARENT so the weighted button rows get real height (not collapsed to zero).
         frame.addView(buildUi(), android.widget.FrameLayout.LayoutParams(-1, -1))
+        rootFrame = frame
+        UpdatePrompt.addListener(promptChanged)
+        promptChanged()
         setContentView(frame)
         if (Prefs(this).showSplash) playIntro(frame)
     }

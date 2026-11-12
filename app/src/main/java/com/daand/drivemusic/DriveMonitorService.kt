@@ -314,6 +314,7 @@ class DriveMonitorService : NotificationListenerService() {
                 if (lastPauseClue.isNotEmpty()) "\nLast pause: $lastPauseClue" else ""
             Parking.capture(this)
             Briefing.endNow(this)  // don't leave the welcome pop-up behind if you left mid-greeting
+            UpdatePrompt.cancel(this)
             handler.removeCallbacks(driveUpdate)
             cancelStart()
             cancelResume()
@@ -340,38 +341,66 @@ class DriveMonitorService : NotificationListenerService() {
             val gen = connectGen
             if (prefs.updatesWeather || prefs.updatesNews) {
                 Thread {
-                    val text = try { DriveUpdates.check(this@DriveMonitorService) } catch (e: Throwable) {
+                    val found = try { DriveUpdates.check(this@DriveMonitorService) } catch (e: Throwable) {
                         DriveLog.log("UPDATE CHECK: failed (${e.javaClass.simpleName}: ${e.message})"); null
                     }
-                    if (text != null) handler.post { deliverUpdate(text, gen, attempt = 0) }
+                    if (found != null) handler.post { deliverUpdate(found, gen, attempt = 0) }
                 }.start()
             }
             handler.postDelayed(this, DriveUpdates.INTERVAL_MS)
         }
     }
 
-    /** Speaks an update over the (ducked) music - but never over a call, the Assistant or the greeting. */
-    private fun deliverUpdate(text: String, gen: Int, attempt: Int) {
+    /**
+     * Delivers an update over the (ducked) music - never over a call, the Assistant or the greeting.
+     * Butler-polite: asks first ("I do apologise, sir, but there is an update"), with green / red
+     * buttons; red = skip it, green or no answer = read it.
+     */
+    private fun deliverUpdate(found: DriveUpdates.Found, gen: Int, attempt: Int) {
         if (!carConnected || gen != connectGen) return
-        val blocker = resumeBlocker() ?: if (WelcomeAnnouncer.isBusy) "the greeting is speaking" else null
+        val blocker = resumeBlocker() ?: if (WelcomeAnnouncer.isBusy || UpdatePrompt.question != null) "something else is speaking" else null
         if (blocker != null) {
             if (attempt < 5) {
                 DriveLog.log("UPDATE: waiting - $blocker")
-                handler.postDelayed({ deliverUpdate(text, gen, attempt + 1) }, 2 * 60 * 1000L)
+                handler.postDelayed({ deliverUpdate(found, gen, attempt + 1) }, 2 * 60 * 1000L)
             } else DriveLog.log("UPDATE: dropped - $blocker for too long")
             return
         }
-        DriveLog.log("UPDATE: \"$text\"")
-        suppressPauseUntil = SystemClock.elapsedRealtime() + 60_000L  // a brief duck/pause isn't "a pause"
-        val token = Briefing.start(this, "Update", text)
-        try {
-            Greeter(this).speak(text, prefs.greetingDutch, pauseOthers = false) {
-                Briefing.end(this, token)
-                suppressPauseUntil = 0L
+        val dutch = prefs.greetingDutch
+        val butler = prefs.butler
+        suppressPauseUntil = SystemClock.elapsedRealtime() + 90_000L  // a brief duck/pause isn't "a pause"
+        if (!prefs.askBeforeUpdates) {
+            speakUpdate(DriveUpdates.compose(found.weather, found.news, dutch, butler, prefs.greetingName)!!, found.title(dutch))
+            return
+        }
+        val question = DriveUpdates.askLine(dutch, butler)
+        DriveLog.log("UPDATE: asking - \"$question\"")
+        UpdatePrompt.open(this, found.title(dutch), question)
+        safeSpeak(question) {
+            UpdatePrompt.awaitAnswer(this) { yes ->
+                if (!carConnected || gen != connectGen) return@awaitAnswer
+                if (yes) speakUpdate(DriveUpdates.compose(found.weather, found.news, dutch, butler, prefs.greetingName, withIntro = false)!!, found.title(dutch))
+                else safeSpeak(DriveUpdates.declinedLine(dutch, butler)) { suppressPauseUntil = 0L }
             }
-        } catch (e: Exception) {
+        }
+    }
+
+    private fun speakUpdate(text: String, title: String) {
+        DriveLog.log("UPDATE: \"$text\"")
+        val token = Briefing.start(this, title, text)
+        safeSpeak(text) {
             Briefing.end(this, token)
+            suppressPauseUntil = 0L
+        }
+    }
+
+    /** Speaks over ducked music; [then] always runs, even if speech fails. */
+    private fun safeSpeak(text: String, then: () -> Unit) {
+        try {
+            Greeter(this).speak(text, prefs.greetingDutch, pauseOthers = false) { then() }
+        } catch (e: Exception) {
             DriveLog.log("UPDATE: couldn't speak (${e.message})")
+            then()
         }
     }
 
