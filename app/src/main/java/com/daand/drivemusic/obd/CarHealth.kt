@@ -219,6 +219,9 @@ object TroubleCodes {
         return Explanation(what, sev, advice(sev, dutch))
     }
 
+    /** In the app's own list or decoded by rule (false = only the general area is known). */
+    fun isKnown(code: String) = TABLE.containsKey(code) || pattern(code, false) != null
+
     /** Short "what it means" (kept for the voice). */
     fun explain(code: String, dutch: Boolean): String = explanation(code, dutch).what
 

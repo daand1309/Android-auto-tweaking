@@ -97,6 +97,12 @@ object ObdManager {
         thread?.interrupt()
         thread = null
         status = "Off"
+        lastSession?.let { ss ->
+            if (ss.questions > 0) DriveLog.log("OBD: ${ss.questions} questions, ${ss.unanswered} unanswered" +
+                if (ss.questions >= 20 && ss.unanswered * 4 > ss.questions) " - a lot: check the adapter is firmly in the port" else "")
+        }
+        lastSession = null
+        unknownLogged.clear()
         val summary = trip.summary(dutch = false)
         val codes = latest?.codes?.takeIf { it.isNotEmpty() }?.let { " · fault codes ${it.joinToString()}" } ?: ""
         if (summary.isNotEmpty() || codes.isNotEmpty()) DriveLog.log("OBD: trip - $summary$codes")
@@ -149,11 +155,17 @@ object ObdManager {
     @Volatile var liveView = false
     const val LIVE_POLL_MS = 1_500L
 
+    /** Codes already logged as "not in the app's list" this drive. */
+    private val unknownLogged = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    @Volatile private var lastSession: ObdSession? = null
+
     private fun poll(session: ObdSession, myGen: Int, onAlert: (CarAlerts.Alert) -> Unit) {
         val alerts = this.alerts ?: CarAlerts(readySeconds).also { this.alerts = it }
+        lastSession = session
         var n = 0
         var lastCodes = 0L
         while (alive(myGen)) {
+            val roundStart = System.currentTimeMillis()
             val full = n % FULL_EVERY == 0
             val codesDue = full && System.currentTimeMillis() - lastCodes > CODES_EVERY_MS
             val snap = session.read(latest, full, readCodes = codesDue)
@@ -166,8 +178,14 @@ object ObdManager {
                 DriveLog.log("OBD: alert ${a.kind}" + (a.value?.let { " ($it)" } ?: "") + (if (a.codes.isNotEmpty()) " ${a.codes}" else ""))
                 onAlert(a)
             }
+            // Anything we can't explain properly yet goes to the log (with how it was explained instead).
+            (snap.codes + snap.pendingCodes + snap.permanentCodes).filter { !TroubleCodes.isKnown(it) && unknownLogged.add(it) }.forEach {
+                DriveLog.log("OBD: code $it isn't in the app's list yet - explained by its area: \"${TroubleCodes.explain(it, false)}\"")
+            }
             n++
-            sleep(when { liveView -> LIVE_POLL_MS; alerts.countingDown() -> FAST_POLL_MS; else -> POLL_MS })
+            // A steady rhythm: the wait includes the time the reading took.
+            val interval = when { liveView -> LIVE_POLL_MS; alerts.countingDown() -> FAST_POLL_MS; else -> POLL_MS }
+            sleep((interval - (System.currentTimeMillis() - roundStart)).coerceAtLeast(200L))
         }
     }
 

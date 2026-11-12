@@ -49,6 +49,37 @@ object Elm327 {
         return null
     }
 
+    /**
+     * A combined answer ("010C0D05" -> "410C1AF80D32057B", possibly split over CAN frames "0:"/"1:")
+     * split into the data of each value. [lengthOf] says how many data bytes each value has. When
+     * several control units answer, the first answer per value is kept.
+     */
+    fun multiPid(lines: List<String>, lengthOf: (Int) -> Int?): Map<Int, List<Int>> {
+        val messages = mutableListOf<MutableList<Int>>()
+        for (line in lines) {
+            val b = bytes(line)
+            if (b.isEmpty()) continue   // e.g. the CAN length header "00C"
+            val frame = Regex("""^\s*([0-9A-Fa-f]):""").find(line)?.groupValues?.get(1)
+            if (frame == null || frame == "0" || messages.isEmpty()) messages += b.toMutableList() else messages.last().addAll(b)
+        }
+        val out = LinkedHashMap<Int, List<Int>>()
+        for (m in messages) {
+            if (m.firstOrNull() != 0x41) continue
+            var i = 1
+            while (i < m.size) {
+                val pid = m[i]
+                val len = lengthOf(pid) ?: break
+                if (i + 1 + len > m.size) break
+                out.putIfAbsent(pid, m.subList(i + 1, i + 1 + len).toList())
+                i += 1 + len
+            }
+        }
+        return out
+    }
+
+    /** "41 0C 1A F8" style text of some bytes - for the log. */
+    fun hex(d: List<Int>) = d.joinToString(" ") { "%02X".format(it) }
+
     // ------------------------------------------------------------------ decoding (SAE J1979)
 
     const val PID_SUPPORTED_01_20 = 0x00

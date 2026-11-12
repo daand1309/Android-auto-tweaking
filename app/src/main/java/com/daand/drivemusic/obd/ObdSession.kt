@@ -8,6 +8,15 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
     var supported: Set<Int> = emptySet(); private set
     var protocol: String = ""; private set
     var vin: String? = null; private set
+    /** Adapter's own identification ("ELM327 v2.3"). */
+    var adapter: String = ""; private set
+    /** Ask for up to 6 values per question (CAN cars like the ASX); switched off if the car can't. */
+    var batching = false; private set
+    private var batchFailures = 0
+    /** Questions the car didn't answer / garbled answers this session (for the log). */
+    var unanswered = 0; private set
+    var questions = 0; private set
+    private val droppedLogged = mutableSetOf<Int>()
 
     /** Returns null when the car answers, or a readable reason why not. */
     fun start(): String? {
@@ -23,15 +32,59 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
             supported = supported + (Elm327.pidData(ans, base)?.let { Elm327.supported(it, base) } ?: emptySet())
         }
         protocol = Elm327.lines(link.send("ATDP", 1_500)).firstOrNull()?.removePrefix("AUTO, ")?.take(40) ?: ""
+        adapter = runCatching { Elm327.lines(link.send("ATI", 1_500)).firstOrNull()?.take(40) }.getOrNull() ?: ""
         vin = runCatching { Elm327.vin(Elm327.lines(link.send("0902", 3_000))) }.getOrNull()
-        log("OBD: connected ($protocol), car supports ${supported.size} values")
+        // Combined questions work on CAN (ISO 15765), which the ASX uses.
+        batching = supported.isNotEmpty() && (protocol.contains("15765") || protocol.contains("CAN"))
+        log("OBD: connected - adapter '$adapter', protocol '$protocol', car supports ${supported.size} values" +
+            if (batching) ", combined questions on" else "")
+        discover()
         return null
+    }
+
+    /**
+     * Values this car shares that the app doesn't show yet: log each with its raw answer (once per
+     * connection), so they can be added later from a shared log.
+     */
+    private fun discover() {
+        val unknown = (supported - Pids.KNOWN).sorted()
+        if (unknown.isEmpty()) return
+        val raw = unknown.take(20).joinToString(", ") { pid ->
+            val ans = runCatching { Elm327.lines(link.send("01%02X".format(pid), 1_500)) }.getOrNull().orEmpty()
+            "%02X=".format(pid) + (ans.firstOrNull()?.take(24) ?: "?")
+        }
+        log("OBD: car also shares ${unknown.size} values not shown yet (raw): $raw")
     }
 
     private fun raw(pid: Int): List<Int>? {
         if (supported.isNotEmpty() && pid !in supported) return null
+        questions++
         val lines = Elm327.lines(link.send("01%02X".format(pid), 1_500))
-        return if (Elm327.isError(lines)) null else Elm327.pidData(lines, pid)
+        val d = if (Elm327.isError(lines)) null else Elm327.pidData(lines, pid)
+        if (d == null) unanswered++
+        return d
+    }
+
+    /** Several values at once: combined questions (6 per question) when the car allows, else one by one. */
+    private fun fetch(pids: List<Int>): Map<Int, List<Int>> {
+        val ask = pids.filter { supported.isEmpty() || it in supported }
+        if (!batching) return ask.mapNotNull { p -> raw(p)?.let { p to it } }.toMap()
+        val out = HashMap<Int, List<Int>>()
+        for (chunk in ask.chunked(6)) {
+            questions++
+            val lines = Elm327.lines(link.send("01" + chunk.joinToString("") { "%02X".format(it) }, 2_000))
+            val got = if (Elm327.isError(lines)) emptyMap() else Elm327.multiPid(lines) { Pids.lengthOf(it) }.filterKeys { it in chunk }
+            out.putAll(got)
+            if (got.isEmpty() && chunk.size > 1) {
+                if (++batchFailures >= 2 && batching) {
+                    batching = false
+                    log("OBD: this car/adapter doesn't answer combined questions - asking one at a time")
+                }
+            }
+            // Anything the combined answer left out: ask on its own.
+            for (p in chunk) if (p !in out) raw(p)?.let { out[p] = it }
+        }
+        return out
     }
 
     private fun codes(mode: String, answerByte: Int): List<String> {
@@ -58,15 +111,20 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
         val now = System.currentTimeMillis()
         val extra = (previous?.extra ?: emptyMap()).toMutableMap()
         val wanted = Pids.ALL.filter { it.fast || full }
+        // Seconds since start: interesting in the first minutes (the "ready to drive" countdown).
+        val wantRuntime = !full && (previous?.runtimeS ?: 0) < 300
+        val answers = fetch(wanted.map { it.pid } + if (wantRuntime) listOf(Elm327.PID_RUNTIME) else emptyList())
         // A value that doesn't answer (or answers garbage) this time is dropped, not kept from before:
         // a stale air-flow reading would otherwise keep "using fuel" after the engine stopped.
         for (info in wanted) {
-            val v = raw(info.pid)?.let { info.read(it) }
+            val d = answers[info.pid]
+            val v = d?.let { info.read(it) }
             if (v != null) extra[info.pid] = v else extra.remove(info.pid)
+            if (d != null && v == null && droppedLogged.add(info.pid))
+                log("OBD: ignored an implausible ${info.en} (PID %02X): raw ${Elm327.hex(d)} -> ${info.decode(d)}".format(info.pid))
         }
-        // Seconds since start: interesting in the first minutes (the "ready to drive" countdown).
-        if (!full && (previous?.runtimeS ?: 0) < 300) {
-            val rt = raw(Elm327.PID_RUNTIME)?.let { Elm327.runtimeS(it) }
+        if (wantRuntime) {
+            val rt = answers[Elm327.PID_RUNTIME]?.let { Elm327.runtimeS(it) }
             if (rt != null) extra[0x1F] = rt.toDouble() else extra.remove(0x1F)
         }
 
