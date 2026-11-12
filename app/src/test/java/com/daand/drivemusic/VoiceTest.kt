@@ -52,13 +52,13 @@ class VoiceTest {
         val cal = Calendar.getInstance().apply { set(2026, Calendar.JUNE, 15, 9, 0) }
         repeat(30) { seed ->
             val text = GreetingText.build("Mr. Smith", false, cal, null, "", Random(seed), butler = true)
-            assertTrue(text, text.contains("Everything is in order."))
-            assertTrue(text, text.endsWith("I'll start your music now. Do drive carefully."))
+            assertTrue(text, text.contains("Welcome back, sir. Everything is in order."))
+            assertTrue(text, text.endsWith("I shall start your music now, sir. Do drive carefully."))
             assertTrue(text, GreetingText.BUTLER_EN.any { text.contains(it) })
             assertFalse(text, GreetingText.LINES_EN.any { text.contains(it) })
         }
         val nl = GreetingText.build("meneer Smit", true, cal, null, "", Random(1), butler = true)
-        assertTrue(nl, nl.contains("Alles staat voor u klaar.") && GreetingText.BUTLER_NL.any { nl.contains(it) })
+        assertTrue(nl, nl.contains("Welkom terug, meneer. Alles staat voor u klaar.") && GreetingText.BUTLER_NL.any { nl.contains(it) })
     }
 
     @Test fun butlerLinesArePlentifulAndUnique() {
@@ -66,5 +66,22 @@ class VoiceTest {
         assertTrue(GreetingText.BUTLER_NL.size >= 25)
         assertEquals(GreetingText.BUTLER_EN.size, GreetingText.BUTLER_EN.toSet().size)
         assertEquals(GreetingText.BUTLER_NL.size, GreetingText.BUTLER_NL.toSet().size)
+    }
+
+    @Test fun theButlerSaysSirALot() {
+        assertTrue(GreetingText.BUTLER_EN.count { it.contains("sir") } >= GreetingText.BUTLER_EN.size * 9 / 10)
+        assertTrue(GreetingText.BUTLER_NL.count { it.contains("meneer") } >= GreetingText.BUTLER_NL.size * 9 / 10)
+        val cal = Calendar.getInstance().apply { set(2026, Calendar.JUNE, 15, 9, 0) }
+        val w = GreetingText.WeatherNow(tempNow = 12.0, code = 3, windKmh = 10.0, tempMin = 8.0, tempMax = 15.0, rainChance = 20)
+        repeat(20) { seed ->
+            val text = GreetingText.build("Mr. Smith", false, cal, w, "Noordwijk", Random(seed),
+                song = GreetingText.Song("Freedom", "Rage Against The Machine"), butler = true)
+            val sirs = Regex("""\bsir\b""").findAll(text).count()
+            assertTrue("only $sirs x sir: $text", sirs >= 5)
+        }
+        val dry = w.copy(code = 3)
+        val rain = DriveUpdates.changes(dry, dry.copy(code = 63, precipMm = 1.0), dutch = false, butler = true).single()
+        assertTrue(rain, rain.contains("sir"))
+        assertTrue(DriveUpdates.changes(dry, dry.copy(code = 63, precipMm = 1.0), dutch = true, butler = true).single().contains("meneer"))
     }
 }

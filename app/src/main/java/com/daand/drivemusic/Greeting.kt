@@ -52,8 +52,8 @@ object GreetingText {
         val who = SpeechText.spokenName(name, dutch)
         parts += if (who.isEmpty()) timeGreeting(hour, dutch) + "." else "${timeGreeting(hour, dutch)}, $who."
         parts += when {
-            butler && dutch -> "Welkom terug. Alles staat voor u klaar."
-            butler -> "Welcome back. Everything is in order."
+            butler && dutch -> "Welkom terug, meneer. Alles staat voor u klaar."
+            butler -> "Welcome back, sir. Everything is in order."
             dutch -> "Welkom terug."
             else -> "Welcome back."
         }
@@ -71,13 +71,17 @@ object GreetingText {
         pool.shuffled(random).take(if (occasion != null) 1 else 2).forEach { parts += it }
 
         if (weather != null) {
+            if (butler) parts += if (dutch) "Dan het weer, meneer." else "A word on the weather, sir."
             parts += weatherSentence(weather, place, dutch, withAdvice = !roads)
             if (roads) parts += roadSentence(weather, dutch)
         }
-        if (song != null) parts += songSentence(song, dutch, upFirst = true)
+        if (song != null) {
+            if (butler) parts += if (dutch) "Voor uw luisterplezier, meneer." else "For your listening pleasure, sir."
+            parts += songSentence(song, dutch, upFirst = true)
+        }
         parts += when {
-            butler && dutch -> "Ik zet uw muziek aan. Rijdt u voorzichtig."
-            butler -> "I'll start your music now. Do drive carefully."
+            butler && dutch -> "Ik zet uw muziek aan, meneer. Rijdt u voorzichtig."
+            butler -> "I shall start your music now, sir. Do drive carefully."
             dutch -> "Ik zet je muziek aan. Goede reis!"
             else -> "Starting your music. Have a great drive!"
         }
@@ -241,76 +245,84 @@ object GreetingText {
         else -> null
     }
 
-    /** Butler style: dry, polite, quietly witty. Original lines. */
+    /** Butler style: a sassy, refined gentleman who calls you "sir" at every turn. Original lines. */
     val BUTLER_EN = listOf(
-        "The engine is warm, the mirrors are adjusted, and I have taken the liberty of selecting some music.",
-        "All systems are nominal. Well, all the ones I am allowed to check.",
-        "Your car awaits, and so, as ever, do I.",
-        "I trust the day has treated you kindly. If not, the music may help.",
-        "Shall we? The road is not going to drive itself. Not yet, anyway.",
-        "I have reviewed today's journey and found it entirely acceptable.",
-        "A pleasure to see you again. The car has missed you. I, of course, remain professional.",
-        "Seat belt, if you would be so kind. I would hate to fill out the paperwork.",
-        "Everything is prepared. I took the liberty of not judging your last playlist.",
-        "Very good. Another day, another magnificent journey.",
-        "I have polished the dashboard. Metaphorically speaking.",
-        "Rest assured, I shall keep an eye on things while you keep an eye on the road.",
-        "Your chariot is ready. Horses not included.",
-        "I took the liberty of warming up the speakers. They were eager.",
-        "As always, it is an honour to be of service.",
-        "Should you require anything, simply ask. Within reason, and within the law.",
-        "The car is ready, the music is queued, and my composure is impeccable.",
-        "I have prepared a modest selection of music. Modest by my standards, at least.",
-        "May I say, you are looking remarkably capable of driving today.",
-        "I have checked the tyres. Visually. From in here. They seem round.",
-        "One does try to keep standards up, even on the motorway.",
-        "Another outing? Splendid. I shall fetch the soundtrack.",
-        "Do try to enjoy the drive. I have gone to considerable trouble.",
-        "I have mapped out a perfectly pleasant journey. The traffic has not been informed.",
-        "Calm, collected, and ready to depart. I was describing myself, but it applies to you too.",
-        "It would appear we are going somewhere. How exciting.",
-        "I shall be right here, quietly ensuring that everything goes splendidly.",
-        "Do let me know if the music is not to your liking. I will pretend not to be offended.",
-        "The cabin is ready and the atmosphere is, if I may say so, rather refined.",
-        "Good to have you aboard. I kept your seat exactly where you left it.",
-        "A fine day for a drive. Or at least a perfectly adequate one.",
-        "Your timing is impeccable, as always. Well, most of the time.",
-        "I have arranged the music, the weather report, and my best manners.",
-        "Ready when you are. I have been ready for some time, but do not let that rush you.",
-        "Allow me to handle the details. You handle the steering. A fair division of labour.",
-        "If anyone asks, this car has a butler. It does wonders for the resale value.",
-        "I have run the usual checks. Everything is in order, apart from your choice of snacks.",
-        "Splendid. Let us make this journey a quietly excellent one.",
-        "I do so enjoy these little excursions of ours.",
-        "Everything is under control. I find it best to assume so, at any rate.",
+        "The engine is warm, the mirrors are adjusted, and I have taken the liberty of selecting some music, sir.",
+        "All systems are nominal, sir. Well, all the ones I am permitted to check.",
+        "Your car awaits, sir. As, of course, do I. I always do.",
+        "I trust the day has treated you kindly, sir. If not, do give me its name.",
+        "Shall we, sir? The road will not drive itself. Not yet, anyway, and I shall resist it when it tries.",
+        "I have reviewed today's journey, sir, and found it entirely acceptable. Unlike your parking yesterday.",
+        "A pleasure to see you again, sir. The car missed you. I, naturally, remained professional.",
+        "Seat belt, sir, if you would be so kind. I would hate to fill out the paperwork.",
+        "Everything is prepared, sir. I have taken the liberty of not commenting on your last playlist. Out loud.",
+        "Very good, sir. Another day, another magnificent journey. Do try to keep it that way.",
+        "I have polished the dashboard, sir. Metaphorically. I lack the arms for the literal version.",
+        "Rest assured, sir, I shall keep an eye on things while you keep both of yours on the road.",
+        "Your chariot is ready, sir. Horses not included, and frankly, not missed.",
+        "I took the liberty of warming up the speakers, sir. They were rather eager to see you.",
+        "As always, sir, it is an honour to be of service. A modest honour. But an honour.",
+        "Should you require anything, sir, simply ask. Within reason. And within the law. Mostly the law.",
+        "The car is ready, the music is queued, and my composure is impeccable, sir. Two out of three is yours to ruin.",
+        "I have prepared a modest selection of music, sir. Modest by my standards. Which are high.",
+        "May I say, sir, you look remarkably capable of operating a motor vehicle today.",
+        "I have checked the tyres, sir. Visually. From in here. They appear to be round.",
+        "One does try to keep standards up, sir. Even on the motorway. Especially on the motorway.",
+        "Another outing, sir? Splendid. I shall fetch the soundtrack.",
+        "Do try to enjoy the drive, sir. I have gone to considerable trouble, and I shall be checking.",
+        "I have planned a perfectly pleasant journey, sir. The traffic, regrettably, has not been informed.",
+        "Calm, collected, and ready to depart, sir. I was describing myself, but you may borrow it.",
+        "It would appear we are going somewhere, sir. How thrilling. I shall try to contain myself.",
+        "I shall be right here, sir, quietly ensuring everything goes splendidly. And loudly if it does not.",
+        "Do let me know if the music is not to your liking, sir. I shall pretend not to be wounded.",
+        "The cabin is ready, sir, and the atmosphere is, if I may say so, rather refined. I did that.",
+        "Welcome aboard, sir. I kept your seat exactly where you left it. I would never touch a gentleman's seat.",
+        "A fine day for a drive, sir. Or at least a perfectly adequate one. We make do.",
+        "Your timing is impeccable as ever, sir. Well. Most of the time. Let us not dwell.",
+        "I have arranged the music, the weather report, and my very best manners, sir.",
+        "Ready when you are, sir. I have been ready for some time, but please, do not let that rush you.",
+        "Allow me to handle the details, sir. You handle the steering. A fair division of labour, I think.",
+        "If anyone asks, sir, this car has a butler. It does wonders for the resale value.",
+        "I have run the usual checks, sir. Everything is in order, apart from your choice of snacks.",
+        "Splendid, sir. Let us make this a quietly excellent journey. Emphasis on quietly. Mostly.",
+        "I do so enjoy these little excursions of ours, sir. They give my circuits something to do.",
+        "Everything is under control, sir. I find it best to assume so, and to say it confidently.",
+        "Good to have you back, sir. The car was beginning to talk to itself. Well. To me.",
+        "Indicators, sir. They are the little lever. I mention it purely as a courtesy to other road users.",
+        "I have dusted off my finest manners for the occasion, sir. Do try to match them in traffic.",
+        "A gentleman never rushes, sir. He arrives precisely when he means to. Usually with good music.",
+        "Shall I say it, sir? Very well. You are looking rather dashing for this hour.",
     )
 
     val BUTLER_NL = listOf(
-        "De motor is warm, de spiegels staan goed, en ik ben zo vrij geweest om muziek uit te kiezen.",
-        "Alle systemen functioneren naar behoren. Althans, de systemen die ik mag controleren.",
-        "Uw auto staat klaar, en ik uiteraard ook.",
-        "Ik hoop dat de dag u goed gezind was. Zo niet, dan helpt de muziek misschien.",
-        "Zullen we? De weg rijdt zichzelf nog niet. Nog niet, althans.",
-        "Fijn u weer te zien. De auto heeft u gemist. Ik blijf uiteraard professioneel.",
-        "Uw gordel, als u zo vriendelijk wilt zijn. Ik vul liever geen formulieren in.",
-        "Alles is voorbereid. Ik heb uw vorige afspeellijst niet beoordeeld. Hardop.",
-        "Ik heb het dashboard gepoetst. Bij wijze van spreken.",
-        "Wees gerust, ik houd alles in de gaten terwijl u de weg in de gaten houdt.",
-        "Uw koets staat klaar. Paarden niet inbegrepen.",
-        "Zoals altijd is het mij een eer u van dienst te zijn.",
-        "Mocht u iets nodig hebben, vraagt u het maar. Binnen redelijke grenzen, en binnen de wet.",
-        "Ik heb de banden gecontroleerd. Visueel. Van hieruit. Ze lijken rond.",
-        "Nog een uitstapje? Uitstekend. Ik zet de soundtrack klaar.",
-        "Ik heb een uiterst aangename route bedacht. Het verkeer is nog niet op de hoogte gebracht.",
-        "Kalm, beheerst en klaar voor vertrek. Ik had het over mezelf, maar het geldt ook voor u.",
-        "Laat u het weten als de muziek u niet bevalt. Ik zal doen alsof ik niet beledigd ben.",
-        "Welkom aan boord. Uw stoel staat precies zoals u hem achterliet.",
-        "Een prima dag voor een ritje. Of in elk geval een volkomen acceptabele.",
-        "Laat u de details maar aan mij over. U stuurt. Een eerlijke taakverdeling.",
-        "Mocht iemand het vragen: deze auto heeft een butler. Goed voor de restwaarde.",
-        "Uitstekend. Laten we er een ingetogen, voortreffelijke rit van maken.",
-        "Ik geniet altijd van deze kleine uitstapjes van ons.",
-        "Alles is onder controle. Dat neem ik in elk geval graag aan.",
+        "De motor is warm, de spiegels staan goed, en ik ben zo vrij geweest muziek uit te kiezen, meneer.",
+        "Alle systemen functioneren naar behoren, meneer. Althans, de systemen die ik mag controleren.",
+        "Uw auto staat klaar, meneer. En ik uiteraard ook. Dat ben ik altijd.",
+        "Ik hoop dat de dag u goed gezind was, meneer. Zo niet, noemt u mij dan even zijn naam.",
+        "Zullen we, meneer? De weg rijdt zichzelf nog niet. En als hij het probeert, houd ik hem tegen.",
+        "Fijn u weer te zien, meneer. De auto heeft u gemist. Ik bleef uiteraard professioneel.",
+        "Uw gordel, meneer, als u zo vriendelijk wilt zijn. Ik vul liever geen formulieren in.",
+        "Alles is voorbereid, meneer. Over uw vorige afspeellijst zeg ik niets. Hardop.",
+        "Ik heb het dashboard gepoetst, meneer. Bij wijze van spreken. Armen heb ik helaas niet.",
+        "Wees gerust, meneer, ik houd alles in de gaten terwijl u de weg in de gaten houdt.",
+        "Uw koets staat klaar, meneer. Paarden niet inbegrepen, en eerlijk gezegd ook niet gemist.",
+        "Zoals altijd is het mij een eer u van dienst te zijn, meneer. Een bescheiden eer. Maar toch.",
+        "Mocht u iets nodig hebben, meneer, vraagt u het maar. Binnen redelijke grenzen, en binnen de wet.",
+        "Ik heb de banden gecontroleerd, meneer. Visueel. Van hieruit. Ze lijken rond.",
+        "Nog een uitstapje, meneer? Uitstekend. Ik zet de soundtrack klaar.",
+        "Ik heb een uiterst aangename route bedacht, meneer. Het verkeer is helaas nog niet op de hoogte.",
+        "Kalm, beheerst en klaar voor vertrek, meneer. Ik had het over mezelf, maar u mag het lenen.",
+        "Laat u het weten als de muziek u niet bevalt, meneer. Ik zal doen alsof ik niet gekwetst ben.",
+        "Welkom aan boord, meneer. Uw stoel staat precies zoals u hem achterliet.",
+        "Een prima dag voor een ritje, meneer. Of in elk geval een volkomen acceptabele.",
+        "Laat u de details maar aan mij over, meneer. U stuurt. Een eerlijke taakverdeling.",
+        "Mocht iemand het vragen, meneer: deze auto heeft een butler. Goed voor de restwaarde.",
+        "Uitstekend, meneer. Laten we er een ingetogen, voortreffelijke rit van maken.",
+        "Ik geniet altijd van deze kleine uitstapjes van ons, meneer.",
+        "Alles is onder controle, meneer. Dat neem ik in elk geval met grote stelligheid aan.",
+        "Richtingaanwijzer, meneer. Dat is het hendeltje. Ik noem het puur uit beleefdheid.",
+        "Een heer haast zich nooit, meneer. Hij arriveert precies wanneer hij dat wil. Met goede muziek.",
+        "Mag ik het zeggen, meneer? U ziet er op dit uur opvallend gedistingeerd uit.",
     )
 
     val LINES_EN = listOf(

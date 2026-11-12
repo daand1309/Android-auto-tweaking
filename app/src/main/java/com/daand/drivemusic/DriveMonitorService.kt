@@ -320,6 +320,7 @@ class DriveMonitorService : NotificationListenerService() {
                 driveDataStart = -1
             }
             Briefing.endNow(this)  // don't leave the welcome pop-up behind if you left mid-greeting
+            News.clearCache()  // free the memory until the next drive
             UpdatePrompt.cancel(this)
             handler.removeCallbacks(driveUpdate)
             cancelStart()

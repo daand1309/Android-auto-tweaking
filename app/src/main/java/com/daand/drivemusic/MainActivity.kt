@@ -527,8 +527,8 @@ class MainActivity : Activity() {
         val hello = GreetingText.timeGreeting(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY), dutch)
         val who = if (name.isNotBlank()) ", $name" else ""
         return when {
-            prefs.butler && dutch -> "$hello$who. Uw auto staat klaar, wanneer u maar wilt."
-            prefs.butler -> "$hello$who. Your car is ready whenever you are."
+            prefs.butler && dutch -> "$hello$who. Uw auto staat klaar, meneer, wanneer u maar wilt."
+            prefs.butler -> "$hello$who. Your car is ready whenever you are, sir. Do take your time. I shan't."
             dutch -> "$hello$who. Zo klink ik in de auto."
             else -> "$hello$who. This is how I'll sound in the car."
         }

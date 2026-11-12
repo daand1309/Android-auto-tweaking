@@ -303,6 +303,14 @@ object News {
      * "not modified"): 2 min, just so one check never downloads the same feed twice. Heavy ones (NOS:
      * ~70 KB uncompressed every time) and the Google search (no "not modified"): 30 min.
      */
+    /** Feeds larger than this (real ones are 7-130 KB) are never kept in memory. */
+    private const val MAX_CACHED_CHARS = 300_000
+
+    /** After a drive: nothing needs the feeds any more. */
+    fun clearCache() = cache.clear()
+
+    fun cachedFeedCount() = cache.size
+
     fun reuseFor(url: String): Long =
         if (url.contains("feeds.nos.nl") || url.contains("news.google.com")) 30 * 60 * 1000L else 2 * 60 * 1000L
 
@@ -325,8 +333,11 @@ object News {
                 while (sb.length < 1_500_000) { val n = r.read(buf); if (n < 0) break; sb.append(buf, 0, n) }
                 sb.toString()
             }
-            if (cache.size > 12) cache.clear()
-            cache[url] = Cached(conn.getHeaderField("ETag"), conn.getHeaderField("Last-Modified"), xml, System.currentTimeMillis())
+            // Keep memory small in this all-day service: a few normal-sized feeds only.
+            if (xml.length <= MAX_CACHED_CHARS) {
+                if (cache.size >= 8) cache.clear()
+                cache[url] = Cached(conn.getHeaderField("ETag"), conn.getHeaderField("Last-Modified"), xml, System.currentTimeMillis())
+            }
             return xml
         } finally {
             conn.disconnect()

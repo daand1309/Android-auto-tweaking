@@ -32,9 +32,10 @@ object DriveUpdates {
     private fun icy(w: GreetingText.WeatherNow) = w.code in 56..57 || w.code in 66..67
 
     /** Sentences about what changed since [old] that matter for driving; empty if nothing did. */
-    fun changes(old: GreetingText.WeatherNow, new: GreetingText.WeatherNow, dutch: Boolean): List<String> {
+    fun changes(old: GreetingText.WeatherNow, new: GreetingText.WeatherNow, dutch: Boolean, butler: Boolean = false): List<String> {
         val out = mutableListOf<String>()
         fun say(nl: String, en: String) { out += if (dutch) nl else en }
+        if (butler) return butlerChanges(old, new, dutch)
         when {
             icy(new) && !icy(old) -> say("Er valt nu ijzel. Rij heel voorzichtig, de weg kan spiegelglad zijn.",
                 "Freezing rain has started. Please take great care, the roads may be like glass.")
@@ -61,6 +62,38 @@ object DriveUpdates {
         return out
     }
 
+    /** The same changes, as a refined gentleman would put them. */
+    private fun butlerChanges(old: GreetingText.WeatherNow, new: GreetingText.WeatherNow, dutch: Boolean): List<String> {
+        val out = mutableListOf<String>()
+        fun say(nl: String, en: String) { out += if (dutch) nl else en }
+        when {
+            icy(new) && !icy(old) -> say("Het spijt me te moeten melden, meneer, dat er ijzel valt. De weg kan spiegelglad zijn. Uiterst voorzichtig, alstublieft.",
+                "I regret to report, sir, that freezing rain has begun. The roads may be like glass. The utmost care, if you please.")
+            snowing(new) && !snowing(old) -> say("Het is gaan sneeuwen, meneer. Schilderachtig, maar houdt u alstublieft wat extra afstand.",
+                "It has begun to snow, sir. Terribly picturesque. Do keep a little extra distance all the same.")
+            storm(new) && !storm(old) -> say("Er nadert onweer, meneer. Ik raad u aan de bliksem niet persoonlijk te nemen.",
+                "A thunderstorm approaches, sir. I suggest we do not take the lightning personally.")
+            raining(new) && !raining(old) -> say("Het is gaan regenen, meneer. De weg wordt nat, en ik vrees ook mijn humeur.",
+                "It has started to rain, sir. The roads will be wet, and I fear so will my mood.")
+            raining(old) && !raining(new) && !snowing(new) -> say("Goed nieuws, meneer: het is droog geworden. Ik nam de vrijheid het te regelen.",
+                "Good news, sir: the rain has stopped. I took the liberty of arranging it.")
+        }
+        if (new.tempNow <= 1.0 && old.tempNow > 1.0 && !icy(new)) {
+            say("Het is rond het vriespunt, meneer. Pas op voor gladheid, en voor uw schoenen bij het uitstappen.",
+                "It is now around freezing, sir. Mind the slippery patches. And your shoes, when you step out.")
+        }
+        if (foggy(new) && !foggy(old)) say("Er hangt mist, meneer. Mistlampen aan, als het zicht slecht wordt.",
+            "Fog has rolled in, sir. Fog lights on, should visibility suffer.")
+        else if (foggy(old) && !foggy(new)) say("De mist is opgetrokken, meneer. Eindelijk kunnen we weer zien waar we heen gaan.",
+            "The fog has lifted, sir. We can see where we are going again. A rare luxury.")
+        if (new.gustsKmh >= 60 && old.gustsKmh < 60) {
+            val g = SpeechText.number(Math.round(new.gustsKmh).toInt(), dutch)
+            say("Er staan windstoten tot $g kilometer per uur, meneer. Houdt u het stuur stevig vast.",
+                "Gusts are now reaching $g kilometres per hour, sir. A firm grip on the wheel, if you would.")
+        }
+        return out
+    }
+
     // ------------------------------------------------------------------ wording (unit tested)
 
     /** The polite question before an update ("I do apologise, sir, but there is an update..."). */
@@ -75,8 +108,8 @@ object DriveUpdates {
 
     /** After the red button. */
     fun declinedLine(dutch: Boolean, butler: Boolean): String = when {
-        butler && dutch -> "Uiteraard, meneer. Ik zwijg als het graf."
-        butler -> "Very good, sir. I shall say no more."
+        butler && dutch -> "Uiteraard, meneer. Ik zwijg als het graf. Al was het best interessant."
+        butler -> "Very good, sir. I shall say no more. Though it was rather interesting."
         dutch -> "Prima, dan houd ik het voor me."
         else -> "Fine, I'll keep it to myself."
     }
@@ -88,27 +121,35 @@ object DriveUpdates {
     fun compose(weather: List<String>, news: News.Item?, dutch: Boolean, butler: Boolean, name: String, withIntro: Boolean = true,
                 followed: News.Item? = null, source: String = ""): String? {
         if (weather.isEmpty() && news == null && followed == null) return null
-        val who = SpeechText.spokenName(name, dutch)
         val intro = if (!withIntro) null else when {
-            butler && dutch -> "Excuseert u mij${if (who.isNotEmpty()) ", $who" else ""}. Een korte update."
-            butler -> "Pardon the interruption${if (who.isNotEmpty()) ", $who" else ""}. A brief update."
+            butler && dutch -> "Excuseert u mij, meneer. Een korte update."
+            butler -> "Pardon the interruption, sir. A brief update."
             dutch -> "Even een update."
             else -> "Quick update."
         }
         val parts = mutableListOf<String>()
         if (intro != null) parts += intro
         parts += weather
-        if (news != null) parts += if (dutch) "Belangrijk nieuws: ${news.title.trimEnd('.')}." else "Some news you should know: ${news.title.trimEnd('.')}."
+        if (news != null) parts += when {
+            butler && dutch -> "Belangrijk nieuws, meneer: ${news.title.trimEnd('.')}."
+            butler -> "Some news you ought to know, sir: ${news.title.trimEnd('.')}."
+            dutch -> "Belangrijk nieuws: ${news.title.trimEnd('.')}."
+            else -> "Some news you should know: ${news.title.trimEnd('.')}."
+        }
         if (followed != null) {
             val h = followed.title.trimEnd('.')
             parts += when {
+                butler && dutch && source.isNotBlank() -> "Over het verhaal dat u volgt, meneer, meldt $source: $h."
+                butler && dutch -> "Over het verhaal dat u volgt, meneer: $h."
+                butler && source.isNotBlank() -> "On the story you are following, sir, $source reports: $h."
+                butler -> "On the story you are following, sir: $h."
                 dutch && source.isNotBlank() -> "Over het verhaal dat je volgt, meldt $source: $h."
                 dutch -> "Over het verhaal dat je volgt: $h."
                 source.isNotBlank() -> "On the story you're following, $source reports: $h."
                 else -> "On the story you're following: $h."
             }
         }
-        if (butler) parts += if (dutch) "Dat was alles. Ik laat u weer verder genieten." else "That is all. I'll leave you to your music."
+        if (butler) parts += if (dutch) "Dat was alles, meneer. Ik laat u weer verder genieten." else "That is all, sir. I shall leave you to your music."
         return parts.joinToString(" ")
     }
 
@@ -124,7 +165,7 @@ object DriveUpdates {
             if (!lat.isNaN() && !lon.isNaN()) {
                 try {
                     val now = Weather.fetch(Weather.round(lat), Weather.round(lon))
-                    lastWeather?.let { weatherLines = changes(it, now, dutch) }
+                    lastWeather?.let { weatherLines = changes(it, now, dutch, p.butler) }
                     lastWeather = now
                     p.lastWeatherSummary = GreetingText.tileWeather(now, dutch)
                     p.lastWeatherAt = System.currentTimeMillis()
