@@ -26,6 +26,7 @@ object IntroImage {
     /** Decoded images, so the home screen's 5-second refresh doesn't re-read a big photo each time. */
     private val cache = HashMap<String, Pair<Long, Bitmap>>()
 
+    @Synchronized
     fun load(ctx: Context, name: String = FILE): Bitmap? {
         val f = file(ctx, name)
         if (!f.exists()) { cache.remove(name); return null }
@@ -35,6 +36,7 @@ object IntroImage {
         return bmp
     }
 
+    @Synchronized
     fun clear(ctx: Context, name: String = FILE) {
         cache.remove(name)
         file(ctx, name).delete()
@@ -48,7 +50,6 @@ object IntroImage {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         ctx.contentResolver.openInputStream(uri)!!.use { BitmapFactory.decodeStream(it, null, bounds) }
         require(bounds.outWidth > 0 && bounds.outHeight > 0) { "That file isn't an image" }
-        cache.remove(name)
         if (name == HERO) { saveCarPhoto(ctx, uri, bounds.outWidth, bounds.outHeight); return }
 
         var sample = 1
@@ -63,7 +64,7 @@ object IntroImage {
         src.getPixels(px, 0, w, 0, 0, w, h)
         if (hasDarkBackground(px, w, h)) lightOnTransparent(px)
         val out = Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
-        file(ctx, name).outputStream().use { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        writeAtomically(ctx, name) { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
     /**
@@ -80,7 +81,20 @@ object IntroImage {
             BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
         } ?: throw IllegalArgumentException("That file isn't an image")
         val out = if (src.width == tw && src.height == th) src else Bitmap.createScaledBitmap(src, tw, th, true)
-        file(ctx, HERO).outputStream().use { out.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+        writeAtomically(ctx, HERO) { out.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+    }
+
+    /**
+     * Writes to a temp file, then swaps it in - so the home screen (which may be reading the photo at
+     * the same moment) never sees a half-written image.
+     */
+    private fun writeAtomically(ctx: Context, name: String, write: (java.io.OutputStream) -> Unit) {
+        val tmp = File(ctx.filesDir, "$name.tmp")
+        tmp.outputStream().use(write)
+        synchronized(this) {
+            if (!tmp.renameTo(file(ctx, name))) { tmp.delete(); throw java.io.IOException("Couldn't save the image") }
+            cache.remove(name)
+        }
     }
 
     /**

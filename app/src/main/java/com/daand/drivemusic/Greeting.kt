@@ -754,13 +754,13 @@ object WelcomeAnnouncer {
             if (recordAsGreeted) p.lastGreetingAt = System.currentTimeMillis()
             // On screen: your name as written, not the phonetic spelling used for the voice.
             val pron = p.namePronunciation
-            val shown = if (pron.isNotBlank() && p.greetingName.isNotBlank()) text.replace(pron, p.greetingName) else text
+            val shown = Briefing.forScreen(text, pron, p.greetingName)
             main.post {
                 DriveLog.log("GREETING: \"$text\"")
                 val (title, body) = Briefing.split(shown)
-                Briefing.start(ctx, title, body)
+                val shownToken = Briefing.start(ctx, title, body)
                 Greeter(ctx).speak(text, p.greetingDutch, pauseOthers = true) {
-                    Briefing.end(ctx)
+                    Briefing.end(ctx, shownToken)
                     then()
                 }
             }

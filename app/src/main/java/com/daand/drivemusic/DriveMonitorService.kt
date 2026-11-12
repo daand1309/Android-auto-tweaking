@@ -310,6 +310,7 @@ class DriveMonitorService : NotificationListenerService() {
                 " - ${mins} min, $pausesThisDrive pause(s), $resumesThisDrive auto-resume(s)" +
                 if (lastPauseClue.isNotEmpty()) "\nLast pause: $lastPauseClue" else ""
             Parking.capture(this)
+            Briefing.endNow(this)  // don't leave the welcome pop-up behind if you left mid-greeting
             cancelStart()
             cancelResume()
             cancelPendingPause()

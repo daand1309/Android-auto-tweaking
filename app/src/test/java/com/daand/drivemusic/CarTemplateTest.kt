@@ -60,4 +60,13 @@ class CarTemplateTest {
         assertEquals("Just one line" to "", Briefing.split("Just one line"))
         assertEquals("One sentence." to "", Briefing.split("One sentence."))
     }
+
+    @Test fun briefingShowsTheWrittenNameNotThePhoneticOne() {
+        assertEquals("Welcome, Mr. Dickhoff. Dickens is on.",
+            Briefing.forScreen("Welcome, Mr. Dikhof. Dickens is on.", "Dikhof", "Dickhoff"))
+        // Only whole words: a pronunciation that's part of another word is left alone.
+        assertEquals("Welcome Dan. Dancing Queen is up.", Briefing.forScreen("Welcome Dan. Dancing Queen is up.", "Dan", "Dan"))
+        assertEquals("Hi Daan, \$5 off.", Briefing.forScreen("Hi Dahn, \$5 off.", "Dahn", "Daan"))
+        assertEquals("No name here.", Briefing.forScreen("No name here.", "", "Daan"))
+    }
 }

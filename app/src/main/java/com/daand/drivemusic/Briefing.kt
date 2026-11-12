@@ -31,25 +31,39 @@ object Briefing {
     var title: String = ""
         private set
 
+    /** Identifies the briefing on screen, so an earlier greeting finishing can't remove a newer one. */
+    private var token = 0
+
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     private val main = Handler(Looper.getMainLooper())
 
     fun addListener(l: () -> Unit) { listeners += l }
     fun removeListener(l: () -> Unit) { listeners -= l }
 
-    /** Called when the greeting starts speaking. Only shows on the car while Android Auto is connected. */
-    fun start(ctx: Context, title: String, text: String) {
+    /**
+     * Called when the greeting starts speaking. Only shows on the car while Android Auto is connected.
+     * Returns a token for [end] (0 = nothing shown).
+     */
+    fun start(ctx: Context, title: String, text: String): Int {
         val inCar = Prefs(ctx).lastCarState.let { it == "Android Auto connected" || it == "Android Automotive" }
-        if (!inCar) return
+        if (!inCar) return 0
+        token++
         this.title = title
         this.text = text
         postCarPopup(ctx.applicationContext, title, text)
         DriveLog.log("BRIEFING: shown on the car screen")
         notifyChanged()
+        return token
     }
 
-    /** Called when the greeting is done (or gave up). */
-    fun end(ctx: Context) {
+    /** Called when that greeting is done (or gave up). Ignored if a newer briefing replaced it. */
+    fun end(ctx: Context, shownToken: Int) {
+        if (shownToken == 0 || shownToken != token) return
+        endNow(ctx)
+    }
+
+    /** Removes whatever briefing is showing (e.g. the car disconnected mid-greeting). */
+    fun endNow(ctx: Context) {
         if (text == null) return
         text = null
         NotificationManagerCompat.from(ctx).cancel(NOTIFICATION_ID)
@@ -75,6 +89,11 @@ object Briefing {
     }
 
     private val ABBREVIATIONS = setOf("mr", "mrs", "ms", "dr", "st", "sr", "jr", "dhr", "mevr", "mw", "ir", "ing", "drs", "mr.")
+
+    /** The spoken text with the phonetic name swapped back to how you write it (whole words only). */
+    fun forScreen(spoken: String, pronunciation: String, name: String): String =
+        if (pronunciation.isBlank() || name.isBlank()) spoken
+        else spoken.replace(Regex("""(?<!\w)${Regex.escape(pronunciation)}(?!\w)"""), Regex.escapeReplacement(name))
 
     private fun postCarPopup(ctx: Context, title: String, body: String) {
         val nm = ctx.getSystemService(NotificationManager::class.java)

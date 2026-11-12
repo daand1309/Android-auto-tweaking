@@ -327,19 +327,23 @@ class DriveFlowTest {
         fun shown() = nm.activeNotifications.firstOrNull { it.id == 8 }
 
         // Not in the car (e.g. the test button at home): nothing on a car screen.
-        Briefing.start(ctx, "Welcome.", "Parked test")
+        assertEquals(0, Briefing.start(ctx, "Welcome.", "Parked test"))
         SystemClock.sleep(500)
         assertTrue(shown() == null)
 
         prefs.autoStart = false
         onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_PROJECTION) }
-        onMain { Briefing.start(ctx, "Good morning Mr. Smith.", "It's 4 degrees.") }
+        var t = 0
+        onMain { t = Briefing.start(ctx, "Good morning Mr. Smith.", "It's 4 degrees.") }
         waitFor("the briefing pop-up", 5_000) { shown() != null }
         val car = androidx.car.app.notification.CarAppExtender(shown()!!.notification)
         assertEquals("Good morning Mr. Smith.", car.contentTitle.toString())
         assertEquals(androidx.core.app.NotificationManagerCompat.IMPORTANCE_HIGH, car.importance)
 
-        onMain { Briefing.end(ctx) }
+        onMain { Briefing.end(ctx, t - 1) }  // an older greeting finishing must NOT remove this one
+        SystemClock.sleep(500)
+        assertTrue("newer briefing must stay", shown() != null)
+        onMain { Briefing.end(ctx, t) }
         waitFor("the briefing pop-up to be removed", 5_000) { shown() == null }
         assertTrue(Briefing.text == null)
     }
