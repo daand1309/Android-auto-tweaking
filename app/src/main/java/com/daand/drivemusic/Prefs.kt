@@ -146,6 +146,40 @@ class Prefs(context: Context) {
         get() = sp.getFloat("obd_engine_l", 1.6f).toDouble().let { if (it.isNaN()) 1.6 else it.coerceIn(0.8, 6.0) }
         set(v) = sp.edit().putFloat("obd_engine_l", v.toFloat()).apply()
 
+    /** Fuel tank size in litres (for the range estimate). The 2011 ASX: about 60 L. */
+    var tankLitres: Double
+        get() = sp.getFloat("tank_l", 60f).toDouble().let { if (it.isNaN()) 60.0 else it.coerceIn(20.0, 150.0) }
+        set(v) = sp.edit().putFloat("tank_l", v.toFloat()).apply()
+
+    /** Fuel price per litre (0 = not set: costs are hidden). */
+    var fuelPrice: Double
+        get() = sp.getFloat("fuel_price", 0f).toDouble().let { if (it.isNaN() || it < 0) 0.0 else it.coerceAtMost(10.0) }
+        set(v) = sp.edit().putFloat("fuel_price", v.toFloat()).apply()
+
+    /** Last service (0 = not set) and the interval. */
+    var serviceDate: Long
+        get() = sp.getLong("service_date", 0L)
+        set(v) = sp.edit().putLong("service_date", v).apply()
+    var serviceKm: Int
+        get() = sp.getInt("service_km", 15_000).coerceIn(1_000, 60_000)
+        set(v) = sp.edit().putInt("service_km", v).apply()
+    var serviceMonths: Int
+        get() = sp.getInt("service_months", 12).coerceIn(1, 36)
+        set(v) = sp.edit().putInt("service_months", v).apply()
+    var lastServiceReminder: Long
+        get() = sp.getLong("service_reminded", 0L)
+        set(v) = sp.edit().putLong("service_reminded", v).apply()
+
+    /** Resting battery voltage before each start: "day=volts,..." (last 30). */
+    var batteryLog: List<Pair<Long, Double>>
+        get() = (sp.getString("battery_log", "") ?: "").split(',').mapNotNull {
+            val p = it.split('='); if (p.size != 2) null else { val d = p[0].toLongOrNull(); val v = p[1].toDoubleOrNull(); if (d == null || v == null) null else d to v }
+        }
+        set(v) = sp.edit().putString("battery_log", v.takeLast(30).joinToString(",") { "${it.first}=${it.second}" }).apply()
+    var lastBatteryWarning: Long
+        get() = sp.getLong("battery_warned", 0L)
+        set(v) = sp.edit().putLong("battery_warned", v).apply()
+
     /** Say when fuel gets low. */
     var obdFuel: Boolean
         get() = sp.getBoolean("obd_fuel", true)
@@ -279,6 +313,7 @@ class Prefs(context: Context) {
         "last_car_state", "last_drive", "last_greeting", "last_weather", "last_weather_at",
         "last_update_check", "notified_update", "update_status", "last_seen_music_app", "last_music_change_at",
         "parked_spot", "told_news", "follow_topic", "follow_until", "obd_told",
+        "service_reminded", "battery_log", "battery_warned",
     )
 
     /**
@@ -291,8 +326,9 @@ class Prefs(context: Context) {
         "remember_parking" to "bool", "road_conditions" to "bool", "set_volume" to "bool", "show_splash" to "bool",
         "weather" to "bool", "updates_weather" to "bool", "updates_news" to "bool", "ask_before_updates" to "bool",
         "obd_enabled" to "bool", "obd_warmup" to "bool", "obd_fuel" to "bool",
-        "resume_delay" to "int", "start_delay" to "int", "volume_pct" to "int", "obd_ready_s" to "int",
-        "speech_pitch" to "float", "speech_rate" to "float", "obd_engine_l" to "float", "weather_lat" to "float", "weather_lon" to "float",
+        "resume_delay" to "int", "start_delay" to "int", "volume_pct" to "int", "obd_ready_s" to "int", "service_km" to "int", "service_months" to "int",
+        "speech_pitch" to "float", "speech_rate" to "float", "obd_engine_l" to "float",
+        "tank_l" to "float", "fuel_price" to "float", "service_date" to "long", "weather_lat" to "float", "weather_lon" to "float",
         "birthday" to "string", "car_name" to "string", "greeting_name" to "string", "music_pkg" to "string",
         "name_pronunciation" to "string", "theme" to "string", "tts_engine" to "string", "voice_name" to "string",
         "weather_place" to "string", "greeting_style" to "string",

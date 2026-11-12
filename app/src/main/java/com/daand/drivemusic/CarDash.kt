@@ -15,7 +15,10 @@ object CarDash {
     private fun f1(x: Double) = "%.1f".format(Locale.ROOT, x)
 
     /** key -> (text, colour or null for the normal colour). */
-    fun values(s: CarSnapshot?, trip: Trip?, dutch: Boolean): Map<String, Pair<String, Int?>> {
+    /** Label of the bottom-left tile: range when known, else throttle · load. */
+    fun loadLabel(rangeKm: Int?, dutch: Boolean) = if (rangeKm != null) (if (dutch) "Bereik" else "Range") else (if (dutch) "Gas · belasting" else "Throttle · load")
+
+    fun values(s: CarSnapshot?, trip: Trip?, dutch: Boolean, rangeKm: Int? = null): Map<String, Pair<String, Int?>> {
         if (s == null) return emptyMap()
         val out = HashMap<String, Pair<String, Int?>>()
         s.speedKmh?.let { out["speed"] = "$it" to null }
@@ -31,7 +34,8 @@ object CarDash {
         s.volts?.let { v -> out["battery"] = "${f1(v)} V" to when { s.engineRunning && v < 12.8 -> HOT; !s.engineRunning && v < 12.0 -> HOT; else -> null } }
         val throttle = s.extra[0x11]?.let { Math.round(it) }
         val load = s.extra[0x04]?.let { Math.round(it) }
-        if (throttle != null || load != null) out["load"] = listOfNotNull(throttle?.let { "$it%" }, load?.let { "$it%" }).joinToString(" · ") to null
+        if (rangeKm != null) out["load"] = "≈ $rangeKm km" to (if (rangeKm < 60) HOT else null)
+        else if (throttle != null || load != null) out["load"] = listOfNotNull(throttle?.let { "$it%" }, load?.let { "$it%" }).joinToString(" · ") to null
         val outside = s.ambientC
         val intake = s.extra[0x0F]?.let { Math.round(it).toInt() }
         if (outside != null || intake != null) out["temps"] = listOfNotNull(outside?.let { "$it°" }, intake?.let { "$it°" }).joinToString(" · ") to

@@ -97,7 +97,7 @@ class MainActivity : Activity() {
     private enum class Page(val title: String) {
         HOME("Drive Music"), SETUP("Setup"), MUSIC("Music & driving"), GREETING("Welcome greeting"),
         VOICE("Voice"), DRIVE_MODE("Drive Mode"), SOUND("Sound"), UPDATES("Updates"), HELP("Help & privacy"),
-        CAR("Car screen"), BACKUP("Backup & restore"), OBD("Car data (OBD)")
+        CAR("Car screen"), BACKUP("Backup & restore"), OBD("Car data (OBD)"), TRIPS("Trips & costs")
     }
 
     private var page = Page.HOME
@@ -198,6 +198,7 @@ class MainActivity : Activity() {
             Page.UPDATES -> renderUpdates()
             Page.HELP -> renderHelp()
             Page.OBD -> renderObd()
+            Page.TRIPS -> renderTrips()
             Page.CAR -> renderCar()
             Page.BACKUP -> renderBackup()
         }
@@ -235,6 +236,7 @@ class MainActivity : Activity() {
         navRow("Theme", Style.THEMES[prefs.theme] ?: "") { pickTheme() }
         navRow("Car screen", "Show Drive Music in Android Auto") { go(Page.CAR) }
         navRow("Car data (OBD)", if (prefs.obdEnabled) "On · ${prefs.obdDeviceName.ifBlank { "no adapter chosen" }}" else "Engine temperature, battery, warning lights") { go(Page.OBD) }
+        if (prefs.obdEnabled) navRow("Trips & costs", "Distance, fuel, costs and your driving score") { go(Page.TRIPS) }
         if (missing == 0) navRow("Setup", "All done ✓") { go(Page.SETUP) }
 
         header("More")
@@ -442,6 +444,27 @@ class MainActivity : Activity() {
         text(if (live != null) com.daand.drivemusic.obd.CarStatusText.report(live, prefs.greetingDutch, obd.trip) +
                 (obd.vin?.let { "\n\nVIN: $it" } ?: "") + "\n${obd.supportedCount} values shared by your car"
              else "Status: ${obd.status}. Values appear here while you drive.")
+
+        header("Your car")
+        stepperLike("Fuel tank: ${Math.round(prefs.tankLitres)} L", "Change") {
+            askNumber("Fuel tank size (litres)", "The 2011 ASX has about 60 L", prefs.tankLitres) { prefs.tankLitres = it.coerceIn(20.0, 150.0) }
+        }
+        stepperLike("Fuel price: " + (if (prefs.fuelPrice > 0) "€%.2f per litre".format(java.util.Locale.ROOT, prefs.fuelPrice) else "not set"), "Change") {
+            askNumber("Fuel price per litre (€)", "e.g. 2.05 - leave empty to hide costs", prefs.fuelPrice) { prefs.fuelPrice = it.coerceIn(0.0, 10.0) }
+        }
+        val svc = if (prefs.serviceDate > 0) java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(prefs.serviceDate)) else "not set"
+        stepperLike("Last service: $svc", "Set") { pickServiceDate() }
+        if (prefs.serviceDate > 0) {
+            val km = com.daand.drivemusic.obd.TripHistory.kmSince(com.daand.drivemusic.obd.TripHistory.load(this), prefs.serviceDate)
+            stepper("Service every", "%,d km".format(java.util.Locale.ROOT, prefs.serviceKm),
+                { prefs.serviceKm = (prefs.serviceKm - 1000).coerceAtLeast(1000) },
+                { prefs.serviceKm = (prefs.serviceKm + 1000).coerceAtMost(60000) })
+            text("Driven since: %,d km (counted from your drives). Reminder in the greeting when due, at most weekly.".format(java.util.Locale.ROOT, Math.round(km)))
+        }
+        val battery = prefs.batteryLog.takeLast(7)
+        if (battery.isNotEmpty()) text("Battery before starting (last ${battery.size} days): " +
+            battery.joinToString("  ") { "%.2f".format(java.util.Locale.ROOT, it.second) } + " V" +
+            if (com.daand.drivemusic.obd.CarAlerts.batteryTrendWeak(prefs.batteryLog)) "  ⚠ getting weaker" else "")
 
         header("Tell me")
         text("Always: overheating, the check-engine light (with the fault code explained), a weak battery or charging.")
@@ -1162,6 +1185,80 @@ class MainActivity : Activity() {
         },
         Button(this).apply { text = action; isAllCaps = false; setOnClickListener { onClick() } },
     )
+
+    /** A number input (comma or dot both fine); empty = 0. */
+    private fun askNumber(title: String, hint: String, initial: Double, onOk: (Double) -> Unit) =
+        askText(title, hint, if (initial > 0) "%.2f".format(java.util.Locale.ROOT, initial).trimEnd('0').trimEnd('.') else "") { input ->
+            val v = input.replace(',', '.').trim().toDoubleOrNull() ?: 0.0
+            onOk(v); render()
+        }
+
+    private fun pickServiceDate() {
+        val c = java.util.Calendar.getInstance().apply { if (prefs.serviceDate > 0) timeInMillis = prefs.serviceDate }
+        android.app.DatePickerDialog(this, { _, y, m, d ->
+            prefs.serviceDate = java.util.Calendar.getInstance().apply { set(y, m, d, 12, 0) }.timeInMillis
+            prefs.lastServiceReminder = 0L
+            render()
+        }, c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH), c.get(java.util.Calendar.DAY_OF_MONTH)).apply {
+            datePicker.maxDate = System.currentTimeMillis()
+        }.show()
+    }
+
+    // ---------------------------------------------------------------- trips & costs
+
+    private fun renderTrips() {
+        pageHeader()
+        val trips = com.daand.drivemusic.obd.TripHistory.load(this)
+        if (trips.isEmpty()) {
+            text("Your drives appear here once the OBD adapter is connected: distance, fuel, costs and a driving score.")
+            return
+        }
+        val price = prefs.fuelPrice
+        val now = System.currentTimeMillis()
+        val cal = java.util.Calendar.getInstance()
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.DAY_OF_WEEK, cal.firstDayOfWeek)
+        val weekStart = cal.timeInMillis
+        val monthStart = java.util.Calendar.getInstance().apply { set(java.util.Calendar.DAY_OF_MONTH, 1); set(java.util.Calendar.HOUR_OF_DAY, 0) }.timeInMillis
+        fun line(label: String, since: Long) {
+            val t = com.daand.drivemusic.obd.TripHistory.totals(trips, since)
+            if (t.trips == 0) return
+            val parts = listOfNotNull(
+                "%.0f km".format(java.util.Locale.ROOT, t.km),
+                t.per100?.let { "%.1f L/100".format(java.util.Locale.ROOT, it) },
+                if (t.litres > 0) "%.1f L".format(java.util.Locale.ROOT, t.litres) else null,
+                if (price > 0 && t.litres > 0) "€%.2f".format(java.util.Locale.ROOT, t.litres * price) else null,
+                "${t.trips} trips",
+            )
+            statRow(label, parts.joinToString("  ·  "))
+        }
+        header("Totals")
+        line("This week", weekStart)
+        line("This month", monthStart)
+        line("All time", 0)
+        if (price <= 0) text("Set the fuel price on the Car data page to see costs.")
+        header("Recent drives")
+        val fmt = java.text.SimpleDateFormat("EEE d MMM, HH:mm", java.util.Locale.getDefault())
+        for (t in trips.takeLast(30).reversed()) {
+            statRow(fmt.format(java.util.Date(t.at)), com.daand.drivemusic.obd.TripNotice.text(t, price, prefs.greetingDutch) +
+                if (t.codes.isNotEmpty()) "  ·  ⚠ ${t.codes.joinToString()}" else "")
+        }
+        button("Clear trip history") {
+            AlertDialog.Builder(this).setTitle("Clear all trips?").setMessage("This can't be undone.")
+                .setPositiveButton("Clear") { _, _ -> com.daand.drivemusic.obd.TripHistory.clear(this); render() }
+                .setNegativeButton("Cancel", null).show()
+        }
+    }
+
+    /** A label over a value, in a card - for the trips page. */
+    private fun statRow(label: String, value: String) = root.addView(LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = Style.rounded(Style.SURFACE, dp(14).toFloat())
+        setPadding(dp(16), dp(12), dp(16), dp(12))
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) }
+        addView(TextView(this@MainActivity).apply { text = label; textSize = 13f; setTextColor(Style.TEXT2) })
+        addView(TextView(this@MainActivity).apply { text = value; textSize = 16f; setTextColor(Style.TEXT); setPadding(0, dp(2), 0, 0) })
+    })
 
     private fun askText(title: String, hint: String, initial: String, onOk: (String) -> Unit) {
         val input = android.widget.EditText(this).apply {

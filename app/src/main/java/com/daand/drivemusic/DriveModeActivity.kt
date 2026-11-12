@@ -129,6 +129,7 @@ class DriveModeActivity : Activity() {
     // ---------------------------------------------------------------- car tab (live OBD data)
 
     private val carValues = HashMap<String, TextView>()
+    private val carLabels = HashMap<String, TextView>()
     private lateinit var carWarning: TextView
     private lateinit var carStatus: TextView
 
@@ -161,7 +162,8 @@ class DriveModeActivity : Activity() {
         gravity = Gravity.CENTER
         background = Style.rounded(Style.SURFACE, dp(18).toFloat())
         setPadding(dp(8), dp(8), dp(8), dp(8))
-        addView(TextView(this@DriveModeActivity).apply { text = label; textSize = 14f; setTextColor(Style.TEXT2); gravity = Gravity.CENTER })
+        addView(TextView(this@DriveModeActivity).apply { text = label; textSize = 14f; setTextColor(Style.TEXT2); gravity = Gravity.CENTER }
+            .also { carLabels[key] = it })
         val value = TextView(this@DriveModeActivity).apply {
             text = "—"; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT); gravity = Gravity.CENTER
             maxLines = 1
@@ -176,7 +178,9 @@ class DriveModeActivity : Activity() {
         val p = Prefs(this)
         val obd = com.daand.drivemusic.obd.ObdManager
         val s = if (p.obdEnabled) obd.live() else null
-        val v = CarDash.values(s, obd.trip, p.greetingDutch)
+        val range = if (s != null) obd.rangeKm(s) else null
+        val v = CarDash.values(s, obd.trip, p.greetingDutch, range)
+        carLabels["load"]?.let { val l = CarDash.loadLabel(range, p.greetingDutch); if (it.text != l) it.text = l }
         for ((key, tv) in carValues) {
             val (text, color) = v[key] ?: ("—" to null)
             if (tv.text != text) tv.text = text

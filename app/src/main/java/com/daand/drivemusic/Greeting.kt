@@ -44,6 +44,8 @@ object GreetingText {
         name: String, dutch: Boolean, cal: Calendar, weather: WeatherNow?, place: String,
         random: Random = Random.Default, roads: Boolean = false, song: Song? = null, birthday: String = "",
         butler: Boolean = false,
+        /** A short reminder (e.g. the car's service is due), said before the music starts. */
+        reminder: String? = null,
     ): String {
         val hour = cal.get(Calendar.HOUR_OF_DAY)
         val day = cal.get(Calendar.DAY_OF_WEEK)
@@ -88,6 +90,7 @@ object GreetingText {
             if (roads) parts += roadSentence(weather, dutch)
         }
         if (song != null) parts += songSentence(song, dutch, upFirst = true)
+        if (reminder != null) parts += reminder
         parts += when {
             butler && dutch -> "Ik zet uw muziek aan. Rijdt u voorzichtig, meneer."
             butler -> "I'll start your music now. Do drive carefully, sir."
@@ -130,6 +133,16 @@ object GreetingText {
     fun tileWeather(w: WeatherNow, dutch: Boolean): String {
         val desc = describe(w.code, dutch).removePrefix("een ").removePrefix("a ")
         return "${w.tempNow.roundToInt()}° · $desc · ${w.rainChance}% ${if (dutch) "regen" else "rain"}"
+    }
+
+    /** "The car is due for its service" - in the greeting, at most weekly. */
+    fun serviceReminder(reason: String, dutch: Boolean, butler: Boolean): String = when {
+        dutch && reason == "km" -> "Een kleine herinnering: de auto is toe aan een onderhoudsbeurt, de kilometers zitten erop."
+        dutch -> "Een kleine herinnering: de auto is toe aan zijn jaarlijkse onderhoudsbeurt."
+        butler && reason == "km" -> "A small reminder, sir: the car has covered enough miles to be due its service."
+        butler -> "A small reminder, sir: the car is due its annual service."
+        reason == "km" -> "Quick reminder: the car's due for a service - the kilometres are up."
+        else -> "Quick reminder: the car's due for its yearly service."
     }
 
     fun timeGreeting(hour: Int, dutch: Boolean) = when (hour) {
@@ -963,6 +976,7 @@ object WelcomeAnnouncer {
                 p.namePronunciation.ifBlank { p.greetingName }, p.greetingDutch, Calendar.getInstance(), weather, p.weatherPlace,
                 roads = p.roadConditionsEnabled, song = song.takeIf { p.announceSong }, birthday = p.birthday,
                 butler = p.butler,
+                reminder = serviceReminderIfDue(ctx, p, recordAsGreeted),
             )
             if (recordAsGreeted) p.lastGreetingAt = System.currentTimeMillis()
             // On screen: your name as written, not the phonetic spelling used for the voice.
@@ -989,6 +1003,19 @@ object WelcomeAnnouncer {
           }
         }.start()
     }
+
+    /** The service reminder when it's due and not said in the last week (only on real drives). */
+    private fun serviceReminderIfDue(ctx: Context, p: Prefs, realDrive: Boolean): String? = try {
+        val now = System.currentTimeMillis()
+        val trips = com.daand.drivemusic.obd.TripHistory.load(ctx)
+        val due = com.daand.drivemusic.obd.CarAlerts.serviceDue(p.serviceDate,
+            com.daand.drivemusic.obd.TripHistory.kmSince(trips, p.serviceDate), p.serviceKm, p.serviceMonths, now)
+        if (due == null || now - p.lastServiceReminder < 7 * 86_400_000L) null
+        else {
+            if (realDrive) p.lastServiceReminder = now
+            GreetingText.serviceReminder(due, p.greetingDutch, p.butler)
+        }
+    } catch (e: Exception) { null }
 
     /**
      * Weather with a hard time limit: with bad signal (parking garage) the lookup can hang far longer

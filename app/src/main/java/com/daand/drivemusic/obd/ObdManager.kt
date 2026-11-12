@@ -50,6 +50,11 @@ object ObdManager {
     @Volatile var vin: String? = null; private set
     @Volatile var supportedCount = 0; private set
     @Volatile private var engineLitres = 1.6
+    @Volatile private var appCtx: Context? = null
+    /** Typical L/100 from trip history (for the range), loaded at the start of the drive. */
+    @Volatile var typicalPer100: Double? = null; private set
+    @Volatile private var tankLitres = 60.0
+    @Volatile private var batteryLogged = false
 
     fun hasPermission(ctx: Context) = Build.VERSION.SDK_INT < 31 ||
         ctx.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
@@ -70,6 +75,10 @@ object ObdManager {
         val myGen = ++gen
         latest = null; trip = Trip(); lastEcuAnswerAt = 0L; connectedThisDrive = false
         engineLitres = p.obdEngineLitres
+        tankLitres = p.tankLitres
+        appCtx = ctx.applicationContext
+        batteryLogged = false
+        typicalPer100 = runCatching { TripHistory.typicalPer100(TripHistory.load(ctx)) }.getOrNull()
         val app = ctx.applicationContext
         val address = p.obdDevice
         readySeconds = p.obdReadySeconds
@@ -103,6 +112,7 @@ object ObdManager {
         }
         lastSession = null
         unknownLogged.clear()
+        saveTrip()
         val summary = trip.summary(dutch = false)
         val codes = latest?.codes?.takeIf { it.isNotEmpty() }?.let { " · fault codes ${it.joinToString()}" } ?: ""
         if (summary.isNotEmpty() || codes.isNotEmpty()) DriveLog.log("OBD: trip - $summary$codes")
@@ -174,7 +184,11 @@ object ObdManager {
             if (snap.coolantC != null || snap.rpm != null || snap.speedKmh != null) lastEcuAnswerAt = snap.at
             trip.add(snap)
             if (!alive(myGen)) break
-            alerts.check(snap).forEach { a ->
+            recordRestingBattery(snap, onAlert)
+            alerts.check(snap).map { a ->
+                // Low fuel: say how far it still goes.
+                if (a.kind == CarAlerts.Kind.LOW_FUEL) a.copy(codes = listOfNotNull(rangeKm(snap)?.toString())) else a
+            }.forEach { a ->
                 DriveLog.log("OBD: alert ${a.kind}" + (a.value?.let { " ($it)" } ?: "") + (if (a.codes.isNotEmpty()) " ${a.codes}" else ""))
                 onAlert(a)
             }
@@ -186,6 +200,41 @@ object ObdManager {
             // A steady rhythm: the wait includes the time the reading took.
             val interval = when { liveView -> LIVE_POLL_MS; alerts.countingDown() -> FAST_POLL_MS; else -> POLL_MS }
             sleep((interval - (System.currentTimeMillis() - roundStart)).coerceAtLeast(200L))
+        }
+    }
+
+    /** The drive is over: keep it for the Trips page and tell the phone (a quiet notification). */
+    private fun saveTrip() {
+        val ctx = appCtx ?: return
+        val t = trip
+        if (t.km < 0.3) return
+        val rec = TripRecord(System.currentTimeMillis(), ((t.drivingSeconds + t.idleSeconds) / 60).toInt(), t.km, t.litres,
+            t.score(), t.maxCoolant, latest?.codes ?: emptyList())
+        runCatching { TripHistory.add(ctx, rec) }
+        TripNotice.post(ctx, rec, Prefs(ctx))
+    }
+
+    /** km left on this tank (fuel level × tank ÷ typical consumption, else this trip's). */
+    fun rangeKm(s: CarSnapshot? = latest): Int? = Range.km(s?.fuelPct, tankLitres, typicalPer100 ?: trip.avgPer100())
+
+    /** First reading with the engine off this drive = resting battery voltage; logged once per day. */
+    private fun recordRestingBattery(s: CarSnapshot, onAlert: (CarAlerts.Alert) -> Unit) {
+        if (batteryLogged) return
+        val ctx = appCtx ?: return
+        val v = s.volts ?: return
+        batteryLogged = true
+        if (s.engineRunning) return  // already running: no resting value this time
+        val day = System.currentTimeMillis() / 86_400_000L
+        val p = Prefs(ctx)
+        val log = p.batteryLog.filter { it.first != day } + (day to Math.round(v * 100) / 100.0)
+        p.batteryLog = log
+        DriveLog.log("OBD: resting battery %.2f V".format(java.util.Locale.ROOT, v))
+        // Weaker over the days: a heads-up (at most weekly) before it leaves you stranded on a cold morning.
+        val now = System.currentTimeMillis()
+        if (CarAlerts.batteryTrendWeak(log) && now - p.lastBatteryWarning > 7 * 86_400_000L) {
+            p.lastBatteryWarning = now
+            DriveLog.log("OBD: battery getting weaker over the last days")
+            onAlert(CarAlerts.Alert(CarAlerts.Kind.LOW_BATTERY, urgent = false, value = log.takeLast(5).map { it.second }.average()))
         }
     }
 

@@ -249,7 +249,7 @@ class CarAlerts(
      */
     toldRecently: Set<String> = emptySet(),
 ) {
-    enum class Kind { READY_TO_DRIVE, OVERHEAT, CHECK_ENGINE, ICY_ROAD, LOW_BATTERY, WEAK_CHARGING, ENGINE_WARM, LOW_FUEL }
+    enum class Kind { READY_TO_DRIVE, OVERHEAT, CHECK_ENGINE, ICY_ROAD, LOW_BATTERY, WEAK_CHARGING, THERMOSTAT, ENGINE_WARM, LOW_FUEL }
     /** [timely] = only useful right now (say it as soon as possible, or not at all). */
     data class Alert(val kind: Kind, val urgent: Boolean, val value: Double? = null, val codes: List<String> = emptyList(),
                      val timely: Boolean = false)
@@ -265,6 +265,9 @@ class CarAlerts(
     private var lowBatterySince: Long? = null
     private var hotReadings = 0
     private var icyDone = false
+    private var thermostatDone = false
+    private var warmDrivingSeconds = 0.0
+    private var lastAt: Long? = null
     private var firstCoolant: Int? = null
     private var lowChargeSince: Long? = null
     private var lastCheckEngine = false
@@ -310,6 +313,19 @@ class CarAlerts(
                     if (!chargingDone && s.at - since >= 60_000L) { chargingDone = true; out += Alert(Kind.WEAK_CHARGING, false, v) }
                 } else lowChargeSince = null
             }
+        }
+        // Thermostat stuck open: after 15 min of real driving the engine still isn't near normal
+        // temperature (and it isn't freezing outside, which can keep it cool on its own).
+        lastAt?.let { prev ->
+            val dt = (s.at - prev) / 1000.0
+            if (dt in 0.0..15.0 && s.engineRunning && (s.speedKmh ?: 0) > 30) warmDrivingSeconds += dt
+        }
+        lastAt = s.at
+        if (!thermostatDone && warmDrivingSeconds >= 15 * 60) {
+            val c = s.coolantC
+            if (c != null && c < THERMOSTAT_C && (s.ambientC ?: 10) > -10) {
+                thermostatDone = true; out += Alert(Kind.THERMOSTAT, urgent = false, value = c.toDouble())
+            } else if (c != null) thermostatDone = true
         }
         // Icy roads: the car's outside sensor if the engine computer shares it; otherwise the intake air
         // temperature right after a cold start (the engine hasn't heated it yet) is close to outside.
@@ -385,6 +401,31 @@ class CarAlerts(
         const val LOW_FUEL_PCT = 12
         /** Like the car's own snowflake warning. */
         const val ICY_C = 3.0
+        /** A healthy engine is well above this after 15 minutes of driving. */
+        const val THERMOSTAT_C = 70
+
+        /**
+         * Battery getting weaker over the days: the last 5 resting readings average below 12.2 V, or
+         * they're 0.3 V lower than two weeks before. Pure, unit tested.
+         */
+        fun batteryTrendWeak(log: List<Pair<Long, Double>>): Boolean {
+            if (log.size < 5) return false
+            val recent = log.takeLast(5).map { it.second }.average()
+            if (recent < 12.2) return true
+            val older = log.dropLast(5).takeLast(5).map { it.second }
+            return older.size >= 3 && older.average() - recent >= 0.3
+        }
+
+        /** Service due: km driven since the last service or time passed. null = not set / not due. */
+        fun serviceDue(serviceDate: Long, kmSince: Double, intervalKm: Int, months: Int, now: Long): String? {
+            if (serviceDate <= 0) return null
+            val days = (now - serviceDate) / 86_400_000L
+            return when {
+                kmSince >= intervalKm -> "km"
+                days >= months * 30L -> "time"
+                else -> null
+            }
+        }
 
         /** What the voice says for an alert. */
         fun message(a: Alert, dutch: Boolean, butler: Boolean): String {
@@ -436,15 +477,24 @@ class CarAlerts(
                     butler -> "The oil has had its moment, sir. You may proceed. Gently, for the first few minutes."
                     else -> "Oil's had its moment. You're good to go, take it easy for the first few minutes."
                 }
+                Kind.THERMOSTAT -> when {
+                    dutch -> "De motor blijft na een kwartier rijden maar ${n(a.value)} graden. Mogelijk blijft de thermostaat open staan. Laat het binnenkort nakijken."
+                    butler -> "Sir, after a quarter of an hour the engine is only at ${n(a.value)} degrees. The thermostat may be stuck open. Worth having it looked at."
+                    else -> "After 15 minutes the engine's only at ${n(a.value)} degrees. The thermostat may be stuck open - worth getting it checked."
+                }
                 Kind.ENGINE_WARM -> when {
                     dutch -> "De motor is op temperatuur."
                     butler -> "The engine is warm now, sir. Do enjoy yourself."
                     else -> "Engine's warmed up. Go ahead and enjoy it."
                 }
-                Kind.LOW_FUEL -> when {
-                    dutch -> "De tank raakt leeg, nog ongeveer ${n(a.value)} procent."
-                    butler -> "We are running low on fuel, sir. About ${n(a.value)} percent remains."
-                    else -> "Fuel's getting low, about ${n(a.value)} percent left."
+                Kind.LOW_FUEL -> {
+                    val range = a.codes.firstOrNull()?.toIntOrNull()   // range in km, if known
+                    val r = if (range == null) "" else if (dutch) " Daarmee kom je nog zo'n $range kilometer." else if (butler) " Enough for roughly $range kilometres." else " That's about $range kilometres."
+                    when {
+                        dutch -> "De tank raakt leeg, nog ongeveer ${n(a.value)} procent.$r"
+                        butler -> "We are running low on fuel, sir. About ${n(a.value)} percent remains.$r"
+                        else -> "Fuel's getting low, about ${n(a.value)} percent left.$r"
+                    }
                 }
             }
         }
