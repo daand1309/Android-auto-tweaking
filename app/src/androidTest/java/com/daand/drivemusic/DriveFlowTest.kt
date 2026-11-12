@@ -321,6 +321,30 @@ class DriveFlowTest {
     }
 
     @Test
+    fun briefingPopsUpOnTheCarScreenAndIsRemovedWhenDone() {
+        shell("pm grant ${ctx.packageName} android.permission.POST_NOTIFICATIONS")
+        val nm = ctx.getSystemService(android.app.NotificationManager::class.java)
+        fun shown() = nm.activeNotifications.firstOrNull { it.id == 8 }
+
+        // Not in the car (e.g. the test button at home): nothing on a car screen.
+        Briefing.start(ctx, "Welcome.", "Parked test")
+        SystemClock.sleep(500)
+        assertTrue(shown() == null)
+
+        prefs.autoStart = false
+        onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_PROJECTION) }
+        onMain { Briefing.start(ctx, "Good morning Mr. Smith.", "It's 4 degrees.") }
+        waitFor("the briefing pop-up", 5_000) { shown() != null }
+        val car = androidx.car.app.notification.CarAppExtender(shown()!!.notification)
+        assertEquals("Good morning Mr. Smith.", car.contentTitle.toString())
+        assertEquals(androidx.core.app.NotificationManagerCompat.IMPORTANCE_HIGH, car.importance)
+
+        onMain { Briefing.end(ctx) }
+        waitFor("the briefing pop-up to be removed", 5_000) { shown() == null }
+        assertTrue(Briefing.text == null)
+    }
+
+    @Test
     fun parkedSpotIsDeletedWhenTheCarDrivesAgain() {
         prefs.parkedSpot = Parking.Spot(52.09, 5.12, 8f, System.currentTimeMillis()).encode()
         assertTrue(Parking.spot(ctx) != null)

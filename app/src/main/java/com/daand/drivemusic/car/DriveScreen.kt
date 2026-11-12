@@ -7,6 +7,7 @@ import androidx.car.app.Screen
 import androidx.car.app.model.Template
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
+import com.daand.drivemusic.Briefing
 import com.daand.drivemusic.DriveMonitorService
 import com.daand.drivemusic.Prefs
 import com.daand.drivemusic.WelcomeAnnouncer
@@ -29,8 +30,25 @@ class DriveScreen(carContext: CarContext) : Screen(carContext), DefaultLifecycle
         }
     }
 
+    /** True while this screen is showing the briefing - then it closes itself when the greeting ends. */
+    private var showingBriefing = false
+
+    private val briefingChanged: () -> Unit = {
+        if (Briefing.text != null) invalidate()
+        else if (showingBriefing) {
+            showingBriefing = false
+            // Done: get out of the way so the car screen goes back to YouTube Music.
+            runCatching { carContext.finishCarApp() }.onFailure { invalidate() }
+        }
+    }
+
     init {
         lifecycle.addObserver(this)
+        Briefing.addListener(briefingChanged)
+    }
+
+    override fun onDestroy(owner: LifecycleOwner) {
+        Briefing.removeListener(briefingChanged)
     }
 
     override fun onResume(owner: LifecycleOwner) {
@@ -63,6 +81,13 @@ class DriveScreen(carContext: CarContext) : Screen(carContext), DefaultLifecycle
     private fun signature() = state().toString()
 
     override fun onGetTemplate(): Template {
+        Briefing.text?.let { text ->
+            showingBriefing = true
+            return CarTemplate.briefing(Briefing.title, text) {
+                showingBriefing = false
+                runCatching { carContext.finishCarApp() }
+            }
+        }
         val s = state()
         lastSignature = s.toString()
         return CarTemplate.build(

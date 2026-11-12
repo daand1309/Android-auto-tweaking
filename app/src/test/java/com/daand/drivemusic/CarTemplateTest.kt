@@ -46,4 +46,18 @@ class CarTemplateTest {
             .addItem(androidx.car.app.model.Row.Builder().setTitle("x").build()).build()
         ListTemplate.Builder().setTitle("t").setSingleList(list).setActionStrip(strip).build()
     }
+
+    @Test fun briefingScreenBuildsEvenWithAVeryLongBriefing() {
+        val long = "Good morning Mr. Smith. " + "It's 4 degrees and cloudy with a chance of rain. ".repeat(60)
+        val t = CarTemplate.briefing("Good morning Mr. Smith.", long) {}
+        assertTrue(t is androidx.car.app.model.MessageTemplate)
+        CarTemplate.briefing("", "") {}  // empty text must not crash either
+    }
+
+    @Test fun briefingSplitsIntoTitleAndBody() {
+        assertEquals("Welcome back, Mr. Smith." to "It's 4 degrees. Drive safe!",
+            Briefing.split("Welcome back, Mr. Smith. It's 4 degrees. Drive safe!"))
+        assertEquals("Just one line" to "", Briefing.split("Just one line"))
+        assertEquals("One sentence." to "", Briefing.split("One sentence."))
+    }
 }

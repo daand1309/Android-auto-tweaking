@@ -4,6 +4,7 @@ import androidx.car.app.model.Action
 import androidx.car.app.model.ActionStrip
 import androidx.car.app.model.ItemList
 import androidx.car.app.model.ListTemplate
+import androidx.car.app.model.MessageTemplate
 import androidx.car.app.model.Row
 import androidx.car.app.model.Template
 
@@ -61,4 +62,12 @@ object CarTemplate {
             .setActionStrip(strip)
             .build()
     }
+
+    /** The welcome briefing while it's being spoken (closes by itself when the greeting ends). */
+    fun briefing(title: String, text: String, onClose: () -> Unit): Template =
+        MessageTemplate.Builder(text.ifBlank { title }.ifBlank { "Welcome" }.take(1000))
+            .setTitle(title.ifBlank { "Welcome" }.take(100))
+            .setHeaderAction(Action.APP_ICON)
+            .addAction(Action.Builder().setTitle("Close").setOnClickListener { onClose() }.build())
+            .build()
 }
