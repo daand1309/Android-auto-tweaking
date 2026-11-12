@@ -21,7 +21,7 @@ object News {
 
     /** Domestic-only feeds (no foreign news), matched to the greeting language. */
     fun feedsFor(dutch: Boolean): List<String> =
-        if (dutch) listOf("https://feeds.nos.nl/nosnieuwsbinnenland")
+        if (dutch) listOf("https://www.nu.nl/rss/Binnenland")  // domestic, ~7 KB compressed (NOS: ~68 KB, uncompressed)
         else listOf("https://nltimes.nl/rssfeed2")
 
     // ------------------------------------------------------------------ "follow a story" (unit tested)
@@ -30,7 +30,7 @@ object News {
     fun followFeeds(dutch: Boolean): List<Pair<String, String>> =
         if (dutch) listOf(
             "https://www.nu.nl/rss/Politiek" to "NU.nl", "https://www.nu.nl/rss/Algemeen" to "NU.nl",
-            "https://feeds.nos.nl/nosnieuwspolitiek" to "NOS", "https://feeds.nos.nl/nosnieuwsbinnenland" to "NOS",
+            "https://feeds.nos.nl/nosnieuwspolitiek" to "NOS",  // heavy: refreshed at most every 30 min
         ) else listOf("https://nltimes.nl/rssfeed2" to "NL Times")
 
     /** Words that would match nearly every headline. */
@@ -295,11 +295,20 @@ object News {
     fun fetch(url: String): List<Item> = parse(fetchXml(url))
 
     /** Last copy of each feed + its validators, so unchanged feeds cost a few bytes ("304 Not Modified"). */
-    private data class Cached(val etag: String?, val lastModified: String?, val xml: String)
+    private data class Cached(val etag: String?, val lastModified: String?, val xml: String, val at: Long)
     private val cache = java.util.concurrent.ConcurrentHashMap<String, Cached>()
+
+    /**
+     * How long a downloaded feed is reused before asking again. Light feeds (compressed, support
+     * "not modified"): 2 min, just so one check never downloads the same feed twice. Heavy ones (NOS:
+     * ~70 KB uncompressed every time) and the Google search (no "not modified"): 30 min.
+     */
+    fun reuseFor(url: String): Long =
+        if (url.contains("feeds.nos.nl") || url.contains("news.google.com")) 30 * 60 * 1000L else 2 * 60 * 1000L
 
     private fun fetchXml(url: String): String {
         require(url.startsWith("https://")) { "news must use https" }
+        cache[url]?.let { if (System.currentTimeMillis() - it.at < reuseFor(url)) return it.xml }
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 5000
         conn.readTimeout = 5000
@@ -309,7 +318,7 @@ object News {
         old?.etag?.let { conn.setRequestProperty("If-None-Match", it) }
         old?.lastModified?.let { conn.setRequestProperty("If-Modified-Since", it) }
         try {
-            if (conn.responseCode == 304 && old != null) return old.xml
+            if (conn.responseCode == 304 && old != null) { cache[url] = old.copy(at = System.currentTimeMillis()); return old.xml }
             if (conn.responseCode != 200) throw IllegalStateException("news feed returned HTTP ${conn.responseCode}")
             val xml = conn.inputStream.bufferedReader().use { r ->
                 val buf = CharArray(8192); val sb = StringBuilder()
@@ -317,7 +326,7 @@ object News {
                 sb.toString()
             }
             if (cache.size > 12) cache.clear()
-            cache[url] = Cached(conn.getHeaderField("ETag"), conn.getHeaderField("Last-Modified"), xml)
+            cache[url] = Cached(conn.getHeaderField("ETag"), conn.getHeaderField("Last-Modified"), xml, System.currentTimeMillis())
             return xml
         } finally {
             conn.disconnect()

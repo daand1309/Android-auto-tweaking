@@ -195,4 +195,14 @@ class NewsTest {
         assertEquals("VVD-fractie bijeen over coalitie", pick.title)
         assertEquals("NOS", pick.source)
     }
+
+    // ------------------------------------------------------------------ data use
+
+    @Test fun lightFeedsForBreakingNewsAndHeavyOnesRefreshedRarely() {
+        assertEquals(listOf("https://www.nu.nl/rss/Binnenland"), News.feedsFor(dutch = true))  // ~7 KB, not NOS's ~68 KB
+        assertTrue(News.followFeeds(true).none { it.first.contains("nosnieuwsbinnenland") })     // no duplicate download
+        assertEquals(30 * 60 * 1000L, News.reuseFor("https://feeds.nos.nl/nosnieuwspolitiek"))
+        assertEquals(30 * 60 * 1000L, News.reuseFor(News.regionalFeed("Noordwijk")!!))
+        assertEquals(2 * 60 * 1000L, News.reuseFor("https://www.nu.nl/rss/Politiek"))
+    }
 }

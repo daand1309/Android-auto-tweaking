@@ -133,15 +133,18 @@ object DriveUpdates {
                 }
             }
         }
+        // Android's Data Saver is on: skip the news (the ~1 KB weather check still runs).
+        val saveData = dataSaverOn(ctx)
+        if (saveData && (p.updatesNews || p.followActive)) DriveLog.log("UPDATE CHECK: Data Saver is on - skipping news")
         var story: News.Item? = null
-        if (p.updatesNews && newsThisDrive < MAX_NEWS_PER_DRIVE) {
+        if (p.updatesNews && !saveData && newsThisDrive < MAX_NEWS_PER_DRIVE) {
             val items = mutableListOf<News.Item>()
             items += News.fetchAll(dutch, p.weatherPlace) { DriveLog.log("UPDATE CHECK: news feed unavailable ($it)") }
             story = News.pick(items, System.currentTimeMillis(), p.toldNews)
             DriveLog.log("UPDATE CHECK: ${items.size} headlines, ${if (story == null) "none urgent enough" else "1 worth telling"}")
         }
         var followed: News.Item? = null
-        if (p.followActive && followedThisDrive < MAX_FOLLOW_PER_DRIVE) {
+        if (p.followActive && !saveData && followedThisDrive < MAX_FOLLOW_PER_DRIVE) {
             val items = News.fetchFollow(dutch) { DriveLog.log("UPDATE CHECK: feed unavailable ($it)") }
             val told = p.toldNews + listOfNotNull(story?.title)
             followed = News.pickFollowed(items, News.keywords(p.followTopic), System.currentTimeMillis(), told)
@@ -171,6 +174,12 @@ object DriveUpdates {
             else -> if (dutch) "Weer en wegen" else "Weather & roads"
         }
     }
+
+    /** Data Saver on and we're on a metered (mobile) network. */
+    fun dataSaverOn(ctx: Context): Boolean = try {
+        val cm = ctx.getSystemService(android.net.ConnectivityManager::class.java)
+        cm.isActiveNetworkMetered && cm.restrictBackgroundStatus == android.net.ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
+    } catch (e: Exception) { false }
 
     /** Where the car is now (rounded later), if location may be read in the background. */
     private fun whereAreWe(ctx: Context): Pair<Double, Double>? {

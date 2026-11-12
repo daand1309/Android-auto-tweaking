@@ -253,6 +253,7 @@ class DriveMonitorService : NotificationListenerService() {
             logEnvironment()
             Parking.clear(this)  // you're driving: the old parked spot is no longer where the car is
             DriveUpdates.newDrive()
+            driveDataStart = appBytes()
             handler.removeCallbacks(driveUpdate)
             handler.postDelayed(driveUpdate, DriveUpdates.FIRST_CHECK_MS)
             if (prefs.autoOpenDriveMode) openDriveMode()
@@ -313,6 +314,11 @@ class DriveMonitorService : NotificationListenerService() {
                 " - ${mins} min, $pausesThisDrive pause(s), $resumesThisDrive auto-resume(s)" +
                 if (lastPauseClue.isNotEmpty()) "\nLast pause: $lastPauseClue" else ""
             Parking.capture(this)
+            if (driveDataStart >= 0) {
+                val used = appBytes() - driveDataStart
+                if (used >= 0) DriveLog.log("Data used by Drive Music this drive: ${used / 1024} KB")
+                driveDataStart = -1
+            }
             Briefing.endNow(this)  // don't leave the welcome pop-up behind if you left mid-greeting
             UpdatePrompt.cancel(this)
             handler.removeCallbacks(driveUpdate)
@@ -330,6 +336,15 @@ class DriveMonitorService : NotificationListenerService() {
                 }
             }
         }
+    }
+
+    /** Mobile/Wi-Fi bytes this app sent + received (Android's own count), or -1 if unavailable. */
+    private var driveDataStart = -1L
+    private fun appBytes(): Long {
+        val uid = android.os.Process.myUid()
+        val rx = android.net.TrafficStats.getUidRxBytes(uid)
+        val tx = android.net.TrafficStats.getUidTxBytes(uid)
+        return if (rx < 0 || tx < 0) -1 else rx + tx
     }
 
     // ---------------------------------------------------------------- updates during the drive
