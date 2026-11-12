@@ -135,7 +135,9 @@ class MainActivity : Activity() {
             // The app mostly runs without being opened; Android would otherwise take its permissions
             // away after a few months "unused" (Drive Mode pop-up, parking spot would stop working).
             items += SetupItem("Keep permissions when unused", "Turn off \"Remove permissions if app is unused\" / \"Pause app activity if unused\".",
-                packageManager.isAutoRevokeWhitelisted, "Open") {
+                // Newer Android exempts apps with notification access by itself (the switch is then
+                // greyed out), so that counts as done too.
+                packageManager.isAutoRevokeWhitelisted || (Build.VERSION.SDK_INT >= 33 && hasNotificationAccess()), "Open") {
                 try {
                     startActivity(Intent(Intent.ACTION_AUTO_REVOKE_PERMISSIONS, android.net.Uri.parse("package:$packageName")))
                 } catch (e: Exception) { openAppSettings(packageName) }
