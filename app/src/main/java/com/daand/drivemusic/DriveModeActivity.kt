@@ -179,15 +179,24 @@ class DriveModeActivity : Activity() {
         return root
     }
 
+    private var lastShown = ""
+
+    /** Refreshes song / status / buttons - only touching the views when something changed (saves redraws). */
     private fun updateDynamic() {
         val s = svc()
+        val prefs = Prefs(this)
         val song = s?.currentSong()
-        nowPlaying.text = song?.let { "${it.title}${if (it.artist.isNotBlank()) "\n${it.artist}" else ""}" }
+        val songText = song?.let { "${it.title}${if (it.artist.isNotBlank()) "\n${it.artist}" else ""}" }
             ?: if (s == null) "Monitor not running" else "Nothing playing"
-        status.text = if (s == null) "Open the app and grant Notification access" else Prefs(this).lastCarState
+        val statusText = if (s == null) "Open the app and grant Notification access" else prefs.lastCarState
         val playing = s?.isPlaying() == true
+        val resumeOn = prefs.autoResume
+        val key = "$songText|$statusText|$playing|$resumeOn"
+        if (key == lastShown) return
+        lastShown = key
+        nowPlaying.text = songText
+        status.text = statusText
         playBtn.text = if (playing) "⏸" else "▶"
-        val resumeOn = Prefs(this).autoResume
         resumeBtn.text = if (resumeOn) "↻ Resume: On" else "↻ Resume: Off"
         resumeBtn.background = Style.button(if (resumeOn) Style.GREEN else Style.SURFACE2, dp(16).toFloat())
     }

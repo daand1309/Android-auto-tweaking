@@ -166,6 +166,7 @@ class MainActivity : Activity() {
     }
 
     private fun renderHome() {
+        lastHomeSignature = homeSignature()
         heroCard()
 
         button("🚗  Drive Mode", accent = true) { startActivity(Intent(this, DriveModeActivity::class.java)) }
@@ -438,11 +439,28 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- home hero (car + status)
 
+    /**
+     * Keeps now-playing / driving status fresh - but only redraws when something on the home screen
+     * actually changed. (Rebuilding the whole screen every few seconds while it stays on costs battery.)
+     */
     private val homeTick = object : Runnable {
         override fun run() {
-            if (page == Page.HOME) render()  // keep now-playing / driving status fresh
+            if (page == Page.HOME) {
+                val sig = homeSignature()
+                if (sig != lastHomeSignature) render()
+            }
             handler.postDelayed(this, 5000)
         }
+    }
+
+    private var lastHomeSignature = ""
+
+    /** Everything the home screen shows that can change on its own (the rest changes via taps / resume). */
+    private fun homeSignature(): String {
+        val svc = DriveMonitorService.instance
+        val weatherFresh = System.currentTimeMillis() - prefs.lastWeatherAt < 3 * 60 * 60 * 1000L
+        return listOf(svc != null, prefs.lastCarState, svc?.currentSong(), prefs.lastWeatherSummary, weatherFresh,
+            prefs.lastDrive, prefs.parkedSpot, availableUpdate?.versionName).joinToString("|")
     }
 
     override fun onPause() {
