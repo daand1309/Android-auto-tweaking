@@ -79,6 +79,11 @@ object TroubleCodes {
 class CarAlerts(
     /** How long the engine should idle after a cold start before driving off (your setting). */
     private val readySeconds: Int = 30,
+    /**
+     * Codes (and "MIL" for a light without codes) already told recently - from earlier drives. A
+     * light that's been on for weeks shouldn't be announced like news at every start.
+     */
+    toldRecently: Set<String> = emptySet(),
 ) {
     enum class Kind { READY_TO_DRIVE, OVERHEAT, CHECK_ENGINE, LOW_BATTERY, WEAK_CHARGING, ENGINE_WARM, LOW_FUEL }
     /** [timely] = only useful right now (say it as soon as possible, or not at all). */
@@ -91,8 +96,11 @@ class CarAlerts(
     private var batteryDone = false
     private var chargingDone = false
     private var lastOverheatAt = 0L
-    private val reportedCodes = mutableSetOf<String>()
-    private var lowChargeSince = 0L
+    private val reportedCodes = toldRecently.toMutableSet()
+    private var engineEverRan = false
+    private var lowBatterySince: Long? = null
+    private var hotReadings = 0
+    private var lowChargeSince: Long? = null
     private var lastCheckEngine = false
     private var readyDone = false
     private var engineSeen = false
@@ -101,27 +109,40 @@ class CarAlerts(
     fun check(s: CarSnapshot): List<Alert> {
         val out = mutableListOf<Alert>()
         readyToDrive(s)?.let { out += it }
-        s.coolantC?.let { c ->
+        if (s.engineRunning) engineEverRan = true
+        // A corrupt byte can read as 215 °C: ignore impossible values, and want two hot readings in a row.
+        s.coolantC?.takeIf { it in -40..MAX_PLAUSIBLE_C }?.let { c ->
             if (coldAtStart == null) coldAtStart = c < 50
-            if (c >= OVERHEAT_C && s.at - lastOverheatAt > 5 * 60_000L) {
+            hotReadings = if (c >= OVERHEAT_C) hotReadings + 1 else 0
+            if (hotReadings >= 2 && s.at - lastOverheatAt > 5 * 60_000L) {
                 lastOverheatAt = s.at; out += Alert(Kind.OVERHEAT, urgent = true, value = c.toDouble())
             }
             if (!warmDone && coldAtStart == true && c >= WARM_C) { warmDone = true; out += Alert(Kind.ENGINE_WARM, false, c.toDouble()) }
         }
         val newCodes = s.codes.filter { it !in reportedCodes }
         val lightJustCameOn = s.checkEngine == true && !lastCheckEngine
-        if (newCodes.isNotEmpty() || (lightJustCameOn && s.codes.isEmpty())) {
+        if (newCodes.isNotEmpty()) {
             reportedCodes += newCodes
             out += Alert(Kind.CHECK_ENGINE, urgent = true, codes = newCodes)
+        } else if (lightJustCameOn && s.codes.isEmpty() && MIL !in reportedCodes) {
+            reportedCodes += MIL
+            out += Alert(Kind.CHECK_ENGINE, urgent = true, codes = emptyList())
         }
         if (s.checkEngine != null) lastCheckEngine = s.checkEngine
         s.volts?.let { v ->
-            if (!s.engineRunning && !batteryDone && v < LOW_BATTERY_V) { batteryDone = true; out += Alert(Kind.LOW_BATTERY, false, v) }
+            // Resting voltage only means something before the engine has run: restarting after a stall
+            // dips to ~10 V for a moment. Two low readings 5+ s apart, so one sample mid-crank can't trigger it.
+            if (!s.engineRunning && !engineEverRan && !batteryDone && v < LOW_BATTERY_V) {
+                val since = lowBatterySince
+                if (since == null) lowBatterySince = s.at
+                else if (s.at - since >= 5_000L) { batteryDone = true; out += Alert(Kind.LOW_BATTERY, false, v) }
+            } else if (v >= LOW_BATTERY_V) lowBatterySince = null
+            if (!s.engineRunning) lowChargeSince = null
             if (s.engineRunning) {
                 if (v < WEAK_CHARGE_V) {
-                    if (lowChargeSince == 0L) lowChargeSince = s.at
-                    if (!chargingDone && s.at - lowChargeSince >= 60_000L) { chargingDone = true; out += Alert(Kind.WEAK_CHARGING, false, v) }
-                } else lowChargeSince = 0L
+                    val since = lowChargeSince ?: s.at.also { lowChargeSince = it }
+                    if (!chargingDone && s.at - since >= 60_000L) { chargingDone = true; out += Alert(Kind.WEAK_CHARGING, false, v) }
+                } else lowChargeSince = null
             }
         }
         s.fuelPct?.let { f -> if (!fuelDone && f in 1 until LOW_FUEL_PCT) { fuelDone = true; out += Alert(Kind.LOW_FUEL, false, f.toDouble()) } }
@@ -149,10 +170,20 @@ class CarAlerts(
         return Alert(Kind.READY_TO_DRIVE, urgent = false, value = need.toDouble(), timely = true)
     }
 
+    /** Codes told this drive (to remember across drives). */
+    fun told(): Set<String> = reportedCodes.toSet()
+
     /** True while we're still counting down (the manager polls faster then). */
     fun countingDown() = engineSeen && !readyDone
 
     companion object {
+        /** Key for "light on, but no code read" in the told-codes memory. */
+        const val MIL = "MIL"
+        /** Readings above this are a garbled answer, not a temperature. */
+        const val MAX_PLAUSIBLE_C = 150
+        /** Known codes are mentioned again after this long (until fixed). */
+        const val REMIND_AFTER_MS = 7L * 24 * 60 * 60 * 1000
+
         /** Coolant at or above this when the engine starts = it was only a short stop. */
         const val WARM_RESTART_C = 60
 

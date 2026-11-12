@@ -256,6 +256,7 @@ class DriveMonitorService : NotificationListenerService() {
             lastPauseClue = ""
             userPausedViaUi = false
             announceSongAfterStart = false
+            musicStartedThisDrive = false
             DriveLog.log("=== CAR: $name ===")
             logEnvironment()
             Parking.clear(this)  // you're driving: the old parked spot is no longer where the car is
@@ -336,6 +337,7 @@ class DriveMonitorService : NotificationListenerService() {
                 }
             }
             holdingSince = SystemClock.elapsedRealtime()
+            Parking.rememberDropSpot(this)  // where the car is NOW (by the time the hold ends you may have walked off)
             prefs.lastCarState = DriveHold.STATE
             DriveLog.log("CAR: Android Auto dropped - holding the drive in case it's a stall/restart " +
                 if (com.daand.drivemusic.obd.ObdManager.isConnected()) "(OBD will tell if the ignition is off)" else "(no OBD: waiting ${DriveHold.holdWithoutObdMs / 1000}s)")
@@ -350,13 +352,15 @@ class DriveMonitorService : NotificationListenerService() {
     private var holdingSince = 0L
     /** We paused the music when Android Auto dropped - play it again if the drive continues. */
     private var pausedAtDrop = false
+    /** The music has played at some point this drive. */
+    private var musicStartedThisDrive = false
 
     private val holdCheck = object : Runnable {
         override fun run() {
             if (holdingSince == 0L) return
             val since = SystemClock.elapsedRealtime() - holdingSince
             val obd = com.daand.drivemusic.obd.ObdManager
-            when (val d = DriveHold.decide(since, obd.isConnected(), obd.ecuSilentMs())) {
+            when (val d = DriveHold.decide(since, obd.isConnected(), obd.ecuSilentMs(), obd.connectedThisDrive)) {
                 is DriveHold.Decision.End -> endDrive(d.reason)
                 DriveHold.Decision.Hold -> handler.postDelayed(this, 3_000)
             }
@@ -371,12 +375,17 @@ class DriveMonitorService : NotificationListenerService() {
         prefs.lastCarState = name
         DriveLog.log("=== CAR: Android Auto is back after ${secs}s - same drive continues (no new greeting) ===")
         handler.postDelayed(driveUpdate, DriveUpdates.INTERVAL_MS)
-        if (pausedAtDrop) {
-            pausedAtDrop = false
-            // Give Android Auto a moment to settle, then put the music back.
-            handler.postDelayed({
-                if (carConnected) { musicController()?.transportControls?.play(); DriveLog.log("Music resumed after Android Auto came back") }
-            }, 3_000)
+        when {
+            pausedAtDrop -> {
+                pausedAtDrop = false
+                // Give Android Auto a moment to settle, then put the music back.
+                handler.postDelayed({
+                    if (carConnected) { musicController()?.transportControls?.play(); DriveLog.log("Music resumed after Android Auto came back") }
+                }, 3_000)
+            }
+            // Stalled before the music had even started (e.g. during the greeting): start it now.
+            !musicStartedThisDrive && prefs.autoStart && !userPausedViaUi && otherAppPlaying() == null ->
+                handler.postDelayed({ if (carConnected) startMusic("Android Auto came back") }, 3_000)
         }
     }
 
@@ -392,7 +401,7 @@ class DriveMonitorService : NotificationListenerService() {
         prefs.lastDrive = java.text.SimpleDateFormat("EEE d MMM HH:mm", java.util.Locale.getDefault()).format(java.util.Date()) +
             " - ${mins} min, $pausesThisDrive pause(s), $resumesThisDrive auto-resume(s)" +
             if (lastPauseClue.isNotEmpty()) "\nLast pause: $lastPauseClue" else ""
-        Parking.capture(this)
+        Parking.captureAtDrop(this)
         if (driveDataStart >= 0) {
             val used = appBytes() - driveDataStart
             if (used >= 0) DriveLog.log("Data used by Drive Music this drive: ${used / 1024} KB")
@@ -784,6 +793,7 @@ class DriveMonitorService : NotificationListenerService() {
                 onMusicStarted()
             }
             if (!carConnected) return
+            if (s == PlaybackState.STATE_PLAYING) musicStartedThisDrive = true
 
             val extra = if (s == PlaybackState.STATE_ERROR) " error='${state.errorMessage}'" else ""
             DriveLog.log("YouTube Music: ${stateName(prev)} -> ${stateName(s)}$extra")

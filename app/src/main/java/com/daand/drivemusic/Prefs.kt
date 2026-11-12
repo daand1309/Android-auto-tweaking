@@ -133,6 +133,14 @@ class Prefs(context: Context) {
         get() = sp.getInt("obd_ready_s", 30).let { if (it == 0) 0 else it.coerceIn(10, 120) }
         set(v) = sp.edit().putInt("obd_ready_s", v).apply()
 
+    /** Fault codes already told, with when ("P0420=1731000000000"), so known ones aren't news at every start. */
+    var obdToldCodes: Map<String, Long>
+        get() = (sp.getString("obd_told", "") ?: "").split(',').mapNotNull {
+            val (k, v) = it.split('=').takeIf { p -> p.size == 2 } ?: return@mapNotNull null
+            v.toLongOrNull()?.let { t -> k to t }
+        }.toMap()
+        set(v) = sp.edit().putString("obd_told", v.entries.take(50).joinToString(",") { "${it.key}=${it.value}" }).apply()
+
     /** Say when fuel gets low. */
     var obdFuel: Boolean
         get() = sp.getBoolean("obd_fuel", true)
@@ -265,7 +273,7 @@ class Prefs(context: Context) {
     private val notBackedUp = setOf(
         "last_car_state", "last_drive", "last_greeting", "last_weather", "last_weather_at",
         "last_update_check", "notified_update", "update_status", "last_seen_music_app", "last_music_change_at",
-        "parked_spot", "told_news", "follow_topic", "follow_until",
+        "parked_spot", "told_news", "follow_topic", "follow_until", "obd_told",
     )
 
     /**

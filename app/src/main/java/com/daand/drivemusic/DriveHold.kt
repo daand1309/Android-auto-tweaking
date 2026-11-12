@@ -13,6 +13,8 @@ object DriveHold {
     const val IGNITION_OFF_AFTER_MS = 15_000L
     /** With an OBD adapter and the ignition still on: wait this long for the head unit to come back. */
     const val MAX_HOLD_WITH_OBD_MS = 5 * 60_000L
+    /** The adapter worked this drive but is reconnecting (the restart dip can reset it too): wait this long. */
+    const val MAX_HOLD_ADAPTER_RECONNECTING_MS = 3 * 60_000L
     /** No OBD adapter: no way to know, so wait this long. Tests set it lower. */
     @Volatile var holdWithoutObdMs = 90_000L
 
@@ -26,10 +28,13 @@ object DriveHold {
      * keeps working while the radio reboots). [ecuSilentMs]: how long the car's computer hasn't
      * answered - it only answers with the ignition on.
      */
-    fun decide(sinceDropMs: Long, obdConnected: Boolean, ecuSilentMs: Long): Decision = when {
+    fun decide(sinceDropMs: Long, obdConnected: Boolean, ecuSilentMs: Long, adapterSeenThisDrive: Boolean = false): Decision = when {
         obdConnected && ecuSilentMs >= IGNITION_OFF_AFTER_MS -> Decision.End("ignition is off")
         obdConnected && sinceDropMs >= MAX_HOLD_WITH_OBD_MS -> Decision.End("Android Auto didn't come back")
         obdConnected -> Decision.Hold
+        // The adapter worked earlier this drive but is gone now - likely reset by the same voltage dip.
+        adapterSeenThisDrive && sinceDropMs < maxOf(MAX_HOLD_ADAPTER_RECONNECTING_MS, holdWithoutObdMs) -> Decision.Hold
+        adapterSeenThisDrive -> Decision.End("Android Auto didn't come back")
         sinceDropMs >= holdWithoutObdMs -> Decision.End("Android Auto didn't come back")
         else -> Decision.Hold
     }

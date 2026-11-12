@@ -23,4 +23,12 @@ class DriveHoldTest {
         assertEquals(hold, DriveHold.decide(60_000, obdConnected = false, ecuSilentMs = Long.MAX_VALUE))
         assertTrue(DriveHold.decide(90_000, obdConnected = false, ecuSilentMs = Long.MAX_VALUE) is DriveHold.Decision.End)
     }
+
+    @Test fun anAdapterResetByTheSameDipGetsTimeToComeBack() {
+        DriveHold.holdWithoutObdMs = 90_000
+        // Adapter worked this drive but is reconnecting: hold beyond the plain 90 s...
+        assertEquals(hold, DriveHold.decide(120_000, obdConnected = false, ecuSilentMs = Long.MAX_VALUE, adapterSeenThisDrive = true))
+        // ...but not forever.
+        assertTrue(DriveHold.decide(3 * 60_000, false, Long.MAX_VALUE, adapterSeenThisDrive = true) is DriveHold.Decision.End)
+    }
 }

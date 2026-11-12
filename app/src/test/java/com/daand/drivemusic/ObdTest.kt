@@ -171,6 +171,7 @@ class ObdTest {
         val warm = a.checkOthers(CarSnapshot(t0 + 60_000, coolantC = 80, rpm = 2000, volts = 14.2))
         assertEquals(listOf(CarAlerts.Kind.ENGINE_WARM), warm.map { it.kind })
         assertTrue(a.checkOthers(CarSnapshot(t0 + 70_000, coolantC = 85, rpm = 2000, volts = 14.2)).isEmpty())  // said once
+        assertTrue(a.checkOthers(CarSnapshot(t0 + 75_000, coolantC = 112, rpm = 2000)).isEmpty())       // one reading: wait
         val hot = a.checkOthers(CarSnapshot(t0 + 80_000, coolantC = 112, rpm = 2000))
         assertEquals(CarAlerts.Kind.OVERHEAT, hot.single().kind); assertTrue(hot.single().urgent)
         assertTrue(a.checkOthers(CarSnapshot(t0 + 90_000, coolantC = 113, rpm = 2000)).isEmpty())         // not every 5 s
@@ -193,7 +194,8 @@ class ObdTest {
 
     @Test fun batteryAndChargingAndFuel() {
         val a = CarAlerts()
-        assertEquals(CarAlerts.Kind.LOW_BATTERY, a.checkOthers(CarSnapshot(0, rpm = 0, volts = 11.7)).single().kind)
+        assertTrue(a.checkOthers(CarSnapshot(0, rpm = 0, volts = 11.7)).isEmpty())                        // one reading: wait
+        assertEquals(CarAlerts.Kind.LOW_BATTERY, a.checkOthers(CarSnapshot(6_000, rpm = 0, volts = 11.6)).single().kind)
         assertTrue(a.checkOthers(CarSnapshot(5_000, rpm = 900, volts = 12.5)).isEmpty())          // low charge: wait a minute
         assertEquals(CarAlerts.Kind.WEAK_CHARGING, a.checkOthers(CarSnapshot(70_000, rpm = 900, volts = 12.5)).single().kind)
         assertEquals(CarAlerts.Kind.LOW_FUEL, a.checkOthers(CarSnapshot(80_000, rpm = 900, volts = 14.0, fuelPct = 9)).single().kind)
@@ -263,5 +265,31 @@ class ObdTest {
         val session = ObdSession(fake)
         assertNull(session.start())
         assertEquals(18, session.read(null, full = false, readCodes = false).runtimeS)
+    }
+
+    // ------------------------------------------------------------------ audit fixes
+
+    @Test fun aGarbledReadingIsNotAnOverheat() {
+        val a = CarAlerts()
+        assertTrue(a.check(CarSnapshot(0, coolantC = 215, rpm = 2000)).none { it.kind == CarAlerts.Kind.OVERHEAT })   // 0xFF - 40
+        assertTrue(a.check(CarSnapshot(5_000, coolantC = 215, rpm = 2000)).none { it.kind == CarAlerts.Kind.OVERHEAT })
+    }
+
+    @Test fun restartingAfterAStallIsNotAWeakBattery() {
+        val a = CarAlerts()
+        a.check(CarSnapshot(0, coolantC = 70, rpm = 800, volts = 14.1))           // driving
+        a.check(CarSnapshot(5_000, coolantC = 70, rpm = 0, volts = 12.3))         // stalled
+        a.check(CarSnapshot(7_000, coolantC = 70, rpm = 0, volts = 9.8))          // cranking dip
+        assertTrue(a.check(CarSnapshot(13_000, coolantC = 70, rpm = 0, volts = 9.9)).none { it.kind == CarAlerts.Kind.LOW_BATTERY })
+    }
+
+    @Test fun aLightThatsBeenOnForWeeksIsNotNewsAtEveryStart() {
+        val known = CarAlerts(toldRecently = setOf("P0420"))
+        assertTrue(known.check(CarSnapshot(0, checkEngine = true, codes = listOf("P0420"))).none { it.kind == CarAlerts.Kind.CHECK_ENGINE })
+        assertEquals(listOf("P0171"), known.check(CarSnapshot(5_000, checkEngine = true, codes = listOf("P0420", "P0171")))
+            .single { it.kind == CarAlerts.Kind.CHECK_ENGINE }.codes)                // a NEW code is still told right away
+        val lightOnly = CarAlerts(toldRecently = setOf(CarAlerts.MIL))
+        assertTrue(lightOnly.check(CarSnapshot(0, checkEngine = true)).none { it.kind == CarAlerts.Kind.CHECK_ENGINE })
+        assertTrue(CarAlerts().told().isEmpty())
     }
 }

@@ -50,6 +50,32 @@ object Parking {
 
     fun spot(ctx: Context): Spot? = Spot.decode(Prefs(ctx).parkedSpot)
 
+    /**
+     * The car's position at the moment Android Auto dropped. The drive may only end a while later
+     * (stall safeguard), by which time you may have walked away - so the spot is taken now, saved later.
+     */
+    @Volatile private var dropSpot: Location? = null
+
+    @android.annotation.SuppressLint("MissingPermission")  // checked first
+    fun rememberDropSpot(ctx: Context) {
+        dropSpot = null
+        if (!Prefs(ctx).rememberParking || !hasPermission(ctx) || !hasBackgroundPermission(ctx)) return
+        try {
+            val lm = ctx.getSystemService(LocationManager::class.java)
+            val now = System.currentTimeMillis()
+            dropSpot = lm.allProviders.mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }
+                .filter { now - it.time < FRESH_MS && (!it.hasAccuracy() || it.accuracy <= 50f) }
+                .minByOrNull { if (it.hasAccuracy()) it.accuracy else 9999f }
+        } catch (e: Exception) { dropSpot = null }
+    }
+
+    /** End of the drive: the spot from the moment Android Auto dropped, or a fresh look if there was none. */
+    fun captureAtDrop(ctx: Context) {
+        val spot = dropSpot
+        dropSpot = null
+        if (spot != null && Prefs(ctx).rememberParking) save(ctx, spot, "fix from when the car stopped") else capture(ctx)
+    }
+
     /** Called when Android Auto disconnects. (Permissions are checked first - lint can't see through the helpers.) */
     @android.annotation.SuppressLint("MissingPermission")
     fun capture(ctx: Context) {

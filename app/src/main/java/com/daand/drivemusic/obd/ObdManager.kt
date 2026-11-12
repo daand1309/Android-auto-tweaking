@@ -25,6 +25,12 @@ object ObdManager {
     /** Short status for the settings page / log. */
     @Volatile var status: String = "Off"; private set
     @Volatile private var running = false
+    /** Bumped on every start(): an old connection thread still unwinding can't keep going. */
+    @Volatile private var gen = 0
+    /** Alert memory for the whole drive (survives the adapter reconnecting, e.g. after a stall). */
+    @Volatile private var alerts: CarAlerts? = null
+    /** The adapter worked at some point this drive (so a missing adapter during a stall is temporary). */
+    @Volatile var connectedThisDrive = false; private set
     @Volatile private var socket: BluetoothSocket? = null
     @Volatile private var link: ObdLink? = null
     private var thread: Thread? = null
@@ -54,11 +60,23 @@ object ObdManager {
         if (running || !p.obdEnabled || p.obdDevice.isBlank()) return
         if (!hasPermission(ctx)) { status = "Needs the 'Nearby devices' permission"; DriveLog.log("OBD: no Bluetooth permission"); return }
         running = true
-        latest = null; maxCoolant = null; maxSpeed = null; lastEcuAnswerAt = 0L
+        val myGen = ++gen
+        latest = null; maxCoolant = null; maxSpeed = null; lastEcuAnswerAt = 0L; connectedThisDrive = false
         val app = ctx.applicationContext
         val address = p.obdDevice
         readySeconds = p.obdReadySeconds
-        thread = Thread({ loop(app, address, onAlert) }, "obd").apply { isDaemon = true; start() }
+        val now = System.currentTimeMillis()
+        val recent = p.obdToldCodes.filter { now - it.value < CarAlerts.REMIND_AFTER_MS }.keys
+        alerts = CarAlerts(readySeconds, recent)
+        val remember: (CarAlerts.Alert) -> Unit = { a ->
+            if (a.kind == CarAlerts.Kind.CHECK_ENGINE) {
+                val told = Prefs(app).obdToldCodes.toMutableMap()
+                (a.codes.ifEmpty { listOf(CarAlerts.MIL) }).forEach { told[it] = System.currentTimeMillis() }
+                Prefs(app).obdToldCodes = told
+            }
+            onAlert(a)
+        }
+        thread = Thread({ loop(app, address, myGen, remember) }, "obd").apply { isDaemon = true; start() }
     }
 
     @Synchronized
@@ -76,9 +94,11 @@ object ObdManager {
         if (parts.isNotEmpty()) DriveLog.log("OBD: trip - ${parts.joinToString(", ")}")
     }
 
-    private fun loop(ctx: Context, address: String, onAlert: (CarAlerts.Alert) -> Unit) {
+    private fun alive(myGen: Int) = running && gen == myGen
+
+    private fun loop(ctx: Context, address: String, myGen: Int, onAlert: (CarAlerts.Alert) -> Unit) {
         var tries = 0
-        while (running && tries < CONNECT_TRIES) {
+        while (alive(myGen) && tries < CONNECT_TRIES) {
             tries++
             status = "Connecting (try $tries)..."
             try {
@@ -94,18 +114,20 @@ object ObdManager {
                 }
                 tries = 0  // connected: a later drop gets a fresh set of retries
                 status = "Connected"
-                poll(session, onAlert)
+                connectedThisDrive = true
+                lastEcuAnswerAt = System.currentTimeMillis()  // it just answered "0100"
+                poll(session, myGen, onAlert)
                 session.close()
             } catch (e: InterruptedException) {
                 break
             } catch (e: Exception) {
-                if (!running) break
+                if (!alive(myGen)) break
                 status = "Can't reach the adapter (${e.message})"
                 DriveLog.log("OBD: connection failed (${e.javaClass.simpleName}: ${e.message})")
                 sleep(RETRY_MS)
             }
         }
-        if (running && tries >= CONNECT_TRIES) { status = "Gave up for this drive - adapter not reachable"; DriveLog.log("OBD: gave up for this drive") }
+        if (alive(myGen) && tries >= CONNECT_TRIES) { status = "Gave up for this drive - adapter not reachable"; DriveLog.log("OBD: gave up for this drive") }
     }
 
     /** Poll faster while counting down to "ready to drive", so it's said on time. */
@@ -113,11 +135,11 @@ object ObdManager {
 
     @Volatile var readySeconds = 30
 
-    private fun poll(session: ObdSession, onAlert: (CarAlerts.Alert) -> Unit) {
-        val alerts = CarAlerts(readySeconds)
+    private fun poll(session: ObdSession, myGen: Int, onAlert: (CarAlerts.Alert) -> Unit) {
+        val alerts = this.alerts ?: CarAlerts(readySeconds).also { this.alerts = it }
         var n = 0
         var lastCodes = 0L
-        while (running) {
+        while (alive(myGen)) {
             val full = n % FULL_EVERY == 0
             val codesDue = full && System.currentTimeMillis() - lastCodes > CODES_EVERY_MS
             val snap = session.read(latest, full, readCodes = codesDue)
@@ -126,6 +148,7 @@ object ObdManager {
             if (snap.coolantC != null || snap.rpm != null || snap.speedKmh != null) lastEcuAnswerAt = snap.at
             snap.coolantC?.let { c -> maxCoolant = maxOf(maxCoolant ?: c, c) }
             snap.speedKmh?.let { v -> maxSpeed = maxOf(maxSpeed ?: v, v) }
+            if (!alive(myGen)) break
             alerts.check(snap).forEach { a ->
                 DriveLog.log("OBD: alert ${a.kind}" + (a.value?.let { " ($it)" } ?: "") + (if (a.codes.isNotEmpty()) " ${a.codes}" else ""))
                 onAlert(a)
