@@ -119,7 +119,8 @@ class MainActivity : Activity() {
         val items = mutableListOf(
             SetupItem("Notification access", "Required - lets the app control your music.",
                 hasNotificationAccess(), "Open") { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
-            SetupItem("Drive Music: battery Unrestricted", "Battery → Unrestricted.",
+            SetupItem("Drive Music: battery Unrestricted",
+                "Battery → Unrestricted. Samsung: also check Settings → Battery → Background usage limits - Drive Music must not be under Sleeping apps.",
                 pm.isIgnoringBatteryOptimizations(packageName), "Open") { openAppSettings(packageName) },
             SetupItem("${MusicApps.label(this, music)}: battery Unrestricted", "Battery → Unrestricted.",
                 pm.isIgnoringBatteryOptimizations(music), "Open") { openAppSettings(music) },
@@ -129,6 +130,16 @@ class MainActivity : Activity() {
         MusicApps.findMicroG(this)?.let { mg ->
             items += SetupItem("MicroG: battery Unrestricted", "Keeps patched YouTube Music signed in.",
                 pm.isIgnoringBatteryOptimizations(mg), "Open") { openAppSettings(mg) }
+        }
+        if (Build.VERSION.SDK_INT >= 30) {
+            // The app mostly runs without being opened; Android would otherwise take its permissions
+            // away after a few months "unused" (Drive Mode pop-up, parking spot would stop working).
+            items += SetupItem("Keep permissions when unused", "Turn off \"Remove permissions if app is unused\" / \"Pause app activity if unused\".",
+                packageManager.isAutoRevokeWhitelisted, "Open") {
+                try {
+                    startActivity(Intent(Intent.ACTION_AUTO_REVOKE_PERMISSIONS, android.net.Uri.parse("package:$packageName")))
+                } catch (e: Exception) { openAppSettings(packageName) }
+            }
         }
         if (Build.VERSION.SDK_INT >= 33) {
             items += SetupItem("Notifications", "For Drive Mode pop-up and update alerts.",
