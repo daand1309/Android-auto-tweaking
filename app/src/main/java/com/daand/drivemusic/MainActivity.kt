@@ -42,8 +42,11 @@ class MainActivity : Activity() {
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (intent?.action == android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) {
             // "Play <song> on Drive Music": pass the words to YouTube Music, then get out of the way.
+            // Any app can send this, with any data attached: read defensively, pass on only clean text.
+            val query = try { intent.getStringExtra(android.app.SearchManager.QUERY) } catch (e: Exception) { null }
+            val extras = try { intent.extras } catch (e: Exception) { null }
             com.daand.drivemusic.car.MediaMenu.playFromSearch(DriveMonitorService.instance?.musicController(),
-                DriveMonitorService.instance, intent.getStringExtra(android.app.SearchManager.QUERY), intent.extras)
+                DriveMonitorService.instance, query, extras)
             finish()
             return
         }

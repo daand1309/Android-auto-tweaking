@@ -33,7 +33,30 @@ class MediaMenuTest {
     }
 
     @Test fun butlerWordingInTheMenu() {
-        assertEquals("The weather, sir: 4° · overcast.", MediaMenu.weatherLine("4° · overcast", false, true))
+        assertEquals("The weather, sir: 4 degrees, overcast, 20% rain.", MediaMenu.weatherLine("4° · overcast · 20% rain", false, true))
+        assertEquals("Het weer: -2 graden, sneeuw.", MediaMenu.weatherLine("-2° · sneeuw", true, false))
         assertTrue(MediaMenu.noNewsLine(false, true).contains("sir"))
+    }
+
+    // ------------------------------------------------------------------ red team
+
+    @Test fun voiceSearchPassesOnlyCleanTextHints() {
+        val evil = android.os.Bundle().apply {
+            putString(android.provider.MediaStore.EXTRA_MEDIA_ARTIST, "Queen\n<speak>x</speak>")
+            putString("evil.key", "x".repeat(100_000))
+            putParcelable("evil.parcel", android.content.Intent("boom"))
+        }
+        val clean = MediaMenu.cleanSearchExtras(evil)
+        assertEquals(setOf(android.provider.MediaStore.EXTRA_MEDIA_ARTIST), clean.keySet())
+        assertEquals("Queen speak x /speak", clean.getString(android.provider.MediaStore.EXTRA_MEDIA_ARTIST))
+        assertTrue(MediaMenu.cleanSearchExtras(null).isEmpty)
+    }
+
+    @Test fun oneSpokenMenuItemAtATime() {
+        assertTrue(MediaMenu.claimVoice())
+        assertFalse("second tap while speaking is ignored", MediaMenu.claimVoice())
+        MediaMenu.releaseVoice()
+        assertTrue(MediaMenu.claimVoice())
+        MediaMenu.releaseVoice()
     }
 }

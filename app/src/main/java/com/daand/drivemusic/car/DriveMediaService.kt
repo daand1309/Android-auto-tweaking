@@ -124,9 +124,9 @@ class DriveMediaService : MediaBrowserService() {
                 publishState()
             }
             MediaMenu.WEATHER -> p.lastWeatherSummary.takeIf { it.isNotBlank() }?.let {
-                Greeter(this).speak(MediaMenu.weatherLine(it, p.greetingDutch, p.butler), p.greetingDutch) {}
+                speakOnce(MediaMenu.weatherLine(it, p.greetingDutch, p.butler), p.greetingDutch)
             }
-            MediaMenu.NEWS -> Thread {
+            MediaMenu.NEWS -> if (!MediaMenu.claimVoice()) DriveLog.log("Car media: busy speaking - ignored") else Thread {
                 val items = News.fetchAll(p.greetingDutch, p.weatherPlace) {} +
                     (if (p.followActive) News.fetchFollow(p.greetingDutch) {} else emptyList())
                 val story = News.pick(items, System.currentTimeMillis(), emptyList())
@@ -134,10 +134,20 @@ class DriveMediaService : MediaBrowserService() {
                 val text = DriveUpdates.compose(emptyList(), story, p.greetingDutch, p.butler, p.greetingName,
                     followed = followed, source = followed?.source ?: "")
                     ?: MediaMenu.noNewsLine(p.greetingDutch, p.butler)
-                handler.post { Greeter(this).speak(text, p.greetingDutch) {} }
+                handler.post {
+                    try { Greeter(this).speak(text, p.greetingDutch) { MediaMenu.releaseVoice() } }
+                    catch (e: Exception) { MediaMenu.releaseVoice() }
+                }
             }.start()
             MediaMenu.PLAY -> callback.onPlay()
         }
+    }
+
+    /** One spoken menu item at a time (and never over the greeting): mashing a button can't start a choir. */
+    private fun speakOnce(text: String, dutch: Boolean) {
+        if (!MediaMenu.claimVoice()) { DriveLog.log("Car media: busy speaking - ignored"); return }
+        try { Greeter(this).speak(text, dutch) { MediaMenu.releaseVoice() } }
+        catch (e: Exception) { MediaMenu.releaseVoice() }
     }
 
     // ------------------------------------------------------------------ mirror YouTube Music
@@ -177,7 +187,9 @@ class DriveMediaService : MediaBrowserService() {
         val src = mirrored?.playbackState
         val p = Prefs(this)
         val state = PlaybackState.Builder()
-            .setState(src?.state ?: PlaybackState.STATE_PAUSED, src?.position ?: 0L, src?.playbackSpeed ?: 0f)
+            // Keep YouTube Music's own timestamp, or the car's progress bar drifts by however old the update is.
+            .setState(src?.state ?: PlaybackState.STATE_PAUSED, src?.position ?: 0L, src?.playbackSpeed ?: 0f,
+                src?.lastPositionUpdateTime?.takeIf { it > 0 } ?: android.os.SystemClock.elapsedRealtime())
             .setActions(
                 PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or
                     PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS or
@@ -191,6 +203,9 @@ class DriveMediaService : MediaBrowserService() {
         session.setPlaybackState(state)
     }
 }
+
+/** Shares the untrusted-text cleaner with the menu (one line, no markup, sane length). */
+private object GreetingTextBridge { fun clean(s: String) = com.daand.drivemusic.GreetingText.cleanMeta(s) }
 
 /** The car media menu and who may open it. Pure logic, unit tested. */
 object MediaMenu {
@@ -230,15 +245,45 @@ object MediaMenu {
         when {
             yt == null -> monitor?.startMusic("voice search", requireCar = false)
             q.isEmpty() -> yt.transportControls.play()
-            else -> yt.transportControls.playFromSearch(q, extras ?: Bundle())
+            else -> yt.transportControls.playFromSearch(q, cleanSearchExtras(extras))
         }
     }
 
-    fun weatherLine(summary: String, dutch: Boolean, butler: Boolean) = when {
-        butler && dutch -> "Het weer, meneer: $summary."
-        butler -> "The weather, sir: $summary."
-        dutch -> "Het weer: $summary."
-        else -> "The weather: $summary."
+    /** The only search hints we pass on (all plain text). */
+    private val SEARCH_KEYS = listOf(
+        android.provider.MediaStore.EXTRA_MEDIA_FOCUS, android.provider.MediaStore.EXTRA_MEDIA_ARTIST,
+        android.provider.MediaStore.EXTRA_MEDIA_ALBUM, android.provider.MediaStore.EXTRA_MEDIA_TITLE,
+        android.provider.MediaStore.EXTRA_MEDIA_GENRE, android.provider.MediaStore.EXTRA_MEDIA_PLAYLIST,
+    )
+
+    /**
+     * Voice search can be sent by any app, with any data attached. Never pass that on as-is (it could
+     * crash YouTube Music): copy only the known plain-text hints into a fresh bundle.
+     */
+    fun cleanSearchExtras(extras: Bundle?): Bundle {
+        val out = Bundle()
+        if (extras == null) return out
+        for (k in SEARCH_KEYS) {
+            val v = try { extras.getString(k) } catch (e: Exception) { null } ?: continue
+            out.putString(k, GreetingTextBridge.clean(v))
+        }
+        return out
+    }
+
+    /** Spoken menu items: one at a time, and never while the greeting is speaking. */
+    private val voiceBusy = java.util.concurrent.atomic.AtomicBoolean(false)
+    fun claimVoice(): Boolean = !WelcomeAnnouncer.isBusy && voiceBusy.compareAndSet(false, true)
+    fun releaseVoice() = voiceBusy.set(false)
+
+    /** "4° · overcast · 20% rain" is for the screen; spoken it becomes "4 degrees, overcast, 20% rain". */
+    fun weatherLine(summary: String, dutch: Boolean, butler: Boolean): String {
+        val spoken = summary.replace(Regex("""(-?\d+)°"""), if (dutch) "$1 graden" else "$1 degrees").replace(" · ", ", ")
+        return when {
+            butler && dutch -> "Het weer, meneer: $spoken."
+            butler -> "The weather, sir: $spoken."
+            dutch -> "Het weer: $spoken."
+            else -> "The weather: $spoken."
+        }
     }
 
     fun noNewsLine(dutch: Boolean, butler: Boolean) = when {
