@@ -414,18 +414,13 @@ class MainActivity : Activity() {
                     toast("Settings saved")
                     DriveLog.log("Settings backed up")
                 }
-                REQ_CAR_PHOTO -> {
-                    IntroImage.save(this, uri, IntroImage.HERO)
-                    toast("Car photo set")
-                    render()
-                }
-                REQ_INTRO_IMAGE -> {
-                    IntroImage.save(this, uri)
-                    toast("Intro image set")
-                    render()
-                }
+                REQ_CAR_PHOTO -> saveImageInBackground(uri, IntroImage.HERO, "Car photo set")
+                REQ_INTRO_IMAGE -> saveImageInBackground(uri, null, "Intro image set")
                 REQ_IMPORT -> {
-                    val json = contentResolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
+                    // A settings backup is a few KB; refuse anything big (picked the wrong file?).
+                    val bytes = contentResolver.openInputStream(uri)!!.use { it.readNBytesCompat(256 * 1024 + 1) }
+                    require(bytes.size <= 256 * 1024) { "that file is too big to be a settings backup" }
+                    val json = bytes.toString(Charsets.UTF_8)
                     val n = prefs.importJson(json)
                     toast("Restored $n settings")
                     DriveLog.log("Settings restored ($n)")
@@ -435,6 +430,34 @@ class MainActivity : Activity() {
         } catch (e: Exception) {
             toast("Couldn't ${when (requestCode) { REQ_EXPORT -> "save"; REQ_INTRO_IMAGE, REQ_CAR_PHOTO -> "use that image"; else -> "restore" }}: ${e.message}")
         }
+    }
+
+    /** Decoding/scaling a big photo can take a moment - don't freeze the screen while it does. */
+    private fun saveImageInBackground(uri: android.net.Uri, name: String?, done: String) {
+        toast("Processing image...")
+        Thread {
+            val error = try {
+                if (name == null) IntroImage.save(this, uri) else IntroImage.save(this, uri, name)
+                null
+            } catch (e: Exception) { e.message ?: e.javaClass.simpleName
+            } catch (e: OutOfMemoryError) { "image is too big" }
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                toast(if (error == null) done else "Couldn't use that image: $error")
+                render()
+            }
+        }.start()
+    }
+
+    private fun java.io.InputStream.readNBytesCompat(max: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(8192)
+        while (out.size() < max) {
+            val n = read(buf, 0, minOf(buf.size, max - out.size()))
+            if (n < 0) break
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray()
     }
 
     // ---------------------------------------------------------------- home hero (car + status)

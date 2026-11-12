@@ -187,6 +187,16 @@ object Updater {
             if (Build.VERSION.SDK_INT >= 31) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
         }
         val sessionId = installer.createSession(params)
+        try {
+            writeAndCommit(ctx, installer, sessionId, apk)
+        } catch (e: Exception) {
+            runCatching { installer.abandonSession(sessionId) }  // don't leave a half-written install behind
+            throw e
+        }
+        DriveLog.log("UPDATE: handed version to Android installer")
+    }
+
+    private fun writeAndCommit(ctx: Context, installer: PackageInstaller, sessionId: Int, apk: File) {
         installer.openSession(sessionId).use { session ->
             session.openWrite("base.apk", 0, apk.length()).use { out ->
                 apk.inputStream().use { it.copyTo(out) }
@@ -199,7 +209,6 @@ object Updater {
             )
             session.commit(pi.intentSender)
         }
-        DriveLog.log("UPDATE: handed version to Android installer")
     }
 
     // ------------------------------------------------------------------ background check + notification

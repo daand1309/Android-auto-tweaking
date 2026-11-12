@@ -297,6 +297,30 @@ class DriveFlowTest {
     }
 
     @Test
+    fun driveModeClosesWhenYouLeaveTheCarButNotWhenOpenedWhileParked() {
+        prefs.showSplash = false
+        prefs.autoStart = false
+        fun openDriveMode() = ctx.startActivity(
+            android.content.Intent(ctx, DriveModeActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+
+        // Opened by hand while parked: stays open.
+        openDriveMode()
+        waitFor("Drive Mode to open", 10_000) { driveModeResumed() }
+        SystemClock.sleep(4_000)
+        assertTrue("Drive Mode opened while parked must stay open", driveModeResumed())
+        closeDriveMode()
+
+        // Open during a drive, then leave the car: closes by itself (no screen left on in your pocket).
+        onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_PROJECTION) }
+        openDriveMode()
+        waitFor("Drive Mode to open", 10_000) { driveModeResumed() }
+        SystemClock.sleep(3_500)  // let it see the car connected
+        onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_NOT_CONNECTED) }
+        waitFor("Drive Mode to close after leaving the car", 10_000) { !driveModeResumed() }
+        assertTrue(log().contains("Drive Mode: closed - you left the car"))
+    }
+
+    @Test
     fun parkedSpotIsDeletedWhenTheCarDrivesAgain() {
         prefs.parkedSpot = Parking.Spot(52.09, 5.12, 8f, System.currentTimeMillis()).encode()
         assertTrue(Parking.spot(ctx) != null)

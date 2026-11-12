@@ -39,6 +39,26 @@ class BackupTest {
         assertEquals("", r.lastDrive)
     }
 
+    @Test fun damagedBackupCannotCrashTheApp() {
+        ctx.getSharedPreferences("drive_music", Context.MODE_PRIVATE).edit().clear().commit()
+        val json = """{"app":"drive-music","version":1,"settings":{
+            "auto_start":{"t":"string","v":"oops"},
+            "start_delay":{"t":"int","v":99999},
+            "speech_rate":{"t":"float","v":50},
+            "greeting":{"t":"bool","v":"not a bool"},
+            "last_drive":{"t":"string","v":"runtime"},
+            "something_new":{"t":"bool","v":true},
+            "car_name":{"t":"string","v":"ASX"}
+        }}"""
+        Prefs(ctx).importJson(json)
+        val r = Prefs(ctx)
+        assertEquals(true, r.autoStart)           // wrong type ignored -> still the default, no crash
+        assertEquals(30, r.startDelaySec)         // absurd number clamped to the maximum
+        assertEquals(1.4f, r.speechRate, 0.0001f) // clamped
+        assertEquals("", r.lastDrive)             // run-time state never restored
+        assertEquals("ASX", r.carName)
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun rejectsFilesThatAreNotABackup() {
         Prefs(ctx).importJson("""{"something":"else"}""")

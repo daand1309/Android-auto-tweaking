@@ -17,6 +17,7 @@ object IntroImage {
     private const val MAX_SIDE = 1200
     /** Wider than any phone screen, so the photo is sharp edge to edge. */
     private const val CAR_PHOTO_WIDTH = 1600
+    private const val CAR_PHOTO_MAX_HEIGHT = 4000
 
     fun file(ctx: Context, name: String = FILE) = File(ctx.filesDir, name)
 
@@ -73,18 +74,27 @@ object IntroImage {
     private fun saveCarPhoto(ctx: Context, uri: Uri, srcW: Int, srcH: Int) {
         val (tw, th) = carPhotoSize(srcW, srcH)
         var sample = 1
-        while (srcW / (sample * 2) >= tw) sample *= 2  // cheap pre-shrink, never below the target
+        // Cheap pre-shrink while decoding, never below the target size.
+        while (srcW / (sample * 2) >= tw && srcH / (sample * 2) >= th) sample *= 2
         val src = ctx.contentResolver.openInputStream(uri)!!.use {
             BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
         } ?: throw IllegalArgumentException("That file isn't an image")
-        val out = if (src.width == tw) src else Bitmap.createScaledBitmap(src, tw, th, true)
+        val out = if (src.width == tw && src.height == th) src else Bitmap.createScaledBitmap(src, tw, th, true)
         file(ctx, HERO).outputStream().use { out.compress(Bitmap.CompressFormat.JPEG, 95, it) }
     }
 
-    /** Car photo target size: at most [CAR_PHOTO_WIDTH] wide (never upscaled), aspect kept. */
+    /**
+     * Car photo target size: at most [CAR_PHOTO_WIDTH] wide and [CAR_PHOTO_MAX_HEIGHT] tall (so an
+     * extreme panorama can't use hundreds of MB of memory), never upscaled, aspect kept.
+     */
     fun carPhotoSize(w: Int, h: Int): Pair<Int, Int> {
-        val tw = minOf(w, CAR_PHOTO_WIDTH)
-        return tw to maxOf(1, (h.toLong() * tw / w).toInt())
+        var tw = minOf(w, CAR_PHOTO_WIDTH)
+        var th = maxOf(1, (h.toLong() * tw / w).toInt())
+        if (th > CAR_PHOTO_MAX_HEIGHT) {
+            th = CAR_PHOTO_MAX_HEIGHT
+            tw = maxOf(1, (w.toLong() * th / h).toInt())
+        }
+        return tw to th
     }
 
     // ------------------------------------------------------------------ pure pixel logic (unit tested)

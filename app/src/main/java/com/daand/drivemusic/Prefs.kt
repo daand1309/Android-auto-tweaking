@@ -18,7 +18,7 @@ class Prefs(context: Context) {
 
     /** Seconds to wait after an unexpected pause before resuming. */
     var resumeDelaySec: Int
-        get() = sp.getInt("resume_delay", 8)
+        get() = sp.getInt("resume_delay", 8).coerceIn(2, 60)
         set(v) = sp.edit().putInt("resume_delay", v).apply()
 
     /** Package of the YouTube Music app to control (official or patched e.g. Morphe). Auto-detected if not set. */
@@ -29,7 +29,7 @@ class Prefs(context: Context) {
 
     /** Seconds to wait after Android Auto connects before pressing play (lets the car settle). */
     var startDelaySec: Int
-        get() = sp.getInt("start_delay", 2)
+        get() = sp.getInt("start_delay", 2).coerceIn(0, 30)
         set(v) = sp.edit().putInt("start_delay", v).apply()
 
     var setVolumeOnConnect: Boolean
@@ -37,7 +37,7 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putBoolean("set_volume", v).apply()
 
     var connectVolumePct: Int
-        get() = sp.getInt("volume_pct", 60)
+        get() = sp.getInt("volume_pct", 60).coerceIn(10, 100)
         set(v) = sp.edit().putInt("volume_pct", v).apply()
 
     /** Pause the music when Android Auto disconnects, so it doesn't carry on from the phone speaker. */
@@ -119,11 +119,11 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putString("voice_name", v).apply()
 
     var speechRate: Float
-        get() = sp.getFloat("speech_rate", 0.95f)
+        get() = sp.getFloat("speech_rate", 0.95f).let { if (it.isNaN()) 0.95f else it.coerceIn(0.6f, 1.4f) }
         set(v) = sp.edit().putFloat("speech_rate", v).apply()
 
     var speechPitch: Float
-        get() = sp.getFloat("speech_pitch", 1.0f)
+        get() = sp.getFloat("speech_pitch", 1.0f).let { if (it.isNaN()) 1.0f else it.coerceIn(0.6f, 1.4f) }
         set(v) = sp.edit().putFloat("speech_pitch", v).apply()
 
     /** Optional phonetic spelling of the name, e.g. "Mister Dik-hof". Overrides the name when speaking. */
@@ -200,6 +200,22 @@ class Prefs(context: Context) {
         "parked_spot",
     )
 
+    /**
+     * The settings a backup may restore, with their type. Anything else in a file is ignored, so a
+     * damaged or edited backup can't plant a wrong-typed value that would crash the app on start.
+     */
+    private val restorable = mapOf(
+        "announce_song" to "bool", "auto_open_drive_mode" to "bool", "auto_resume" to "bool", "auto_start" to "bool",
+        "auto_update" to "bool", "greeting" to "bool", "greeting_dutch" to "bool", "pause_on_disconnect" to "bool",
+        "remember_parking" to "bool", "road_conditions" to "bool", "set_volume" to "bool", "show_splash" to "bool",
+        "weather" to "bool",
+        "resume_delay" to "int", "start_delay" to "int", "volume_pct" to "int",
+        "speech_pitch" to "float", "speech_rate" to "float", "weather_lat" to "float", "weather_lon" to "float",
+        "birthday" to "string", "car_name" to "string", "greeting_name" to "string", "music_pkg" to "string",
+        "name_pronunciation" to "string", "theme" to "string", "tts_engine" to "string", "voice_name" to "string",
+        "weather_place" to "string",
+    )
+
     /** All settings as JSON (each value tagged with its type so it restores exactly). */
     fun exportJson(): String {
         val o = org.json.JSONObject()
@@ -223,16 +239,19 @@ class Prefs(context: Context) {
         var n = 0
         for (k in settings.keys()) {
             if (k in notBackedUp) continue
-            val item = settings.getJSONObject(k)
-            when (item.getString("t")) {
-                "bool" -> e.putBoolean(k, item.getBoolean("v"))
-                "int" -> e.putInt(k, item.getInt("v"))
-                "long" -> e.putLong(k, item.getLong("v"))
-                "float" -> e.putFloat(k, item.getDouble("v").toFloat())
-                "string" -> e.putString(k, item.getString("v"))
-                else -> continue
-            }
-            n++
+            val item = settings.optJSONObject(k) ?: continue
+            val type = item.optString("t")
+            if (restorable[k] != type) continue  // unknown setting or wrong type: skip it
+            if (type == "string" && item.optString("v").length > 500) continue
+            val ok = runCatching {  // a single bad value is skipped, not the whole restore
+                when (type) {
+                    "bool" -> e.putBoolean(k, item.getBoolean("v"))
+                    "int" -> e.putInt(k, item.getInt("v"))
+                    "float" -> e.putFloat(k, item.getDouble("v").toFloat())
+                    "string" -> e.putString(k, item.getString("v"))
+                }
+            }.isSuccess
+            if (ok) n++
         }
         e.apply()
         return n

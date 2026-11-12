@@ -46,5 +46,7 @@ class IntroImageTest {
         assertEquals(1600 to 1200, IntroImage.carPhotoSize(4000, 3000))
         // Small image is not blown up.
         assertEquals(400 to 300, IntroImage.carPhotoSize(400, 300))
+        // Extreme panorama/screenshot strip: height capped so it can't run out of memory.
+        assertEquals(64 to 4000, IntroImage.carPhotoSize(1600, 100_000))
     }
 }

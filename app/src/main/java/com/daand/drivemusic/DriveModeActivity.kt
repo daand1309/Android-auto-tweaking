@@ -32,9 +32,26 @@ class DriveModeActivity : Activity() {
 
     private val tick = object : Runnable {
         override fun run() {
+            if (closeIfLeftCar()) return
             updateDynamic()
             handler.postDelayed(this, 3000)
         }
+    }
+
+    /** True once the car has been connected while this screen was open. */
+    private var sawCarConnected = false
+
+    /**
+     * Closes Drive Mode when you leave the car - otherwise it would keep the screen on (even over the
+     * lock screen) in your pocket. Opened by hand while parked? Then it stays until you close it.
+     */
+    private fun closeIfLeftCar(): Boolean {
+        val connected = Prefs(this).lastCarState.let { it == "Android Auto connected" || it == "Android Automotive" }
+        if (connected) { sawCarConnected = true; return false }
+        if (!sawCarConnected) return false
+        DriveLog.log("Drive Mode: closed - you left the car")
+        finish()
+        return true
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
