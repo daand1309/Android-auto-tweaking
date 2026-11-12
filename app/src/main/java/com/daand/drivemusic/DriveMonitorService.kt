@@ -254,6 +254,7 @@ class DriveMonitorService : NotificationListenerService() {
             Parking.clear(this)  // you're driving: the old parked spot is no longer where the car is
             DriveUpdates.newDrive()
             driveDataStart = appBytes()
+            com.daand.drivemusic.obd.ObdManager.start(this) { alert -> handler.post { onCarAlert(alert, connectGen, 0) } }
             handler.removeCallbacks(driveUpdate)
             handler.postDelayed(driveUpdate, DriveUpdates.FIRST_CHECK_MS)
             if (prefs.autoOpenDriveMode) openDriveMode()
@@ -321,6 +322,7 @@ class DriveMonitorService : NotificationListenerService() {
             }
             Briefing.endNow(this)  // don't leave the welcome pop-up behind if you left mid-greeting
             News.clearCache()  // free the memory until the next drive
+            com.daand.drivemusic.obd.ObdManager.stop()
             UpdatePrompt.cancel(this)
             handler.removeCallbacks(driveUpdate)
             cancelStart()
@@ -346,6 +348,30 @@ class DriveMonitorService : NotificationListenerService() {
         val rx = android.net.TrafficStats.getUidRxBytes(uid)
         val tx = android.net.TrafficStats.getUidTxBytes(uid)
         return if (rx < 0 || tx < 0) -1 else rx + tx
+    }
+
+    // ---------------------------------------------------------------- car health (OBD)
+
+    /**
+     * Something about the car worth saying. Never over a call or the Assistant; urgent ones
+     * (overheating, check-engine light) retry every 15 s, others every 2 min, for a while.
+     */
+    private fun onCarAlert(alert: com.daand.drivemusic.obd.CarAlerts.Alert, gen: Int, attempt: Int) {
+        if (!carConnected || gen != connectGen) return
+        if (alert.kind == com.daand.drivemusic.obd.CarAlerts.Kind.ENGINE_WARM && !prefs.obdWarmup) return
+        if (alert.kind == com.daand.drivemusic.obd.CarAlerts.Kind.LOW_FUEL && !prefs.obdFuel) return
+        val blocker = resumeBlocker() ?: if (WelcomeAnnouncer.isBusy || UpdatePrompt.question != null) "something else is speaking" else null
+        if (blocker != null) {
+            if (attempt < 20) handler.postDelayed({ onCarAlert(alert, gen, attempt + 1) }, if (alert.urgent) 15_000L else 120_000L)
+            return
+        }
+        val text = com.daand.drivemusic.obd.CarAlerts.message(alert, prefs.greetingDutch, prefs.butler)
+        DriveLog.log("OBD: \"$text\"")
+        suppressPauseUntil = SystemClock.elapsedRealtime() + 60_000L
+        if (alert.urgent) {
+            val token = Briefing.start(this, if (prefs.greetingDutch) "Auto" else "Car", text)
+            safeSpeak(text) { Briefing.end(this, token); suppressPauseUntil = 0L }
+        } else safeSpeak(text) { suppressPauseUntil = 0L }
     }
 
     // ---------------------------------------------------------------- updates during the drive

@@ -78,6 +78,7 @@ class DriveMediaService : MediaBrowserService() {
             autoResume = p.autoResume,
             weather = p.lastWeatherSummary.takeIf { System.currentTimeMillis() - p.lastWeatherAt < 3 * 60 * 60 * 1000L },
             butler = p.butler,
+            car = if (p.obdEnabled) com.daand.drivemusic.obd.ObdManager.live()?.let { com.daand.drivemusic.obd.CarStatusText.describe(it, p.greetingDutch).replace("\n", " · ") } ?: "No data yet" else null,
         ).map { (id, title, subtitle) ->
             MediaBrowser.MediaItem(
                 MediaDescription.Builder().setMediaId(id).setTitle(title).setSubtitle(subtitle).build(),
@@ -140,6 +141,7 @@ class DriveMediaService : MediaBrowserService() {
                 }
             }.start()
             MediaMenu.PLAY -> callback.onPlay()
+            MediaMenu.CAR -> speakOnce(com.daand.drivemusic.obd.CarStatusText.spoken(com.daand.drivemusic.obd.ObdManager.live(), p.greetingDutch, p.butler), p.greetingDutch)
         }
     }
 
@@ -215,6 +217,7 @@ object MediaMenu {
     const val RESUME = "toggle_auto_resume"
     const val WEATHER = "weather"
     const val NEWS = "news"
+    const val CAR = "car_status"
 
     /** Android Auto, the system, and ourselves. Other apps can't browse or trigger the menu. */
     private val TRUSTED = setOf(
@@ -228,14 +231,15 @@ object MediaMenu {
         uid == myUid || uid == android.os.Process.SYSTEM_UID || pkg in TRUSTED
 
     /** (id, title, subtitle) for each menu row. */
-    fun items(monitorRunning: Boolean, autoResume: Boolean, weather: String?, butler: Boolean): List<Triple<String, String, String>> {
+    fun items(monitorRunning: Boolean, autoResume: Boolean, weather: String?, butler: Boolean, car: String? = null): List<Triple<String, String, String>> {
         if (!monitorRunning) return listOf(Triple(PLAY, "Open Drive Music on your phone", "Finish setup to control your music here"))
-        return listOf(
+        return listOfNotNull(
             Triple(PLAY, "▶  Play YouTube Music", "Continue where you left off"),
             Triple(WELCOME, if (butler) "🎩  Welcome briefing" else "🔊  Welcome briefing", "Greeting, weather and roads"),
             Triple(RESUME, if (autoResume) "↻  Auto-resume: On" else "↻  Auto-resume: Off", "Tap to switch"),
             Triple(WEATHER, "☁  Weather", weather ?: "Updated on your next drive"),
             Triple(NEWS, "📰  Any news?", "Only what you need to know"),
+            car?.let { Triple(CAR, "🔧  Car status", it) },
         )
     }
 

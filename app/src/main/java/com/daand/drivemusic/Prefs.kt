@@ -109,6 +109,30 @@ class Prefs(context: Context) {
         get() = (sp.getString("told_news", "") ?: "").split('\n').filter { it.isNotBlank() }
         set(v) = sp.edit().putString("told_news", v.joinToString("\n")).apply()
 
+    /** Read the car through an OBD Bluetooth adapter while driving. */
+    var obdEnabled: Boolean
+        get() = sp.getBoolean("obd_enabled", false)
+        set(v) = sp.edit().putBoolean("obd_enabled", v).apply()
+
+    /** Bluetooth address of the paired OBD adapter (e.g. "Android-Vlink"). */
+    var obdDevice: String
+        get() = sp.getString("obd_device", "") ?: ""
+        set(v) = sp.edit().putString("obd_device", v).apply()
+
+    var obdDeviceName: String
+        get() = sp.getString("obd_device_name", "") ?: ""
+        set(v) = sp.edit().putString("obd_device_name", v).apply()
+
+    /** Say when the engine has warmed up (after a cold start). */
+    var obdWarmup: Boolean
+        get() = sp.getBoolean("obd_warmup", true)
+        set(v) = sp.edit().putBoolean("obd_warmup", v).apply()
+
+    /** Say when fuel gets low. */
+    var obdFuel: Boolean
+        get() = sp.getBoolean("obd_fuel", true)
+        set(v) = sp.edit().putBoolean("obd_fuel", v).apply()
+
     /** "sassy" (default) or "butler". */
     var greetingStyle: String
         get() = sp.getString("greeting_style", "sassy") ?: "sassy"
@@ -248,11 +272,13 @@ class Prefs(context: Context) {
         "auto_update" to "bool", "greeting" to "bool", "greeting_dutch" to "bool", "pause_on_disconnect" to "bool",
         "remember_parking" to "bool", "road_conditions" to "bool", "set_volume" to "bool", "show_splash" to "bool",
         "weather" to "bool", "updates_weather" to "bool", "updates_news" to "bool", "ask_before_updates" to "bool",
+        "obd_enabled" to "bool", "obd_warmup" to "bool", "obd_fuel" to "bool",
         "resume_delay" to "int", "start_delay" to "int", "volume_pct" to "int",
         "speech_pitch" to "float", "speech_rate" to "float", "weather_lat" to "float", "weather_lon" to "float",
         "birthday" to "string", "car_name" to "string", "greeting_name" to "string", "music_pkg" to "string",
         "name_pronunciation" to "string", "theme" to "string", "tts_engine" to "string", "voice_name" to "string",
         "weather_place" to "string", "greeting_style" to "string",
+        "obd_device" to "string", "obd_device_name" to "string",
     )
 
     /** All settings as JSON (each value tagged with its type so it restores exactly). */

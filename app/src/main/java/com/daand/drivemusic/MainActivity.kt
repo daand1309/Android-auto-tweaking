@@ -97,7 +97,7 @@ class MainActivity : Activity() {
     private enum class Page(val title: String) {
         HOME("Drive Music"), SETUP("Setup"), MUSIC("Music & driving"), GREETING("Welcome greeting"),
         VOICE("Voice"), DRIVE_MODE("Drive Mode"), SOUND("Sound"), UPDATES("Updates"), HELP("Help & privacy"),
-        CAR("Car screen"), BACKUP("Backup & restore")
+        CAR("Car screen"), BACKUP("Backup & restore"), OBD("Car data (OBD)")
     }
 
     private var page = Page.HOME
@@ -190,6 +190,7 @@ class MainActivity : Activity() {
             Page.SOUND -> renderSound()
             Page.UPDATES -> renderUpdates()
             Page.HELP -> renderHelp()
+            Page.OBD -> renderObd()
             Page.CAR -> renderCar()
             Page.BACKUP -> renderBackup()
         }
@@ -226,6 +227,7 @@ class MainActivity : Activity() {
         navRow("Sound", "Equalizer and sound settings") { go(Page.SOUND) }
         navRow("Theme", Style.THEMES[prefs.theme] ?: "") { pickTheme() }
         navRow("Car screen", "Show Drive Music in Android Auto") { go(Page.CAR) }
+        navRow("Car data (OBD)", if (prefs.obdEnabled) "On · ${prefs.obdDeviceName.ifBlank { "no adapter chosen" }}" else "Engine temperature, battery, warning lights") { go(Page.OBD) }
         if (missing == 0) navRow("Setup", "All done ✓") { go(Page.SETUP) }
 
         header("More")
@@ -391,6 +393,86 @@ class MainActivity : Activity() {
                         Greeter(this).speak(text, p.greetingDutch) {}
                     }
                 }
+            }
+        }.start()
+    }
+
+    // ---------------------------------------------------------------- car data (OBD)
+
+    private fun renderObd() {
+        pageHeader()
+        switch("Read the car through an OBD adapter", prefs.obdEnabled) {
+            prefs.obdEnabled = it
+            DriveLog.log("Setting changed: OBD = $it")
+            if (it && !com.daand.drivemusic.obd.ObdManager.hasPermission(this)) requestBtForObd()
+            render()
+        }
+        if (!prefs.obdEnabled) {
+            text("Plug a Bluetooth OBD adapter (e.g. Vgate iCar Pro 2S) into the port under the dashboard. " +
+                "During drives Drive Music reads the engine temperature, battery voltage, fuel and warning lights, " +
+                "and the voice tells you when something needs attention.")
+            return
+        }
+        stepperLike("Adapter: ${prefs.obdDeviceName.ifBlank { "not chosen" }}", "Choose") { chooseObdDevice() }
+        text("First time: plug it in, ignition on, then in your phone's Bluetooth settings pair \"Android-Vlink\" " +
+            "(PIN 1234). Then choose it above.")
+        button("Open Bluetooth settings") {
+            try { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) } catch (e: Exception) { toast("Settings → Connections → Bluetooth") }
+        }
+        if (prefs.obdDevice.isNotBlank()) button("Test connection (ignition on)", accent = true) { testObd() }
+
+        header("Live")
+        val live = com.daand.drivemusic.obd.ObdManager.live()
+        text(if (live != null) com.daand.drivemusic.obd.CarStatusText.describe(live, prefs.greetingDutch)
+             else "Status: ${com.daand.drivemusic.obd.ObdManager.status}. Values appear here while you drive.")
+
+        header("Tell me")
+        text("Always: overheating, the check-engine light (with the fault code explained), a weak battery or charging.")
+        switch("When the engine has warmed up", prefs.obdWarmup) { prefs.obdWarmup = it }
+        switch("When fuel gets low", prefs.obdFuel) { prefs.obdFuel = it }
+        text("Fault codes are only read, never cleared - clearing hides a problem instead of fixing it.")
+    }
+
+    private fun requestBtForObd() {
+        if (Build.VERSION.SDK_INT >= 31) requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), REQ_BT_OBD)
+    }
+
+    @android.annotation.SuppressLint("MissingPermission")  // checked right above the call
+    private fun chooseObdDevice() {
+        if (!com.daand.drivemusic.obd.ObdManager.hasPermission(this)) { requestBtForObd(); return }
+        val adapter = getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter
+        val bonded = try { adapter?.bondedDevices?.toList().orEmpty() } catch (e: SecurityException) { emptyList() }
+        if (bonded.isEmpty()) { toast("No paired devices - pair \"Android-Vlink\" (PIN 1234) in Bluetooth settings first"); return }
+        // Likely OBD adapters first.
+        val sorted = bonded.sortedByDescending { com.daand.drivemusic.obd.BluetoothObd.looksLikeObd(it.name) }
+        val labels = sorted.map { d ->
+            val n = try { d.name } catch (e: SecurityException) { null } ?: d.address
+            (if (com.daand.drivemusic.obd.BluetoothObd.looksLikeObd(n)) "🔧  " else "") + n
+        }
+        AlertDialog.Builder(this).setTitle("Which device is the OBD adapter?")
+            .setItems(labels.toTypedArray()) { _, i ->
+                val d = sorted[i]
+                prefs.obdDevice = d.address
+                prefs.obdDeviceName = (try { d.name } catch (e: SecurityException) { null }) ?: d.address
+                DriveLog.log("Setting changed: OBD adapter = ${prefs.obdDeviceName}")
+                render()
+            }.setNegativeButton("Cancel", null).show()
+    }
+
+    private var obdTestRunning = false
+
+    private fun testObd() {
+        if (obdTestRunning) return
+        obdTestRunning = true
+        toast("Connecting to the adapter...")
+        val address = prefs.obdDevice
+        val dutch = prefs.greetingDutch
+        Thread {
+            val result = com.daand.drivemusic.obd.ObdManager.testOnce(this, address, dutch)
+            DriveLog.log("OBD test: ${result.replace('\n', ' ')}")
+            runOnUiThread {
+                obdTestRunning = false
+                if (!isDestroyed) AlertDialog.Builder(this).setTitle("OBD test").setMessage(result).setPositiveButton("OK", null).show()
             }
         }.start()
     }
@@ -811,7 +893,7 @@ class MainActivity : Activity() {
             if (page == Page.HOME) {
                 val sig = homeSignature()
                 if (sig != lastHomeSignature) render()
-            }
+            } else if (page == Page.OBD && prefs.obdEnabled) render()  // live values
             handler.postDelayed(this, 5000)
         }
     }
@@ -823,7 +905,9 @@ class MainActivity : Activity() {
         val svc = DriveMonitorService.instance
         val weatherFresh = System.currentTimeMillis() - prefs.lastWeatherAt < 3 * 60 * 60 * 1000L
         return listOf(svc != null, prefs.lastCarState, svc?.currentSong(), prefs.lastWeatherSummary, weatherFresh,
-            prefs.lastDrive, prefs.parkedSpot, availableUpdate?.versionName).joinToString("|")
+            prefs.lastDrive, prefs.parkedSpot, availableUpdate?.versionName,
+            // Car data: rounded so the screen only redraws when the shown value changes.
+            com.daand.drivemusic.obd.ObdManager.live()?.let { "${it.coolantC}|${it.volts?.let { v -> Math.round(v * 10) }}|${it.codes}" }).joinToString("|")
     }
 
     override fun onPause() {
@@ -879,7 +963,16 @@ class MainActivity : Activity() {
             "⏱" to when (lastMins) { null -> "No drives yet"; "0" -> "Last drive: <1 min"; else -> "Last drive: $lastMins min" },
             "📍" to (Parking.spot(this)?.let { "Parked ${Parking.whenText(it.time)}" } ?: "Where's my car?"),
         )
-        tiles.chunked(2).forEach { pair ->
+        val car = if (prefs.obdEnabled) com.daand.drivemusic.obd.ObdManager.live() else null
+        val allTiles = if (car == null) tiles else tiles + listOf(
+            "🌡" to (car.coolantC?.let { "Engine $it °C" } ?: "Engine —"),
+            "🔋" to when {
+                car.codes.isNotEmpty() -> "⚠ ${car.codes.first()}"
+                car.volts != null -> "Battery %.1f V".format(java.util.Locale.ROOT, car.volts)
+                else -> "Battery —"
+            },
+        )
+        allTiles.chunked(2).forEach { pair ->
             row(*pair.map { (icon, label) ->
                 statusTile(icon, label).apply {
                     val action: (() -> Unit)? = when (icon) {
@@ -887,6 +980,7 @@ class MainActivity : Activity() {
                         "☁" -> { { go(Page.GREETING) } }
                         "⏱" -> { { lastDriveDetails() } }
                         "📍" -> { { whereIsMyCar() } }
+                        "🌡", "🔋" -> { { go(Page.OBD) } }
                         else -> null
                     }
                     if (action != null) { background = Style.button(Style.SURFACE, dp(12).toFloat()); setOnClickListener { action() } }
@@ -1152,6 +1246,10 @@ class MainActivity : Activity() {
         if (requestCode == REQ_LOCATION) {
             if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) useMyLocation()
             else toast("No problem - use 'Type a city' instead")
+        } else if (requestCode == REQ_BT_OBD) {
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) { if (page == Page.OBD) chooseObdDevice() }
+            else toast("Needed to talk to the OBD adapter")
+            render()
         } else if (requestCode == REQ_PARKING) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) enableParking()
             else toast("Location wasn't allowed - parking spot can't be saved")
@@ -1363,6 +1461,7 @@ class MainActivity : Activity() {
     companion object {
         private const val REQ_LOCATION = 3
         private const val REQ_PARKING = 14
+        private const val REQ_BT_OBD = 15
         private const val REQ_EXPORT = 10
         private const val REQ_IMPORT = 11
         private const val REQ_INTRO_IMAGE = 12
