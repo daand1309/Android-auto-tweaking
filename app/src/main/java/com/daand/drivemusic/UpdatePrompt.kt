@@ -20,6 +20,7 @@ import java.util.concurrent.CopyOnWriteArrayList
  */
 object UpdatePrompt {
     private const val CHANNEL = "update_prompt"
+    private const val CHANNEL_QUIET = "update_questions_quiet"
     private const val NOTIFICATION_ID = 9
     const val ACTION_YES = "com.daand.drivemusic.UPDATE_YES"
     const val ACTION_NO = "com.daand.drivemusic.UPDATE_NO"
@@ -96,6 +97,12 @@ object UpdatePrompt {
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Update questions", NotificationManager.IMPORTANCE_HIGH).apply {
             setSound(null, null); enableVibration(false)
         })
+        // When Drive Mode is on the phone screen it already shows big buttons; a phone pop-up
+        // would only cover them. The car screen still gets its own heads-up (CarAppExtender).
+        nm.createNotificationChannel(NotificationChannel(CHANNEL_QUIET, "Update questions (Drive Mode open)", NotificationManager.IMPORTANCE_LOW).apply {
+            setSound(null, null); enableVibration(false)
+        })
+        val quiet = DriveModeActivity.onScreen
         fun pi(action: String, code: Int) = PendingIntent.getBroadcast(
             ctx, code, Intent(ctx, UpdateAnswerReceiver::class.java).setAction(action),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
@@ -109,12 +116,12 @@ object UpdatePrompt {
             .addAction(R.drawable.ic_answer_yes, "Go ahead", yes)
             .addAction(R.drawable.ic_answer_no, "Not interested", no)
             .build()
-        val n = NotificationCompat.Builder(ctx, CHANNEL)
+        val n = NotificationCompat.Builder(ctx, if (quiet) CHANNEL_QUIET else CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_note)
             .setContentTitle(title)
             .setContentText(text)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_HIGH)
             .addAction(R.drawable.ic_answer_yes, "🟢  Go ahead", yes)
             .addAction(R.drawable.ic_answer_no, "🔴  Not interested", no)
             .setOnlyAlertOnce(true)

@@ -389,7 +389,7 @@ class DriveFlowTest {
                     .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filterIsInstance<DriveModeActivity>()
                     .firstOrNull()?.let { a ->
                         fun find(v: android.view.View) {
-                            if (v is android.widget.Button && v.text.contains("Not interested") && v.width > 0 && v.height > 0) red = v
+                            if (v is android.widget.Button && v.contentDescription == "Not interested" && v.width > 0 && v.height > 0) red = v
                             if (v is android.view.ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i))
                         }
                         find(a.window.decorView)

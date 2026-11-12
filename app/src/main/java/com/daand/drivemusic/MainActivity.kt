@@ -324,10 +324,10 @@ class MainActivity : Activity() {
         } else {
             navRow("📰  Follow a story", "New headlines about it from NU.nl and NOS during your drives (stops after 3 days)") { askFollowTopic() }
         }
-        text("Checks every 15 minutes and stays quiet unless something matters: rain or snow starting, ice, fog, " +
-            "strong gusts - or major news in the Netherlands (alerts, disasters, big outages, closed motorways, " +
-            "the government falling). Animals, sport, celebs and other soft news are always filtered out. " +
-            "At most 3 news items per drive, never during a call.")
+        text("Checks every 15 minutes and stays quiet unless something matters.\n" +
+            "•  Weather: rain or snow starting, ice, fog, strong gusts\n" +
+            "•  News: alerts, disasters, closed motorways, big political news\n" +
+            "•  Never: animals, sport, celebs - max 3 per drive, never during a call")
         button(if (prefs.followActive) "Check for news now (incl. your story)" else "Check for news now") { testDriveUpdate() }
         if (prefs.askBeforeUpdates) button("Try the question (🟢 / 🔴)") { tryUpdateQuestion() }
     }
@@ -1010,23 +1010,23 @@ class MainActivity : Activity() {
         val weatherFresh = System.currentTimeMillis() - prefs.lastWeatherAt < 3 * 60 * 60 * 1000L
         val lastMins = Regex("""- (\d+) min""").find(prefs.lastDrive)?.groupValues?.get(1)
         val tiles = listOf(
-            "♪" to (song?.let { if (it.artist.isNotBlank()) "${it.title} · ${it.artist}" else it.title } ?: "Nothing playing"),
-            "☁" to (if (weatherFresh && prefs.lastWeatherSummary.isNotBlank()) prefs.lastWeatherSummary else "Weather after next drive"),
-            "⏱" to when (lastMins) { null -> "No drives yet"; "0" -> "Last drive: <1 min"; else -> "Last drive: $lastMins min" },
-            "📍" to (Parking.spot(this)?.let { "Parked ${Parking.whenText(it.time)}" } ?: "Where's my car?"),
+            Triple("♪", "Now playing", song?.let { if (it.artist.isNotBlank()) "${it.title}\n${it.artist}" else it.title } ?: "Nothing yet"),
+            Triple("☁", "Weather", if (weatherFresh && prefs.lastWeatherSummary.isNotBlank()) prefs.lastWeatherSummary else "After your next drive"),
+            Triple("⏱", "Last drive", when (lastMins) { null -> "None yet"; "0" -> "Under a minute"; else -> "$lastMins min" }),
+            Triple("📍", "Your car", Parking.spot(this)?.let { "Parked ${Parking.whenText(it.time)}" } ?: "Tap to find it"),
         )
         val car = if (prefs.obdEnabled) com.daand.drivemusic.obd.ObdManager.live() else null
         val allTiles = if (car == null) tiles else tiles + listOf(
-            "🌡" to (car.coolantC?.let { "Engine $it °C" } ?: "Engine —"),
-            "🔋" to when {
-                car.codes.isNotEmpty() -> "⚠ ${car.codes.first()}"
-                car.volts != null -> "Battery %.1f V".format(java.util.Locale.ROOT, car.volts)
-                else -> "Battery —"
+            Triple("🌡", "Engine", car.coolantC?.let { "$it °C" } ?: "—"),
+            when {
+                car.codes.isNotEmpty() -> Triple("🔋", "⚠ Fault code", car.codes.first())
+                car.volts != null -> Triple("🔋", "Battery", "%.1f V".format(java.util.Locale.ROOT, car.volts))
+                else -> Triple("🔋", "Battery", "—")
             },
         )
         allTiles.chunked(2).forEach { pair ->
-            row(*pair.map { (icon, label) ->
-                statusTile(icon, label).apply {
+            row(*pair.map { (icon, label, value) ->
+                statusTile(icon, label, value).apply {
                     val action: (() -> Unit)? = when (icon) {
                         "♪" -> { { openMusicApp() } }
                         "☁" -> { { go(Page.GREETING) } }
@@ -1114,20 +1114,23 @@ class MainActivity : Activity() {
         }, REQ_CAR_PHOTO)
     }
 
-    private fun statusTile(icon: String, label: String) = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = android.view.Gravity.CENTER_VERTICAL
-        background = Style.rounded(Style.SURFACE, dp(12).toFloat())
-        setPadding(dp(12), dp(10), dp(12), dp(10))
-        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+    /** Home tile: small icon + caption on top, the value underneath (up to two lines, never cut mid-word). */
+    private fun statusTile(icon: String, label: String, value: String) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = Style.rounded(Style.SURFACE, dp(14).toFloat())
+        setPadding(dp(14), dp(12), dp(12), dp(12))
+        minimumHeight = dp(76)
+        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply {
             setMargins(0, dp(6), dp(6), 0)
         }
         addView(TextView(this@MainActivity).apply {
-            text = icon; textSize = 15f; setTextColor(Style.PRIMARY); setPadding(0, 0, dp(8), 0)
+            text = "$icon  $label"; textSize = 12f; setTextColor(Style.TEXT2)
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
         })
         addView(TextView(this@MainActivity).apply {
-            text = label; textSize = 13f; setTextColor(Style.TEXT)
-            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            text = value; textSize = 15f; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD)
+            maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(0, dp(4), 0, 0)
         })
     }
 
@@ -1178,13 +1181,44 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- greeting settings
 
-    private fun stepperLike(label: String, action: String, onClick: () -> Unit) = row(
-        TextView(this).apply {
-            text = label; textSize = 15f
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        },
-        Button(this).apply { text = action; isAllCaps = false; setOnClickListener { onClick() } },
-    )
+    /**
+     * A setting as a card: "Name: value" shows the name small on top and the value big underneath,
+     * with the action as an accent word on the right. The whole card is the tap target.
+     */
+    private fun stepperLike(label: String, action: String, onClick: () -> Unit) {
+        val cut = label.indexOf(": ")
+        val title = if (cut > 0) label.substring(0, cut) else label
+        val value = if (cut > 0) label.substring(cut + 2) else ""
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            background = Style.button(Style.SURFACE, dp(14).toFloat())
+            setPadding(dp(16), dp(12), dp(14), dp(12))
+            minimumHeight = dp(56)
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also {
+                it.topMargin = dp(8); layoutParams = it
+            }
+            isClickable = true
+            contentDescription = "$label. $action"
+            setOnClickListener { onClick() }
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(TextView(this@MainActivity).apply {
+                    text = title; textSize = if (value.isEmpty()) 15f else 13f
+                    setTextColor(if (value.isEmpty()) Style.TEXT else Style.TEXT2)
+                })
+                if (value.isNotEmpty()) addView(TextView(this@MainActivity).apply {
+                    text = value; textSize = 16f; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD)
+                    setPadding(0, dp(2), 0, 0)
+                })
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = action; textSize = 14f; setTextColor(Style.PRIMARY); setTypeface(typeface, Typeface.BOLD)
+                setPadding(dp(12), dp(8), dp(4), dp(8))
+            })
+        })
+    }
 
     /** A number input (comma or dot both fine); empty = 0. */
     private fun askNumber(title: String, hint: String, initial: Double, onOk: (Double) -> Unit) =
@@ -1520,20 +1554,43 @@ class MainActivity : Activity() {
         setOnClickListener { onClick() }
     }
 
-    private fun stepper(label: String, value: String, minus: () -> Unit, plus: () -> Unit) = row(
-        TextView(this).apply {
-            text = "$label: $value"; textSize = 15f; setTextColor(Style.TEXT)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        },
-        smallBtn("−") { minus(); render() },
-        smallBtn("+") { plus(); render() },
-    )
+    /** A value you nudge up/down: card with the name on the left and compact round − value + on the right. */
+    private fun stepper(label: String, value: String, minus: () -> Unit, plus: () -> Unit) {
+        fun round(sign: String, desc: String, act: () -> Unit) = TextView(this).apply {
+            text = sign; textSize = 22f; gravity = android.view.Gravity.CENTER; setTextColor(Style.TEXT)
+            background = Style.button(Style.SURFACE2, dp(22).toFloat())
+            layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+            isClickable = true; contentDescription = "$desc $label"
+            setOnClickListener { act(); render() }
+        }
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            background = Style.rounded(Style.SURFACE, dp(14).toFloat())
+            setPadding(dp(16), dp(8), dp(10), dp(8))
+            minimumHeight = dp(60)
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also {
+                it.topMargin = dp(8); layoutParams = it
+            }
+            addView(TextView(this@MainActivity).apply {
+                text = label; textSize = 15f; setTextColor(Style.TEXT)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(round("−", "Less", minus))
+            addView(TextView(this@MainActivity).apply {
+                text = value; textSize = 16f; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT)
+                gravity = android.view.Gravity.CENTER; maxLines = 1
+                minWidth = dp(64); setPadding(dp(6), 0, dp(6), 0)
+            })
+            addView(round("+", "More", plus))
+        })
+    }
 
     private fun check(label: String, help: String, ok: Boolean, action: String, onClick: () -> Unit) {
         if (!ok) toFix++
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
+            gravity = android.view.Gravity.TOP
             background = Style.rounded(Style.SURFACE, dp(14).toFloat())
             setPadding(dp(14), dp(12), dp(14), dp(12))
             (LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)).also {
@@ -1556,13 +1613,14 @@ class MainActivity : Activity() {
                     text = help; textSize = 13f; setTextColor(Style.TEXT2); setLineSpacing(dp(2).toFloat(), 1f)
                     setPadding(0, dp(2), 0, 0)
                 })
-            })
-            if (!ok) addView(Button(this@MainActivity).apply {
-                text = action; isAllCaps = false; textSize = 14f; setTextColor(Color.WHITE)
-                background = Style.button(Style.PRIMARY, dp(12).toFloat()); stateListAnimator = null
-                setPadding(dp(16), dp(10), dp(16), dp(10))
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = dp(10) }
-                setOnClickListener { onClick() }
+                // The fix button sits under the text, so the title gets the full width.
+                if (!ok) addView(Button(this@MainActivity).apply {
+                    text = action; isAllCaps = false; textSize = 14f; setTextColor(Color.WHITE)
+                    background = Style.button(Style.PRIMARY, dp(12).toFloat()); stateListAnimator = null
+                    setPadding(dp(18), dp(10), dp(18), dp(10)); minHeight = dp(44)
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) }
+                    setOnClickListener { onClick() }
+                })
             })
         })
     }

@@ -49,25 +49,36 @@ class DriveModeActivity : Activity() {
     }
 
     private fun buildPrompt(question: String): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
+        orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
         gravity = Gravity.CENTER
         setBackgroundColor(0xF20A0A0B.toInt())
         isClickable = true  // don't let taps fall through to the music buttons
-        setPadding(dp(24), dp(24), dp(24), dp(24))
-        addView(TextView(this@DriveModeActivity).apply {
+        val pad = if (wide) dp(14) else dp(24)
+        setPadding(pad, pad, pad, pad)
+        val q = TextView(this@DriveModeActivity).apply {
             text = (if (Prefs(this@DriveModeActivity).butler) "🎩  " else "") + question
-            setTextColor(Style.TEXT); textSize = 26f; gravity = Gravity.CENTER
-            setTypeface(typeface, Typeface.BOLD)
-        }, vLp(weight = 1.2f))
-        val row = LinearLayout(this@DriveModeActivity).apply { orientation = LinearLayout.HORIZONTAL }
-        row.addView(answerButton("✕\nNot interested", 0xFFD32F2F.toInt()) { UpdatePrompt.answer(this@DriveModeActivity, false) }, hLp(1f))
-        row.addView(answerButton("✓\nGo ahead", 0xFF2E7D32.toInt()) { UpdatePrompt.answer(this@DriveModeActivity, true) }, hLp(1f))
-        addView(row, vLp(weight = 2f))
+            setTextColor(Style.TEXT); gravity = Gravity.CENTER
+            setTypeface(typeface, Typeface.BOLD); fitText(14, 26, 8)
+        }
+        val buttons = LinearLayout(this@DriveModeActivity).apply {
+            orientation = if (wide) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        }
+        val no = answerButton("✕\nNo thanks", 0xFFD32F2F.toInt()) { UpdatePrompt.answer(this@DriveModeActivity, false) }
+            .apply { contentDescription = "Not interested" }
+        val yes = answerButton("✓\nGo ahead", 0xFF2E7D32.toInt()) { UpdatePrompt.answer(this@DriveModeActivity, true) }
+        if (wide) {
+            buttons.addView(yes, vLp(weight = 1f)); buttons.addView(no, vLp(weight = 1f))
+            addView(q, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1.2f).apply { marginEnd = dp(10) })
+            addView(buttons, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
+        } else {
+            buttons.addView(no, hLp(1f)); buttons.addView(yes, hLp(1f))
+            addView(q, vLp(weight = 1.2f))
+            addView(buttons, vLp(weight = 2f))
+        }
     }
-
     private fun answerButton(label: String, color: Int, onClick: () -> Unit) = Button(this).apply {
-        text = label; textSize = 26f; isAllCaps = false; setTextColor(Color.WHITE)
-        setTypeface(typeface, Typeface.BOLD)
+        text = label; isAllCaps = false; setTextColor(Color.WHITE)
+        setTypeface(typeface, Typeface.BOLD); fitText(14, 28, 2)
         background = Style.button(color, dp(24).toFloat()); stateListAnimator = null
         setOnClickListener { onClick() }
     }
@@ -141,12 +152,12 @@ class DriveModeActivity : Activity() {
             visibility = View.GONE
         }
         root.addView(carWarning, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
-        val tiles = listOf(
-            listOf("speed" to "Speed", "rpm" to "RPM"),
-            listOf("coolant" to "Engine", "fuel" to "Fuel now"),
-            listOf("trip" to "This trip", "battery" to "Battery"),
-            listOf("load" to "Throttle · load", "temps" to "Outside · intake"),
+        val all = listOf(
+            "speed" to "Speed", "rpm" to "RPM", "coolant" to "Engine", "fuel" to "Fuel now",
+            "trip" to "This trip", "battery" to "Battery", "load" to "Throttle · load", "temps" to "Outside · intake",
         )
+        // Portrait: 4 rows of 2. Landscape: 2 rows of 4, so every tile stays tall enough to read.
+        val tiles = all.chunked(if (wide) 4 else 2)
         for (row in tiles) {
             val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             for ((key, label) in row) r.addView(carTile(key, label), hLp(1f))
@@ -293,6 +304,7 @@ class DriveModeActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        onScreen = true
         if (::pager.isInitialized) com.daand.drivemusic.obd.ObdManager.liveView = pager.current == TAB_CAR
         goImmersive()
         handler.post(tick)
@@ -300,6 +312,7 @@ class DriveModeActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
+        onScreen = false
         handler.removeCallbacks(tick)
         com.daand.drivemusic.obd.ObdManager.liveView = false
     }
@@ -320,33 +333,25 @@ class DriveModeActivity : Activity() {
     private fun svc() = DriveMonitorService.instance
 
     private fun buildUi(): View {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Style.BG)
-            setPadding(dp(20), dp(20), dp(20), dp(20))
-        }
-
         nowPlaying = TextView(this).apply {
-            setTextColor(Style.TEXT); textSize = 30f; setTypeface(typeface, Typeface.BOLD)
-            gravity = Gravity.CENTER; maxLines = 3
+            setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD)
+            gravity = Gravity.CENTER; fitText(16, 30, 4)
         }
         status = TextView(this).apply {
-            setTextColor(Style.TEXT2); textSize = 16f; gravity = Gravity.CENTER
+            setTextColor(Style.TEXT2); textSize = 15f; gravity = Gravity.CENTER; maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
         }
-        root.addView(nowPlaying, vLp(weight = 2f))
-        root.addView(status, vLp())
 
         // Big transport row (horizontal: weight drives WIDTH, height fills the row).
         val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        controls.addView(bigButton("⏮") { svc()?.skipPrevious(); flash() }, hLp(1f))
-        playBtn = bigButton("▶") { svc()?.playPause(); handler.postDelayed({ updateDynamic() }, 300) }
+        controls.addView(bigButton("⏮", "Previous song") { svc()?.skipPrevious(); flash() }, hLp(1f))
+        playBtn = bigButton("▶", "Play or pause") { svc()?.playPause(); handler.postDelayed({ updateDynamic() }, 300) }
         controls.addView(playBtn, hLp(1.3f))
-        controls.addView(bigButton("⏭") { svc()?.skipNext(); flash() }, hLp(1f))
-        root.addView(controls, vLp(weight = 3f))
+        controls.addView(bigButton("⏭", "Next song") { svc()?.skipNext(); flash() }, hLp(1f))
 
-        // Bottom row
+        // Bottom row: icon on top, one short word underneath.
         val bottom = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        bottom.addView(smallButton("🔊 Welcome") {
+        bottom.addView(smallButton("🔊\nWelcome") {
             WelcomeAnnouncer.run(this, svc()?.currentSong(), recordAsGreeted = false)
         }, hLp(1f))
         resumeBtn = smallButton("") {
@@ -356,17 +361,44 @@ class DriveModeActivity : Activity() {
             updateDynamic()
         }
         bottom.addView(resumeBtn, hLp(1f))
-        bottom.addView(smallButton("✕ Close") { finish() }, hLp(0.7f))
-        root.addView(bottom, vLp(weight = 1.6f))
+        bottom.addView(smallButton("✕\nClose") { finish() }, hLp(0.8f))
 
+        val pad = if (wide) dp(12) else dp(20)
+        if (wide) {
+            // Landscape: song on the left, buttons on the right - nothing gets squashed.
+            val root = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setBackgroundColor(Style.BG); setPadding(pad, pad, pad, pad)
+            }
+            val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
+            left.addView(nowPlaying, vLp(weight = 1f))
+            left.addView(status, vLp())
+            val right = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            right.addView(controls, vLp(weight = 2f))
+            right.addView(bottom, vLp(weight = 1f))
+            root.addView(left, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
+            root.addView(right, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1.4f))
+            return root
+        }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Style.BG)
+            setPadding(pad, pad, pad, pad)
+        }
+        root.addView(nowPlaying, vLp(weight = 2f))
+        root.addView(status, vLp())
+        root.addView(controls, vLp(weight = 3f))
+        root.addView(bottom, vLp(weight = 1.4f))
         return root
     }
 
     private var lastShown = ""
 
-    private companion object {
-        const val TAB_MUSIC = 0
-        const val TAB_CAR = 1
+    companion object {
+        /** True while Drive Mode is in front - phone pop-ups would only cover its own buttons. */
+        @Volatile var onScreen = false
+        private const val TAB_MUSIC = 0
+        private const val TAB_CAR = 1
     }
 
     /** Refreshes song / status / buttons - only touching the views when something changed (saves redraws). */
@@ -385,20 +417,22 @@ class DriveModeActivity : Activity() {
         nowPlaying.text = songText
         status.text = statusText
         playBtn.text = if (playing) "⏸" else "▶"
-        resumeBtn.text = if (resumeOn) "↻ Resume: On" else "↻ Resume: Off"
+        resumeBtn.text = if (resumeOn) "↻\nResume on" else "↻\nResume off"
         resumeBtn.background = Style.button(if (resumeOn) Style.GREEN else Style.SURFACE2, dp(16).toFloat())
     }
 
     private fun flash() = handler.postDelayed({ updateDynamic() }, 400)
 
-    private fun bigButton(label: String, onClick: () -> Unit) = Button(this).apply {
-        text = label; textSize = 40f; isAllCaps = false
+    private fun bigButton(label: String, desc: String, onClick: () -> Unit) = Button(this).apply {
+        text = label; isAllCaps = false; contentDescription = desc
+        fitText(20, 48, 1); setPadding(0, 0, 0, 0)
         setTextColor(Color.WHITE); background = Style.button(Style.PRIMARY, dp(20).toFloat()); stateListAnimator = null
         setOnClickListener { onClick() }
     }
 
     private fun smallButton(label: String, onClick: () -> Unit) = Button(this).apply {
-        text = label; textSize = 18f; isAllCaps = false
+        text = label; isAllCaps = false
+        fitText(10, 18, 2); setPadding(dp(4), dp(4), dp(4), dp(4))
         setTextColor(Style.TEXT); background = Style.button(Style.SURFACE2, dp(16).toFloat()); stateListAnimator = null
         setOnClickListener { onClick() }
     }
@@ -416,4 +450,15 @@ class DriveModeActivity : Activity() {
         }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    /** Wide screen (landscape phone / car mount): side-by-side layouts instead of stacked ones. */
+    private val wide get() = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
+    /** Shrinks the text until it fits the button - whole words only, never "Welco/me". */
+    private fun TextView.fitText(minSp: Int, maxSp: Int, lines: Int) {
+        maxLines = lines
+        breakStrategy = android.graphics.text.LineBreaker.BREAK_STRATEGY_SIMPLE
+        hyphenationFrequency = android.text.Layout.HYPHENATION_FREQUENCY_NONE
+        setAutoSizeTextTypeUniformWithConfiguration(minSp, maxSp, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
+    }
 }

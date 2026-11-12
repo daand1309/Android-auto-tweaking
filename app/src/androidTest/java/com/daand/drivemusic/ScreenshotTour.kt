@@ -44,6 +44,17 @@ class ScreenshotTour {
             showSplash = false; autoOpenDriveMode = false; followTopic = "kabinet, coalitie, jetten"
             followUntil = System.currentTimeMillis() + 86_400_000L
         }
+        Prefs(ctx).apply { fuelPrice = 2.05; tankLitres = 60.0 }
+        com.daand.drivemusic.obd.TripHistory.clear(ctx)
+        val now = System.currentTimeMillis()
+        for (d in 0 until 12) com.daand.drivemusic.obd.TripHistory.add(ctx, com.daand.drivemusic.obd.TripRecord(
+            at = now - d * 86_400_000L, minutes = 18 + d % 5 * 4, km = 14.0 + d % 4 * 6.5, litres = 0.95 + d % 4 * 0.4,
+            score = 72 + d % 3 * 9, maxCoolant = 89 + d % 3))
+        refreshLive()
+    }
+
+    /** The app treats car data older than 20 s as gone, so renew it right before each shot. */
+    private fun refreshLive() {
         val trip = Trip()
         for (i in 0..250) trip.add(CarSnapshot(i * 5_000L, rpm = 2300, speedKmh = 72, litresPerHour = 4.6))
         ObdManager.setLiveForTest(CarSnapshot(System.currentTimeMillis(), coolantC = 88, rpm = 2350, speedKmh = 72, fuelPct = 41,
@@ -59,6 +70,7 @@ class ScreenshotTour {
             var pages = emptyList<String>()
             sc.onActivity { pages = it.pageNamesForTest() }
             for (p in pages) {
+                refreshLive()
                 sc.onActivity { it.openPageForTest(p) }
                 SystemClock.sleep(if (p == "VOICE") 3_000 else 500)
                 var tall = false
@@ -78,6 +90,7 @@ class ScreenshotTour {
     }
 
     private fun tourDriveMode(prefix: String, landscape: Boolean) {
+        refreshLive()
         ctx.startActivity(Intent(ctx, DriveModeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         var tries = 0
         while (driveMode() == null && tries++ < 50) SystemClock.sleep(200)
@@ -86,6 +99,7 @@ class ScreenshotTour {
         val dm = driveMode() ?: return
         val o = if (landscape) "land" else "port"
         snap("${prefix}drive_${o}_1music")
+        refreshLive()
         instr.runOnMainSync { dm.pagerForTest().goTo(1, animate = false) }
         SystemClock.sleep(2_500)
         snap("${prefix}drive_${o}_2car")
@@ -108,7 +122,8 @@ class ScreenshotTour {
         SystemClock.sleep(1_500)
         try {
             ActivityScenario.launch(MainActivity::class.java).use { sc ->
-                for (p in listOf("HOME", "OBD", "VOICE")) {
+                for (p in listOf("HOME", "OBD", "TRIPS", "VOICE")) {
+                    refreshLive()
                     sc.onActivity { it.openPageForTest(p) }; SystemClock.sleep(if (p == "VOICE") 3_000 else 600)
                     snap("c_small_${p.lowercase()}")
                 }
@@ -121,6 +136,7 @@ class ScreenshotTour {
 
     @After fun tearDown() {
         ObdManager.setLiveForTest(null)
+        com.daand.drivemusic.obd.TripHistory.clear(ctx)
         Prefs(ctx).apply { obdEnabled = false; followTopic = ""; followUntil = 0L; greetingStyle = "sassy" }
     }
 }
