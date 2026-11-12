@@ -69,7 +69,8 @@ class NewsTest {
         assertEquals(4, items.size)
         assertEquals("Grote brand in haven", items[0].title)
         assertTrue(items[0].description.contains("Rook & vlammen"))
-        assertEquals("A12 dicht", items[1].title)  // " - AD.nl" removed
+        assertEquals("A12 dicht - AD.nl", items[1].title)  // national feeds: title kept as-is
+        assertEquals("A12 dicht", News.parseRegional(xml).single { it.title.startsWith("A12") }.title)  // Google: source removed
         assertTrue(items.take(3).all { it.published != null })
         assertEquals("Evil line", items[3].title)  // one line, untrusted text cleaned
     }
@@ -91,5 +92,50 @@ class NewsTest {
         assertTrue(butler, butler.startsWith("Pardon the interruption, Mister Smith. A brief update."))
         assertTrue(butler, butler.contains("Some news you should know: Kabinet gevallen.") && butler.endsWith("I'll leave you to your music."))
         assertTrue(DriveUpdates.compose(emptyList(), news, true, false, "")!!.startsWith("Even een update. Belangrijk nieuws:"))
+    }
+
+    // ------------------------------------------------------------------ red team
+
+    @Test fun wordsThatMerelyStartWithAKeywordDontCount() {
+        assertTrue(!passes(item("Belastingdienst stuurt aanslagbiljetten te laat")))   // aanslag-biljet = tax bill
+        assertTrue(!passes(item("Oorlogsmonument krijgt nieuwe plek")))
+    }
+
+    @Test fun softWordsDontHideRealEmergencies() {
+        assertTrue(passes(item("Serie explosies in Rotterdam: NL-Alert verstuurd, ramen en deuren dicht")))
+        assertTrue(!passes(item("Kat vast in boom: NL-Alert-test bleek grap van buurman")))  // a TEST alert stays soft
+    }
+
+    @Test fun entitiesInHeadlinesSurviveParsing() {
+        val xml = """<rss><channel><item><title>Brand &amp; explosie in haven</title>
+            <pubDate>Thu, 12 Nov 2026 10:12:39 +0100</pubDate></item></channel></rss>"""
+        assertEquals("Brand & explosie in haven", News.parse(xml).single().title)
+    }
+
+    @Test fun nationalHeadlinesKeepTheirDashes() {
+        val xml = """<rss><channel><item><title>Kabinet gevallen - premier treedt af</title>
+            <pubDate>Thu, 12 Nov 2026 10:12:39 +0100</pubDate></item></channel></rss>"""
+        assertEquals("Kabinet gevallen - premier treedt af", News.parse(xml).single().title)
+    }
+
+    @Test fun regionalNewsOnlyFromKnownNewsrooms() {
+        val xml = """<rss><channel>
+            <item><title>NL-Alert: gifwolk boven Noordwijk - Omroep West</title><pubDate>Thu, 12 Nov 2026 10:12:39 +0100</pubDate></item>
+            <item><title>NL-Alert: gifwolk boven Noordwijk - totaal-echt-nieuws.biz</title><pubDate>Thu, 12 Nov 2026 10:12:39 +0100</pubDate></item>
+        </channel></rss>"""
+        val items = News.parseRegional(xml)
+        assertEquals(1, items.size)
+        assertEquals("NL-Alert: gifwolk boven Noordwijk", items.single().title)
+        assertTrue(items.single().regional)
+    }
+
+    @Test fun slightlyFutureDatesFromClockSkewAreFineButNotFarFuture() {
+        val urgent = "NL-Alert: grote brand, sluit ramen en deuren"
+        assertNotNull(News.pick(listOf(News.Item(urgent, "", now + 5 * 60_000)), now, emptyList()))
+        assertNull(News.pick(listOf(News.Item(urgent, "", now + 3 * 60 * 60_000)), now, emptyList()))
+    }
+
+    @Test fun englishPluralsCount() {
+        assertTrue(passes(item("Floods force evacuations in Limburg, code red issued")))
     }
 }

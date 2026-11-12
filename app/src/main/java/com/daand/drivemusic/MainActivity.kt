@@ -303,6 +303,8 @@ class MainActivity : Activity() {
 
     /** Plays the "there is an update" question with a sample update, so you can try the buttons. */
     private fun tryUpdateQuestion() {
+        // Never replace a real question from the drive (its update would silently never be read).
+        if (UpdatePrompt.question != null || WelcomeAnnouncer.isBusy) { toast("Busy speaking - try again in a moment"); return }
         val dutch = prefs.greetingDutch
         val butler = prefs.butler
         val sample = DriveUpdates.compose(
@@ -319,7 +321,11 @@ class MainActivity : Activity() {
     }
 
     /** Runs the news check now and reads out whatever passes the filter (or says nothing passed). */
+    private var newsCheckRunning = false
+
     private fun testDriveUpdate() {
+        if (newsCheckRunning) { toast("Already checking..."); return }
+        newsCheckRunning = true
         toast("Checking the news...")
         Thread {
             val p = prefs
@@ -328,6 +334,8 @@ class MainActivity : Activity() {
             items += News.fetchAll(p.greetingDutch, p.weatherPlace) { failed++ }
             val story = News.pick(items, System.currentTimeMillis(), emptyList())
             runOnUiThread {
+                newsCheckRunning = false
+                if (isDestroyed) return@runOnUiThread
                 when {
                     items.isEmpty() && failed > 0 -> toast("Couldn't reach the news - no internet?")
                     story == null -> toast("Checked ${items.size} headlines - nothing urgent enough to interrupt your music. 👍")

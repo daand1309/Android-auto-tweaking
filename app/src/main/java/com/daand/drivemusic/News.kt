@@ -45,10 +45,10 @@ object News {
                     tag = p.name
                     if (tag == "item") { inItem = true; title = StringBuilder(); desc = StringBuilder(); date = StringBuilder() }
                 }
-                XmlPullParser.TEXT, XmlPullParser.CDSECT -> if (inItem) when (tag) {
-                    "title" -> title.append(p.text)
-                    "description" -> desc.append(p.text)
-                    "pubDate" -> date.append(p.text)
+                XmlPullParser.TEXT, XmlPullParser.CDSECT, XmlPullParser.ENTITY_REF -> if (inItem) when (tag) {
+                    "title" -> title.append(p.text ?: "")
+                    "description" -> desc.append(p.text ?: "")
+                    "pubDate" -> date.append(p.text ?: "")
                 }
                 XmlPullParser.END_TAG -> {
                     if (p.name == "item") {
@@ -67,8 +67,34 @@ object News {
     private fun stripHtml(s: String) = s.replace(Regex("<[^>]*>"), " ")
         .replace("&nbsp;", " ").replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'")
 
-    /** Untrusted text: one line, no markup, sane length; drops Google's " - Source name" suffix. */
-    fun clean(s: String): String = GreetingText.cleanMeta(s.replace(Regex("""\s+-\s+[^-]{2,40}$"""), ""))
+    /** Untrusted text: one line, no markup, sane length. */
+    fun clean(s: String): String = GreetingText.cleanMeta(s)
+
+    /**
+     * Google News results for your town come from any site Google indexes - including ones that make
+     * things up. Only real newsrooms count (the source is the " - Name" at the end of the title).
+     */
+    private val NEWSROOMS = setOf(
+        "nos", "nos.nl", "nu.nl", "nunl", "rtl nieuws", "rtl.nl", "ad.nl", "algemeen dagblad", "de telegraaf", "telegraaf.nl",
+        "de volkskrant", "volkskrant", "nrc", "trouw", "het parool", "parool", "bnr", "bnr nieuwsradio", "nl times", "dutchnews.nl",
+        "omroep west", "rijnmond", "rtv rijnmond", "nh nieuws", "at5", "rtv utrecht", "omroep gelderland", "omroep brabant",
+        "l1", "l1 nieuws", "1limburg", "omroep zeeland", "omroep flevoland", "rtv oost", "rtv noord", "rtv drenthe",
+        "omrop fryslân", "omrop fryslan", "leidsch dagblad", "haarlems dagblad", "noordhollands dagblad", "ijmuider courant",
+        "de gelderlander", "tubantia", "brabants dagblad", "eindhovens dagblad", "bn destem", "pzc", "de stentor",
+        "leeuwarder courant", "dagblad van het noorden", "hart van holland", "sleutelstad", "regio15", "112-nieuws",
+    )
+
+    /** Splits "Headline - Source" into the headline and the source. */
+    fun splitSource(title: String): Pair<String, String?> {
+        val m = Regex("""^(.*\S)\s+-\s+([^-]{2,40})$""").find(title) ?: return title to null
+        return m.groupValues[1] to m.groupValues[2].trim()
+    }
+
+    /** Regional (Google News) items: only from known newsrooms, source suffix removed, marked regional. */
+    fun parseRegional(xml: String): List<Item> = parse(xml).mapNotNull { item ->
+        val (headline, source) = splitSource(item.title)
+        if (source == null || source.lowercase() !in NEWSROOMS) null else item.copy(title = headline, regional = true)
+    }
 
     private val DATE_FORMATS = listOf("EEE, dd MMM yyyy HH:mm:ss Z", "EEE, dd MMM yyyy HH:mm:ss zzz", "dd MMMM yyyy - HH:mm")
 
@@ -93,7 +119,7 @@ object News {
         "noodverordening" to 9, "ramen en deuren" to 10, "evacuatie" to 9, "evacueren" to 9, "geëvacueerd" to 9,
         "code red" to 10, "code orange" to 10, "state of emergency" to 10, "evacuat" to 9, "keep windows and doors" to 10,
         // Disasters / attacks
-        "aanslag" to 10, "terreur" to 10, "terroris" to 10, "explosie" to 8, "ontploffing" to 8, "aardbeving" to 9,
+        "aanslag" to 10, "aanslagen" to 10, "terreur" to 10, "terreurdreiging" to 10, "terroris" to 10, "explosie" to 8, "ontploffing" to 8, "aardbeving" to 9,
         "overstroming" to 10, "dijkdoorbraak" to 10, "gijzeling" to 10, "schietpartij" to 8, "zeer grote brand" to 9,
         "grote brand" to 7, "gifwolk" to 10, "giftige rook" to 9, "kernramp" to 10, "tornado" to 9, "orkaan" to 9, "zware storm" to 9,
         "terror" to 10, "explosion" to 8, "earthquake" to 9, "flood" to 9, "hostage" to 10, "shooting" to 8,
@@ -119,11 +145,17 @@ object News {
         "koe", "pony", "egel", "cat", "cats", "dog", "dogs", "animal", "animals", "pet", "rescued",
         "voetbal", "eredivisie", "ajax", "psv", "feyenoord", "f1", "formule 1", "verstappen", "wielren", "schaats",
         "tennis", "darts", "olymp", "songfestival", "eurovision", "football", "soccer", "match", "champions league",
-        "bn'er", "celebrity", "influencer", "realityster", "tv-programma", "film", "serie", "concert", "festival", "album",
+        "bn'er", "celebrity", "influencer", "realityster", "tv-programma", "film", "concert", "festival", "album",
         "recept", "recipe", "horoscoop", "horoscope", "loterij", "lotto", "lottery", "quiz", "column", "opinie", "opinion",
         "review", "podcast", "tips", "wekdienst", "puzzel", "veiling", "auction", "record", "jubileum", "verjaardag", "birthday",
         "sinterklaas", "kerstpakket", "mode", "fashion", "royalty", "prinses", "koningin draagt",
+        "nl-alert-test", "testalert", "proefalarm", "test alert", "testbericht",
     )
+
+    /** Official warnings: these are never thrown out as "soft" (a fire at a festival with an NL-Alert counts). */
+    private val OFFICIAL = listOf("nl-alert", "code rood", "code oranje", "code red", "code orange", "ramen en deuren",
+        "noodverordening", "noodtoestand", "state of emergency", "keep windows and doors")
+    private val TEST_ALERT = listOf("nl-alert-test", "testalert", "proefalarm", "test alert", "testbericht")
 
     private fun words(s: String) = s.lowercase().split(Regex("""[^\p{L}\p{N}'-]+""")).filter { it.isNotBlank() }.toSet()
 
@@ -131,21 +163,36 @@ object News {
     fun score(item: Item): Int {
         val text = (item.title + " " + item.description).lowercase()
         val ws = words(text)
-        if (SOFT.any { s -> if (' ' in s) text.contains(s) else s in ws }) return 0
+        val official = OFFICIAL.any { text.contains(it) } && TEST_ALERT.none { text.contains(it) }
+        if (!official && SOFT.any { s -> if (' ' in s || '-' in s) text.contains(s) else s in ws }) return 0
         // Whole words / phrases only ("war" must not match "warm" or "waarschuwing").
-        var total = IMPORTANT.filter { (k, _) -> if (' ' in k || '-' in k) text.contains(k) else k in ws || ws.any { w -> k.length >= 6 && w.startsWith(k) } }
-            .sumOf { it.second }
+        var total = IMPORTANT.filter { (k, _) ->
+            when {
+                ' ' in k || '-' in k -> text.contains(k)
+                k in PREFIXES -> ws.any { it.startsWith(k) }  // only where every longer word means the same thing
+                else -> k in ws
+            }
+        }.sumOf { it.second }
         // A motorway closure ("A12 dicht", "A4 closed"): worth 7 - needs to be lasting or local to pass.
         if (ws.any { MOTORWAY.matches(it) } && ws.any { it in CLOSED }) total += 7
         if (item.regional) total += 3
         return total
     }
 
+    /**
+     * Keywords that may match longer words (terroris-me/-ten, evacuat-ion/-ed, explosie-s/-ven...).
+     * NOT "aanslag" (aanslagbiljet = tax bill) or "oorlog" (oorlogsmonument).
+     */
+    private val PREFIXES = setOf("terroris", "evacuat", "evacuee", "explosie", "ontploffing", "overstroming", "aardbeving",
+        "schietpartij", "gijzeling", "stroomstoring", "earthquake", "explosion", "flood", "hostage")
+
     private val MOTORWAY = Regex("""a\d{1,3}""")
     private val CLOSED = setOf("dicht", "afgesloten", "closed", "blocked", "versperd")
 
     const val THRESHOLD = 10
     const val MAX_AGE_MS = 3 * 60 * 60 * 1000L
+    /** Feeds and phones disagree on the time a little; more than this "from the future" is bogus. */
+    const val MAX_SKEW_MS = 10 * 60 * 1000L
 
     /** True when two headlines are about the same story (live blogs post many versions). */
     fun sameStory(a: String, b: String): Boolean {
@@ -161,7 +208,7 @@ object News {
      */
     fun pick(items: List<Item>, now: Long, alreadyTold: List<String>): Item? =
         items.asSequence()
-            .filter { it.published == null || now - it.published in 0..MAX_AGE_MS }
+            .filter { it.published == null || now - it.published in -MAX_SKEW_MS..MAX_AGE_MS }
             .filter { it.published != null }  // undated = can't prove it's fresh -> skip
             .map { it to score(it) }
             .filter { it.second >= THRESHOLD }
@@ -178,13 +225,15 @@ object News {
             try { out += fetch(url) } catch (e: Exception) { onError(e.message) }
         }
         if (dutch) regionalFeed(place)?.let { url ->
-            try { out += fetch(url).map { it.copy(regional = true) } } catch (e: Exception) { onError(e.message) }
+            try { out += parseRegional(fetchXml(url)) } catch (e: Exception) { onError(e.message) }
         }
         return out
     }
 
     /** Fetches a feed (HTTPS, short timeouts, size-capped). Throws on failure. */
-    fun fetch(url: String): List<Item> {
+    fun fetch(url: String): List<Item> = parse(fetchXml(url))
+
+    private fun fetchXml(url: String): String {
         require(url.startsWith("https://")) { "news must use https" }
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 5000
@@ -198,7 +247,7 @@ object News {
                 while (sb.length < 1_500_000) { val n = r.read(buf); if (n < 0) break; sb.append(buf, 0, n) }
                 sb.toString()
             }
-            return parse(xml)
+            return xml
         } finally {
             conn.disconnect()
         }
