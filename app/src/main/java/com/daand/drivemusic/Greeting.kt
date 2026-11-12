@@ -43,6 +43,7 @@ object GreetingText {
     fun build(
         name: String, dutch: Boolean, cal: Calendar, weather: WeatherNow?, place: String,
         random: Random = Random.Default, roads: Boolean = false, song: Song? = null, birthday: String = "",
+        butler: Boolean = false,
     ): String {
         val hour = cal.get(Calendar.HOUR_OF_DAY)
         val day = cal.get(Calendar.DAY_OF_WEEK)
@@ -50,13 +51,23 @@ object GreetingText {
 
         val who = SpeechText.spokenName(name, dutch)
         parts += if (who.isEmpty()) timeGreeting(hour, dutch) + "." else "${timeGreeting(hour, dutch)}, $who."
-        parts += if (dutch) "Welkom terug." else "Welcome back."
+        parts += when {
+            butler && dutch -> "Welkom terug. Alles staat voor u klaar."
+            butler -> "Welcome back. Everything is in order."
+            dutch -> "Welkom terug."
+            else -> "Welcome back."
+        }
 
         // A special-occasion line takes the place of one random line when it applies.
         val occasion = occasionLine(cal, birthday, dutch)
         if (occasion != null) parts += occasion
         dayLine(day, hour, dutch)?.let { parts += it }
-        val pool = if (dutch) LINES_NL else LINES_EN
+        val pool = when {
+            butler && dutch -> BUTLER_NL
+            butler -> BUTLER_EN
+            dutch -> LINES_NL
+            else -> LINES_EN
+        }
         pool.shuffled(random).take(if (occasion != null) 1 else 2).forEach { parts += it }
 
         if (weather != null) {
@@ -64,7 +75,12 @@ object GreetingText {
             if (roads) parts += roadSentence(weather, dutch)
         }
         if (song != null) parts += songSentence(song, dutch, upFirst = true)
-        parts += if (dutch) "Ik zet je muziek aan. Goede reis!" else "Starting your music. Have a great drive!"
+        parts += when {
+            butler && dutch -> "Ik zet uw muziek aan. Rijdt u voorzichtig."
+            butler -> "I'll start your music now. Do drive carefully."
+            dutch -> "Ik zet je muziek aan. Goede reis!"
+            else -> "Starting your music. Have a great drive!"
+        }
         return parts.joinToString(" ")
     }
 
@@ -224,6 +240,78 @@ object GreetingText {
         w.code <= 1 -> if (dutch) "Zonnebril op, het is een mooie dag." else "Sunglasses on, it's a beautiful day."
         else -> null
     }
+
+    /** Butler style: dry, polite, quietly witty. Original lines. */
+    val BUTLER_EN = listOf(
+        "The engine is warm, the mirrors are adjusted, and I have taken the liberty of selecting some music.",
+        "All systems are nominal. Well, all the ones I am allowed to check.",
+        "Your car awaits, and so, as ever, do I.",
+        "I trust the day has treated you kindly. If not, the music may help.",
+        "Shall we? The road is not going to drive itself. Not yet, anyway.",
+        "I have reviewed today's journey and found it entirely acceptable.",
+        "A pleasure to see you again. The car has missed you. I, of course, remain professional.",
+        "Seat belt, if you would be so kind. I would hate to fill out the paperwork.",
+        "Everything is prepared. I took the liberty of not judging your last playlist.",
+        "Very good. Another day, another magnificent journey.",
+        "I have polished the dashboard. Metaphorically speaking.",
+        "Rest assured, I shall keep an eye on things while you keep an eye on the road.",
+        "Your chariot is ready. Horses not included.",
+        "I took the liberty of warming up the speakers. They were eager.",
+        "As always, it is an honour to be of service.",
+        "Should you require anything, simply ask. Within reason, and within the law.",
+        "The car is ready, the music is queued, and my composure is impeccable.",
+        "I have prepared a modest selection of music. Modest by my standards, at least.",
+        "May I say, you are looking remarkably capable of driving today.",
+        "I have checked the tyres. Visually. From in here. They seem round.",
+        "One does try to keep standards up, even on the motorway.",
+        "Another outing? Splendid. I shall fetch the soundtrack.",
+        "Do try to enjoy the drive. I have gone to considerable trouble.",
+        "I have mapped out a perfectly pleasant journey. The traffic has not been informed.",
+        "Calm, collected, and ready to depart. I was describing myself, but it applies to you too.",
+        "It would appear we are going somewhere. How exciting.",
+        "I shall be right here, quietly ensuring that everything goes splendidly.",
+        "Do let me know if the music is not to your liking. I will pretend not to be offended.",
+        "The cabin is ready and the atmosphere is, if I may say so, rather refined.",
+        "Good to have you aboard. I kept your seat exactly where you left it.",
+        "A fine day for a drive. Or at least a perfectly adequate one.",
+        "Your timing is impeccable, as always. Well, most of the time.",
+        "I have arranged the music, the weather report, and my best manners.",
+        "Ready when you are. I have been ready for some time, but do not let that rush you.",
+        "Allow me to handle the details. You handle the steering. A fair division of labour.",
+        "If anyone asks, this car has a butler. It does wonders for the resale value.",
+        "I have run the usual checks. Everything is in order, apart from your choice of snacks.",
+        "Splendid. Let us make this journey a quietly excellent one.",
+        "I do so enjoy these little excursions of ours.",
+        "Everything is under control. I find it best to assume so, at any rate.",
+    )
+
+    val BUTLER_NL = listOf(
+        "De motor is warm, de spiegels staan goed, en ik ben zo vrij geweest om muziek uit te kiezen.",
+        "Alle systemen functioneren naar behoren. Althans, de systemen die ik mag controleren.",
+        "Uw auto staat klaar, en ik uiteraard ook.",
+        "Ik hoop dat de dag u goed gezind was. Zo niet, dan helpt de muziek misschien.",
+        "Zullen we? De weg rijdt zichzelf nog niet. Nog niet, althans.",
+        "Fijn u weer te zien. De auto heeft u gemist. Ik blijf uiteraard professioneel.",
+        "Uw gordel, als u zo vriendelijk wilt zijn. Ik vul liever geen formulieren in.",
+        "Alles is voorbereid. Ik heb uw vorige afspeellijst niet beoordeeld. Hardop.",
+        "Ik heb het dashboard gepoetst. Bij wijze van spreken.",
+        "Wees gerust, ik houd alles in de gaten terwijl u de weg in de gaten houdt.",
+        "Uw koets staat klaar. Paarden niet inbegrepen.",
+        "Zoals altijd is het mij een eer u van dienst te zijn.",
+        "Mocht u iets nodig hebben, vraagt u het maar. Binnen redelijke grenzen, en binnen de wet.",
+        "Ik heb de banden gecontroleerd. Visueel. Van hieruit. Ze lijken rond.",
+        "Nog een uitstapje? Uitstekend. Ik zet de soundtrack klaar.",
+        "Ik heb een uiterst aangename route bedacht. Het verkeer is nog niet op de hoogte gebracht.",
+        "Kalm, beheerst en klaar voor vertrek. Ik had het over mezelf, maar het geldt ook voor u.",
+        "Laat u het weten als de muziek u niet bevalt. Ik zal doen alsof ik niet beledigd ben.",
+        "Welkom aan boord. Uw stoel staat precies zoals u hem achterliet.",
+        "Een prima dag voor een ritje. Of in elk geval een volkomen acceptabele.",
+        "Laat u de details maar aan mij over. U stuurt. Een eerlijke taakverdeling.",
+        "Mocht iemand het vragen: deze auto heeft een butler. Goed voor de restwaarde.",
+        "Uitstekend. Laten we er een ingetogen, voortreffelijke rit van maken.",
+        "Ik geniet altijd van deze kleine uitstapjes van ons.",
+        "Alles is onder controle. Dat neem ik in elk geval graag aan.",
+    )
 
     val LINES_EN = listOf(
         "All systems are go. Your chariot awaits.",
@@ -651,6 +739,75 @@ object VoicePicker {
         return "${v.locale.getDisplayName(Locale.ENGLISH)} · voice $short · $net · $q"
     }
 
+    /** Country code of a voice's accent ("GB", "US", "AU", "IN", "NL", "BE", ...). */
+    fun accent(v: android.speech.tts.Voice): String = v.locale.country.uppercase()
+
+    fun accentName(country: String): String = when (country) {
+        "GB" -> "🇬🇧 British"
+        "US" -> "🇺🇸 American"
+        "AU" -> "🇦🇺 Australian"
+        "IN" -> "🇮🇳 Indian"
+        "NG" -> "🇳🇬 Nigerian"
+        "NL" -> "🇳🇱 Dutch (NL)"
+        "BE" -> "🇧🇪 Flemish (BE)"
+        "" -> "Standard"
+        else -> country
+    }
+
+    /**
+     * Gender of Google's voices where it's well known (Android doesn't report it). Unknown -> null,
+     * and the user can just press ▶ to hear it.
+     */
+    private val GOOGLE_GENDER = mapOf(
+        "gba" to "female", "gbb" to "male", "gbc" to "female", "gbd" to "male", "gbg" to "female", "rjs" to "male",
+        "iob" to "female", "iog" to "female", "iol" to "male", "iom" to "male",
+        "sfg" to "female", "tpc" to "female", "tpd" to "male", "tpf" to "female",
+        "aua" to "female", "aub" to "male", "auc" to "female", "aud" to "male",
+    )
+
+    /** "gbb" for "en-gb-x-gbb-local", or null. */
+    fun code(name: String): String? = Regex("""-x-([a-z0-9]+)""").find(name)?.groupValues?.get(1)
+
+    fun gender(name: String): String? = code(name)?.let { GOOGLE_GENDER[it] }
+
+    /** Male voices Google labels British, in order of how "butler" they sound. */
+    private val BUTLER_ORDER = listOf("rjs", "gbd", "gbb")
+
+    /**
+     * The best voice for the butler style: a British male voice (offline preferred), else any British
+     * voice, else null (then the caller explains how to install one).
+     */
+    fun butlerVoice(voices: Collection<android.speech.tts.Voice>): android.speech.tts.Voice? {
+        val british = usable(voices, dutch = false).filter { accent(it) == "GB" }
+        // Offline first (a car often has bad signal), then the most butler-like voice, then quality.
+        val order = compareBy<android.speech.tts.Voice> { it.isNetworkConnectionRequired }
+            .thenBy { BUTLER_ORDER.indexOf(code(it.name)).let { i -> if (i < 0) 99 else i } }
+            .thenByDescending { it.quality }
+        return british.filter { gender(it.name) == "male" }.sortedWith(order).firstOrNull()
+            ?: british.sortedWith(order).firstOrNull()
+    }
+
+    /**
+     * Friendly names: voices numbered per accent, e.g. "🇬🇧 British 2 · male", details separately.
+     * Returns name -> (title, details).
+     */
+    fun friendlyNames(voices: List<android.speech.tts.Voice>): Map<String, Pair<String, String>> {
+        val out = HashMap<String, Pair<String, String>>()
+        voices.groupBy { accent(it) }.forEach { (acc, group) ->
+            group.sortedBy { it.name }.forEachIndexed { i, v ->
+                val g = gender(v.name)?.let { " · $it" } ?: ""
+                val q = when {
+                    v.quality >= android.speech.tts.Voice.QUALITY_VERY_HIGH -> "very high quality"
+                    v.quality >= android.speech.tts.Voice.QUALITY_HIGH -> "high quality"
+                    else -> "normal quality"
+                }
+                val net = if (v.isNetworkConnectionRequired) "needs internet" else "works offline"
+                out[v.name] = "${accentName(acc)} ${i + 1}$g" to "$net · $q"
+            }
+        }
+        return out
+    }
+
     fun preferredEngine(context: Context, saved: String): String? {
         if (saved.isNotEmpty()) return saved
         val hasGoogle = try {
@@ -695,7 +852,12 @@ class Greeter(private val context: Context) {
                 val engine = tts ?: return@post
                 if (status != TextToSpeech.SUCCESS) { finish("no text-to-speech engine available"); return@post }
                 val locale = VoicePicker.localeFor(dutch)
-                val voice = try { VoicePicker.best(engine.voices.orEmpty(), dutch, prefs.voiceName) } catch (e: Exception) { null }
+                val voice = try {
+                    val all = engine.voices.orEmpty()
+                    // Butler style on "automatic": a British (male) voice if one is installed.
+                    (if (prefs.butler && !dutch && prefs.voiceName.isBlank()) VoicePicker.butlerVoice(all) else null)
+                        ?: VoicePicker.best(all, dutch, prefs.voiceName)
+                } catch (e: Exception) { null }
                 if (voice != null) {
                     engine.voice = voice
                     DriveLog.log("GREETING: voice ${voice.name} (engine ${engine.defaultEngine.takeIf { engineName == null } ?: engineName})")
@@ -773,6 +935,7 @@ object WelcomeAnnouncer {
             val text = GreetingText.build(
                 p.namePronunciation.ifBlank { p.greetingName }, p.greetingDutch, Calendar.getInstance(), weather, p.weatherPlace,
                 roads = p.roadConditionsEnabled, song = song.takeIf { p.announceSong }, birthday = p.birthday,
+                butler = p.butler,
             )
             if (recordAsGreeted) p.lastGreetingAt = System.currentTimeMillis()
             // On screen: your name as written, not the phonetic spelling used for the voice.

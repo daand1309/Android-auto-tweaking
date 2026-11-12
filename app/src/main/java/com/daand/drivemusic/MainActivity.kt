@@ -93,6 +93,13 @@ class MainActivity : Activity() {
     private var page = Page.HOME
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
+    /** Test hook: open a page by name ("VOICE", "SETUP", ...). */
+    @androidx.annotation.VisibleForTesting
+    internal fun openPageForTest(name: String) = go(Page.valueOf(name))
+
+    @androidx.annotation.VisibleForTesting
+    internal fun pageNamesForTest(): List<String> = Page.values().map { it.name }
+
     private fun go(p: Page) {
         page = p
         render()
@@ -159,6 +166,7 @@ class MainActivity : Activity() {
     }
 
     private fun render() {
+        if (page != Page.VOICE) releaseVoiceEngine()
         val y = scroll.scrollY  // keep scroll position when re-drawing after a button tap
         root.removeAllViews()
         toFix = 0
@@ -278,30 +286,243 @@ class MainActivity : Activity() {
                     .show()
             }
         }
-        navRow("Voice", prefs.voiceName.ifBlank { "Automatic" }) { go(Page.VOICE) }
+        navRow("Voice & style", (if (prefs.butler) "🎩 Butler" else "😏 Sassy") + " · " +
+            (if (prefs.voiceName.isBlank()) "automatic voice" else "your chosen voice") + " · tap to listen") { go(Page.VOICE) }
     }
 
     private fun renderVoice() {
         pageHeader(back = Page.GREETING)
-        button("▶  Preview voice", accent = true) { previewVoice() }
-        stepperLike("Voice: ${prefs.voiceName.ifBlank { "automatic" }}", "Choose") { pickVoice() }
-        stepperLike("Say my name as: ${prefs.namePronunciation.ifBlank { "as written" }}", "Change") { askPronunciation() }
+        ensureVoiceEngine()
+        val dutch = prefs.greetingDutch
+
+        header("Style")
+        row(
+            styleCard("😏  Sassy", "Cheeky one-liners", !prefs.butler) { setStyle(butler = false) },
+            styleCard("🎩  Butler", if (dutch) "Refined, polite (u)" else "Refined, British", prefs.butler) { setStyle(butler = true) },
+        )
+        button("▶  Hear a full greeting", accent = true) { previewVoice() }
+
+        header("Voice")
+        if (!voiceTtsReady) {
+            text("Loading voices…")
+        } else if (voiceList.isEmpty()) {
+            text("No ${if (dutch) "Dutch" else "English"} voices installed on this phone.")
+        } else {
+            val accents = voiceList.map { VoicePicker.accent(it) }.distinct().sortedBy { if (it == "GB") "" else it }
+            if (accents.size > 1) accentChips(listOf("") + accents)
+            val names = VoicePicker.friendlyNames(voiceList)
+            voiceRow("✨  Automatic", if (prefs.butler && !dutch) "Best British voice for the butler" else "Best voice on this phone",
+                prefs.voiceName.isBlank(), onPlay = { playSample(null, automatic = true) }) {
+                prefs.voiceName = ""
+                DriveLog.log("Setting changed: voice = automatic")
+                render(); playSample(null, automatic = true)
+            }
+            voiceList.filter { accentFilter.isEmpty() || VoicePicker.accent(it) == accentFilter }
+                .sortedWith(compareBy<android.speech.tts.Voice> { it.isNetworkConnectionRequired }
+                    .thenByDescending { it.quality }.thenBy { names[it.name]?.first })
+                .forEach { v ->
+                    val (title, details) = names[v.name] ?: (v.name to "")
+                    voiceRow(title, details, prefs.voiceName == v.name, onPlay = { playSample(v) }) {
+                        prefs.voiceName = v.name
+                        DriveLog.log("Setting changed: voice = ${v.name}")
+                        render(); playSample(v)
+                    }
+                }
+            if (!dutch && voiceList.none { VoicePicker.accent(it) == "GB" }) {
+                navRow("🇬🇧  Get British voices", "Tap → Google speech engine → Install voice data → English (United Kingdom)", highlight = true) { openTtsSettings() }
+            }
+        }
+
+        header("Delivery")
         stepper("Speed", "%.2fx".format(prefs.speechRate),
-            { prefs.speechRate = (prefs.speechRate - 0.05f).coerceAtLeast(0.6f) },
-            { prefs.speechRate = (prefs.speechRate + 0.05f).coerceAtMost(1.4f) })
+            { prefs.speechRate = (prefs.speechRate - 0.05f).coerceAtLeast(0.6f); sampleSoon() },
+            { prefs.speechRate = (prefs.speechRate + 0.05f).coerceAtMost(1.4f); sampleSoon() })
         stepper("Pitch", "%.2f".format(prefs.speechPitch),
-            { prefs.speechPitch = (prefs.speechPitch - 0.05f).coerceAtLeast(0.6f) },
-            { prefs.speechPitch = (prefs.speechPitch + 0.05f).coerceAtMost(1.4f) })
+            { prefs.speechPitch = (prefs.speechPitch - 0.05f).coerceAtLeast(0.6f); sampleSoon() },
+            { prefs.speechPitch = (prefs.speechPitch + 0.05f).coerceAtMost(1.4f); sampleSoon() })
+        stepperLike("Say my name as: ${prefs.namePronunciation.ifBlank { "as written" }}", "Change") { askPronunciation() }
+
+        header("More voices")
+        if (voiceEngines.size > 1) stepperLike("Voice engine: ${voiceEngines.firstOrNull { it.name == prefs.ttsEngine }?.label ?: "automatic"}", "Change") { pickEngine(voiceEngines) }
         if (!MusicApps.isInstalled(packageManager, VoicePicker.GOOGLE_TTS)) {
             button("Get a better voice (Google)") {
                 try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${VoicePicker.GOOGLE_TTS}"))) }
                 catch (e: Exception) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=${VoicePicker.GOOGLE_TTS}"))) }
             }
         }
-        button("Download more voices") {
-            try { startActivity(Intent("com.android.settings.TTS_SETTINGS")) } catch (e: Exception) { toast("Settings → General management → Text-to-speech") }
+        button("Download more voices") { openTtsSettings() }
+        text("Tip: voices marked \"works offline\" keep working without signal.")
+    }
+
+    private fun openTtsSettings() {
+        try { startActivity(Intent("com.android.settings.TTS_SETTINGS")) } catch (e: Exception) { toast("Settings → General management → Text-to-speech") }
+    }
+
+    // ---------------------------------------------------------------- voice page: live engine + samples
+
+    /** One speech engine while the Voice page is open, so ▶ plays instantly. Released when you leave. */
+    private var voiceTts: android.speech.tts.TextToSpeech? = null
+    private var voiceTtsReady = false
+    private var voiceList: List<android.speech.tts.Voice> = emptyList()
+    private var voiceEngines: List<android.speech.tts.TextToSpeech.EngineInfo> = emptyList()
+    private var accentFilter = ""
+    private val sampleRunnable = Runnable { playSample(null, automatic = prefs.voiceName.isBlank()) }
+
+    private fun ensureVoiceEngine() {
+        if (voiceTts != null) return
+        voiceTtsReady = false
+        val onInit = android.speech.tts.TextToSpeech.OnInitListener { status ->
+            runOnUiThread {
+                val e = voiceTts ?: return@runOnUiThread
+                if (status != android.speech.tts.TextToSpeech.SUCCESS) {
+                    toast("No text-to-speech engine found"); releaseVoiceEngine(); return@runOnUiThread
+                }
+                voiceList = try { VoicePicker.usable(e.voices.orEmpty(), prefs.greetingDutch) } catch (_: Exception) { emptyList() }
+                voiceEngines = try { e.engines } catch (_: Exception) { emptyList() }
+                if (accentFilter.isNotEmpty() && voiceList.none { VoicePicker.accent(it) == accentFilter }) accentFilter = ""
+                e.setAudioAttributes(android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                voiceTtsReady = true
+                if (page == Page.VOICE) render()
+            }
+        }
+        val engineName = VoicePicker.preferredEngine(this, prefs.ttsEngine)
+        voiceTts = try {
+            if (engineName != null) android.speech.tts.TextToSpeech(this, onInit, engineName)
+            else android.speech.tts.TextToSpeech(this, onInit)
+        } catch (e: Exception) { null }
+    }
+
+    private fun releaseVoiceEngine() {
+        handler.removeCallbacks(sampleRunnable)
+        voiceTts?.let { runCatching { it.stop(); it.shutdown() } }
+        voiceTts = null
+        voiceTtsReady = false
+    }
+
+    /** A short line in [voice] (or the automatic choice) with the current speed and pitch. */
+    private fun playSample(voice: android.speech.tts.Voice?, automatic: Boolean = false) {
+        val e = voiceTts ?: return
+        if (!voiceTtsReady) return
+        val dutch = prefs.greetingDutch
+        val v = voice
+            ?: (if (!automatic) voiceList.firstOrNull { it.name == prefs.voiceName } else null)
+            ?: (if (prefs.butler && !dutch) VoicePicker.butlerVoice(voiceList) else null)
+            ?: VoicePicker.best(voiceList, dutch)
+        try {
+            if (v != null) e.voice = v else e.language = VoicePicker.localeFor(dutch)
+            e.setSpeechRate(prefs.speechRate)
+            e.setPitch(prefs.speechPitch)
+            e.speak(shortSample(), android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "sample")
+        } catch (ex: Exception) {
+            toast("Couldn't play that voice: ${ex.message}")
         }
     }
+
+    /** Speed/pitch taps: play a sample once you stop tapping. */
+    private fun sampleSoon() {
+        handler.removeCallbacks(sampleRunnable)
+        handler.postDelayed(sampleRunnable, 600)
+    }
+
+    private fun shortSample(): String {
+        val dutch = prefs.greetingDutch
+        val name = SpeechText.spokenName(prefs.namePronunciation.ifBlank { prefs.greetingName }, dutch)
+        val hello = GreetingText.timeGreeting(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY), dutch)
+        val who = if (name.isNotBlank()) ", $name" else ""
+        return when {
+            prefs.butler && dutch -> "$hello$who. Uw auto staat klaar, wanneer u maar wilt."
+            prefs.butler -> "$hello$who. Your car is ready whenever you are."
+            dutch -> "$hello$who. Zo klink ik in de auto."
+            else -> "$hello$who. This is how I'll sound in the car."
+        }
+    }
+
+    private fun setStyle(butler: Boolean) {
+        val wasButler = prefs.butler
+        prefs.greetingStyle = if (butler) "butler" else "sassy"
+        if (butler && !wasButler) {
+            if (!prefs.greetingDutch) {
+                val v = if (voiceTtsReady) VoicePicker.butlerVoice(voiceList) else null
+                when {
+                    v != null -> {
+                        prefs.voiceName = v.name
+                        toast("Butler voice: ${VoicePicker.friendlyNames(voiceList)[v.name]?.first ?: v.name}")
+                    }
+                    voiceTtsReady -> toast("No British voice installed yet - see 'Get British voices' below")
+                }
+            }
+            // A touch slower and lower: calm and composed.
+            prefs.speechRate = 0.9f
+            prefs.speechPitch = 0.9f
+        } else if (!butler && wasButler) {
+            prefs.speechRate = 0.95f
+            prefs.speechPitch = 1.0f
+        }
+        DriveLog.log("Setting changed: greeting style = ${prefs.greetingStyle}")
+        render()
+        playSample(null, automatic = prefs.voiceName.isBlank())
+    }
+
+    private fun styleCard(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = Style.button(if (selected) Style.HIGHLIGHT else Style.SURFACE, dp(14).toFloat())
+        setPadding(dp(14), dp(14), dp(14), dp(14))
+        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, dp(6), dp(6), 0) }
+        isClickable = true
+        setOnClickListener { onClick() }
+        addView(TextView(this@MainActivity).apply {
+            text = title + if (selected) "  ✓" else ""; textSize = 17f; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT)
+        })
+        addView(TextView(this@MainActivity).apply { text = subtitle; textSize = 13f; setTextColor(Style.TEXT2) })
+    }
+
+    private fun accentChips(accents: List<String>) {
+        val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        accents.forEach { acc ->
+            val selected = accentFilter == acc
+            bar.addView(TextView(this).apply {
+                text = if (acc.isEmpty()) "All" else VoicePicker.accentName(acc)
+                textSize = 14f; setTextColor(if (selected) Color.WHITE else Style.TEXT)
+                background = Style.button(if (selected) Style.PRIMARY else Style.SURFACE2, dp(18).toFloat())
+                setPadding(dp(14), dp(8), dp(14), dp(8))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    .apply { setMargins(0, 0, dp(8), 0) }
+                setOnClickListener { accentFilter = acc; render() }
+            })
+        }
+        root.addView(android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(bar)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(6) }
+        })
+    }
+
+    /** A voice: tap the row to choose it, ▶ to just listen. */
+    private fun voiceRow(title: String, details: String, selected: Boolean, onPlay: () -> Unit, onSelect: () -> Unit) =
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            background = Style.button(if (selected) Style.HIGHLIGHT else Style.SURFACE, dp(14).toFloat())
+            setPadding(dp(16), dp(10), dp(10), dp(10))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(8) }
+            isClickable = true
+            setOnClickListener { onSelect() }
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(TextView(this@MainActivity).apply {
+                    text = (if (selected) "✓  " else "") + title; textSize = 16f; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT)
+                })
+                if (details.isNotBlank()) addView(TextView(this@MainActivity).apply {
+                    text = details; textSize = 13f; setTextColor(Style.TEXT2); setPadding(0, dp(2), 0, 0)
+                })
+            })
+            addView(smallBtn("▶") { onPlay() })
+        })
 
     private fun renderDriveMode() {
         pageHeader()
@@ -502,6 +723,7 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         handler.removeCallbacks(homeTick)
+        releaseVoiceEngine()
     }
 
     /** Tesla-style header: car name and status, the car drawn in the theme colour, status tiles around it. */
@@ -732,61 +954,14 @@ class MainActivity : Activity() {
     ) {
         prefs.namePronunciation = it
         render()
-        previewVoice()
+        playSample(null, automatic = prefs.voiceName.isBlank())
     }
 
-    private fun sampleText(): String {
-        val dutch = prefs.greetingDutch
-        val name = SpeechText.spokenName(prefs.namePronunciation.ifBlank { prefs.greetingName }, dutch)
-        val hello = GreetingText.timeGreeting(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY), dutch)
-        return if (dutch) "$hello${if (name.isNotBlank()) ", $name" else ""}. Zo klink ik. Het is nu min 2 graden en de zon gaat om 17.05 uur onder."
-        else "$hello${if (name.isNotBlank()) ", $name" else ""}. This is how I sound. It's currently minus 2 degrees and the sun sets at 5:05 PM."
-    }
-
+    /** The real greeting (your style, voice, weather) - not counted as "greeted" for the next drive. */
     private fun previewVoice() {
+        voiceTts?.stop()
         toast("Speaking... turn up the media volume")
-        Greeter(this).speak(sampleText(), prefs.greetingDutch) {}
-    }
-
-    /** Lists installed voices for the greeting language (best first) and previews the one you pick. */
-    private fun pickVoice() {
-        val dutch = prefs.greetingDutch
-        var tts: android.speech.tts.TextToSpeech? = null
-        val onInit = android.speech.tts.TextToSpeech.OnInitListener { status ->
-            runOnUiThread {
-                val engine = tts ?: return@runOnUiThread
-                if (status != android.speech.tts.TextToSpeech.SUCCESS) { toast("No text-to-speech engine found"); engine.shutdown(); return@runOnUiThread }
-                val voices = VoicePicker.usable(engine.voices.orEmpty(), dutch)
-                val best = VoicePicker.best(voices, dutch)
-                val sorted = voices.sortedWith(compareByDescending<android.speech.tts.Voice> { it == best }
-                    .thenBy { it.isNetworkConnectionRequired }.thenByDescending { it.quality }.thenBy { it.name })
-                val engines = engine.engines
-                engine.shutdown()
-                if (sorted.isEmpty()) {
-                    toast("No ${if (dutch) "Dutch" else "English"} voices installed - tap 'Download better voices'")
-                    return@runOnUiThread
-                }
-                val labels = listOf("Automatic (recommended)") + sorted.map { VoicePicker.label(it) } +
-                    (if (engines.size > 1) listOf("Change voice engine…") else emptyList())
-                AlertDialog.Builder(this)
-                    .setTitle("Choose a voice")
-                    .setItems(labels.toTypedArray()) { _, i ->
-                        when {
-                            i == 0 -> prefs.voiceName = ""
-                            i <= sorted.size -> prefs.voiceName = sorted[i - 1].name
-                            else -> { pickEngine(engines); return@setItems }
-                        }
-                        DriveLog.log("Setting changed: voice = ${prefs.voiceName.ifBlank { "automatic" }}")
-                        render()
-                        previewVoice()
-                    }
-                    .setNegativeButton("Cancel", null)
-                    .show()
-            }
-        }
-        val engineName = VoicePicker.preferredEngine(this, prefs.ttsEngine)
-        tts = if (engineName != null) android.speech.tts.TextToSpeech(this, onInit, engineName)
-        else android.speech.tts.TextToSpeech(this, onInit)
+        WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false)
     }
 
     private fun pickEngine(engines: List<android.speech.tts.TextToSpeech.EngineInfo>) {
@@ -797,8 +972,8 @@ class MainActivity : Activity() {
                 prefs.ttsEngine = if (i == 0) "" else engines[i - 1].name
                 prefs.voiceName = ""  // voices belong to an engine
                 DriveLog.log("Setting changed: voice engine = ${prefs.ttsEngine.ifBlank { "automatic" }}")
+                releaseVoiceEngine()  // reload the voice list from the new engine
                 render()
-                previewVoice()
             }
             .setNegativeButton("Cancel", null)
             .show()

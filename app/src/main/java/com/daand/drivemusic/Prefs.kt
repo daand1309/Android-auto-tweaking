@@ -77,6 +77,13 @@ class Prefs(context: Context) {
         get() = sp.getString("greeting_name", "") ?: ""
         set(v) = sp.edit().putString("greeting_name", v).apply()
 
+    /** "sassy" (default) or "butler". */
+    var greetingStyle: String
+        get() = sp.getString("greeting_style", "sassy") ?: "sassy"
+        set(v) = sp.edit().putString("greeting_style", v).apply()
+
+    val butler get() = greetingStyle == "butler"
+
     var greetingDutch: Boolean
         get() = sp.getBoolean("greeting_dutch", false)
         set(v) = sp.edit().putBoolean("greeting_dutch", v).apply()
@@ -213,7 +220,7 @@ class Prefs(context: Context) {
         "speech_pitch" to "float", "speech_rate" to "float", "weather_lat" to "float", "weather_lon" to "float",
         "birthday" to "string", "car_name" to "string", "greeting_name" to "string", "music_pkg" to "string",
         "name_pronunciation" to "string", "theme" to "string", "tts_engine" to "string", "voice_name" to "string",
-        "weather_place" to "string",
+        "weather_place" to "string", "greeting_style" to "string",
     )
 
     /** All settings as JSON (each value tagged with its type so it restores exactly). */

@@ -56,6 +56,7 @@ class DriveFlowTest {
             greetingEnabled = false
             autoOpenDriveMode = false  // each test starts clean (one test switches this on)
             showSplash = true
+            greetingStyle = "sassy"
         }
 
         val component = ComponentName(ctx, DriveMonitorService::class.java)
@@ -270,6 +271,25 @@ class DriveFlowTest {
             }
         }
         SystemClock.sleep(500)
+    }
+
+    @Test
+    fun everyPageOpensWithoutCrashingIncludingTheVoicePage() {
+        ActivityScenario.launch(MainActivity::class.java).use { sc ->
+            var pages = emptyList<String>()
+            sc.onActivity { pages = it.pageNamesForTest() }
+            for (p in pages) {
+                sc.onActivity { it.openPageForTest(p) }
+                SystemClock.sleep(if (p == "VOICE") 4_000 else 300)  // voice page loads the speech engine
+                sc.onActivity { a -> assertTrue("page $p", !a.isFinishing) }
+            }
+            // Butler style on and off again, with the voice page open.
+            prefs.greetingStyle = "butler"
+            sc.onActivity { it.openPageForTest("VOICE") }
+            SystemClock.sleep(1_000)
+            sc.onActivity { it.openPageForTest("HOME") }
+            prefs.greetingStyle = "sassy"
+        }
     }
 
     @Test
