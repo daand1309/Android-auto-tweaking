@@ -67,29 +67,29 @@ object DriveUpdates {
         val out = mutableListOf<String>()
         fun say(nl: String, en: String) { out += if (dutch) nl else en }
         when {
-            icy(new) && !icy(old) -> say("Het spijt me te moeten melden, meneer, dat er ijzel valt. De weg kan spiegelglad zijn. Uiterst voorzichtig, alstublieft.",
-                "I regret to report, sir, that freezing rain has begun. The roads may be like glass. The utmost care, if you please.")
-            snowing(new) && !snowing(old) -> say("Het is gaan sneeuwen, meneer. Schilderachtig, maar houdt u alstublieft wat extra afstand.",
-                "It has begun to snow, sir. Terribly picturesque. Do keep a little extra distance all the same.")
-            storm(new) && !storm(old) -> say("Er nadert onweer, meneer. Ik raad u aan de bliksem niet persoonlijk te nemen.",
-                "A thunderstorm approaches, sir. I suggest we do not take the lightning personally.")
-            raining(new) && !raining(old) -> say("Het is gaan regenen, meneer. De weg wordt nat, en ik vrees ook mijn humeur.",
-                "It has started to rain, sir. The roads will be wet, and I fear so will my mood.")
-            raining(old) && !raining(new) && !snowing(new) -> say("Goed nieuws, meneer: het is droog geworden. Ik nam de vrijheid het te regelen.",
-                "Good news, sir: the rain has stopped. I took the liberty of arranging it.")
+            icy(new) && !icy(old) -> say("Het spijt me te moeten melden dat er ijzel valt. De weg kan spiegelglad zijn. Uiterst voorzichtig, alstublieft.",
+                "I regret to report that freezing rain has begun. The roads may be like glass. The utmost care, if you please.")
+            snowing(new) && !snowing(old) -> say("Het is gaan sneeuwen. Schilderachtig, maar houdt u alstublieft wat extra afstand.",
+                "It has begun to snow. Terribly picturesque. Do keep a little extra distance all the same.")
+            storm(new) && !storm(old) -> say("Er nadert onweer. Ik raad u aan de bliksem niet persoonlijk te nemen.",
+                "A thunderstorm approaches. I suggest we do not take the lightning personally.")
+            raining(new) && !raining(old) -> say("Het is gaan regenen. De weg wordt nat, en ik vrees ook mijn humeur.",
+                "It has started to rain. The roads will be wet, and I fear so will my mood.")
+            raining(old) && !raining(new) && !snowing(new) -> say("Goed nieuws: het is droog geworden. Ik nam de vrijheid het te regelen.",
+                "Good news: the rain has stopped. I took the liberty of arranging it.")
         }
         if (new.tempNow <= 1.0 && old.tempNow > 1.0 && !icy(new)) {
-            say("Het is rond het vriespunt, meneer. Pas op voor gladheid, en voor uw schoenen bij het uitstappen.",
-                "It is now around freezing, sir. Mind the slippery patches. And your shoes, when you step out.")
+            say("Het is rond het vriespunt. Pas op voor gladheid, en voor uw schoenen bij het uitstappen.",
+                "It is now around freezing. Mind the slippery patches. And your shoes, when you step out.")
         }
-        if (foggy(new) && !foggy(old)) say("Er hangt mist, meneer. Mistlampen aan, als het zicht slecht wordt.",
-            "Fog has rolled in, sir. Fog lights on, should visibility suffer.")
-        else if (foggy(old) && !foggy(new)) say("De mist is opgetrokken, meneer. Eindelijk kunnen we weer zien waar we heen gaan.",
-            "The fog has lifted, sir. We can see where we are going again. A rare luxury.")
+        if (foggy(new) && !foggy(old)) say("Er hangt mist. Mistlampen aan, als het zicht slecht wordt.",
+            "Fog has rolled in. Fog lights on, should visibility suffer.")
+        else if (foggy(old) && !foggy(new)) say("De mist is opgetrokken. Eindelijk kunnen we weer zien waar we heen gaan.",
+            "The fog has lifted. We can see where we are going again. A rare luxury.")
         if (new.gustsKmh >= 60 && old.gustsKmh < 60) {
             val g = SpeechText.number(Math.round(new.gustsKmh).toInt(), dutch)
-            say("Er staan windstoten tot $g kilometer per uur, meneer. Houdt u het stuur stevig vast.",
-                "Gusts are now reaching $g kilometres per hour, sir. A firm grip on the wheel, if you would.")
+            say("Er staan windstoten tot $g kilometer per uur. Houdt u het stuur stevig vast.",
+                "Gusts are now reaching $g kilometres per hour. A firm grip on the wheel, if you would.")
         }
         return out
     }
@@ -131,25 +131,25 @@ object DriveUpdates {
         if (intro != null) parts += intro
         parts += weather
         if (news != null) parts += when {
-            butler && dutch -> "Belangrijk nieuws, meneer: ${news.title.trimEnd('.')}."
-            butler -> "Some news you ought to know, sir: ${news.title.trimEnd('.')}."
+            butler && dutch -> "Belangrijk nieuws: ${news.title.trimEnd('.')}."
+            butler -> "Some news you ought to know: ${news.title.trimEnd('.')}."
             dutch -> "Belangrijk nieuws: ${news.title.trimEnd('.')}."
             else -> "Some news you should know: ${news.title.trimEnd('.')}."
         }
         if (followed != null) {
             val h = followed.title.trimEnd('.')
             parts += when {
-                butler && dutch && source.isNotBlank() -> "Over het verhaal dat u volgt, meneer, meldt $source: $h."
-                butler && dutch -> "Over het verhaal dat u volgt, meneer: $h."
-                butler && source.isNotBlank() -> "On the story you are following, sir, $source reports: $h."
-                butler -> "On the story you are following, sir: $h."
+                butler && dutch && source.isNotBlank() -> "Over het verhaal dat u volgt meldt $source: $h."
+                butler && dutch -> "Over het verhaal dat u volgt: $h."
+                butler && source.isNotBlank() -> "On the story you are following, $source reports: $h."
+                butler -> "On the story you are following: $h."
                 dutch && source.isNotBlank() -> "Over het verhaal dat je volgt, meldt $source: $h."
                 dutch -> "Over het verhaal dat je volgt: $h."
                 source.isNotBlank() -> "On the story you're following, $source reports: $h."
                 else -> "On the story you're following: $h."
             }
         }
-        if (butler) parts += if (dutch) "Dat was alles, meneer. Ik laat u weer verder genieten." else "That is all, sir. I shall leave you to your music."
+        if (butler) parts += if (dutch) "Dat was het. Ik laat u weer verder genieten." else "That is all. I'll leave you to your music."
         return parts.joinToString(" ")
     }
 

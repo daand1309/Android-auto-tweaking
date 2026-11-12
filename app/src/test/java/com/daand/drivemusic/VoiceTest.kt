@@ -53,7 +53,7 @@ class VoiceTest {
         repeat(30) { seed ->
             val text = GreetingText.build("Mr. Smith", false, cal, null, "", Random(seed), butler = true)
             assertTrue(text, text.contains("Welcome back, sir. Everything is in order."))
-            assertTrue(text, text.endsWith("I shall start your music now, sir. Do drive carefully."))
+            assertTrue(text, text.endsWith("I'll start your music now. Do drive carefully, sir."))
             assertTrue(text, GreetingText.BUTLER_EN.any { text.contains(it) })
             assertFalse(text, GreetingText.LINES_EN.any { text.contains(it) })
         }
@@ -68,20 +68,21 @@ class VoiceTest {
         assertEquals(GreetingText.BUTLER_NL.size, GreetingText.BUTLER_NL.toSet().size)
     }
 
-    @Test fun theButlerSaysSirALot() {
-        assertTrue(GreetingText.BUTLER_EN.count { it.contains("sir") } >= GreetingText.BUTLER_EN.size * 9 / 10)
-        assertTrue(GreetingText.BUTLER_NL.count { it.contains("meneer") } >= GreetingText.BUTLER_NL.size * 9 / 10)
+    @Test fun theButlerSaysSirNaturallyNotConstantly() {
+        val share = GreetingText.BUTLER_EN.count { Regex("""\bsir\b""").containsMatchIn(it) }.toDouble() / GreetingText.BUTLER_EN.size
+        assertTrue("share of lines with sir: $share", share in 0.2..0.4)
+        val nl = GreetingText.BUTLER_NL.count { it.contains("meneer") }.toDouble() / GreetingText.BUTLER_NL.size
+        assertTrue("share of lines with meneer: $nl", nl in 0.2..0.4)
         val cal = Calendar.getInstance().apply { set(2026, Calendar.JUNE, 15, 9, 0) }
         val w = GreetingText.WeatherNow(tempNow = 12.0, code = 3, windKmh = 10.0, tempMin = 8.0, tempMax = 15.0, rainChance = 20)
-        repeat(20) { seed ->
+        repeat(200) { seed ->
             val text = GreetingText.build("Mr. Smith", false, cal, w, "Noordwijk", Random(seed),
                 song = GreetingText.Song("Freedom", "Rage Against The Machine"), butler = true)
             val sirs = Regex("""\bsir\b""").findAll(text).count()
-            assertTrue("only $sirs x sir: $text", sirs >= 5)
+            assertTrue("$sirs x sir: $text", sirs in 2..3)
         }
         val dry = w.copy(code = 3)
         val rain = DriveUpdates.changes(dry, dry.copy(code = 63, precipMm = 1.0), dutch = false, butler = true).single()
-        assertTrue(rain, rain.contains("sir"))
-        assertTrue(DriveUpdates.changes(dry, dry.copy(code = 63, precipMm = 1.0), dutch = true, butler = true).single().contains("meneer"))
+        assertTrue(rain, rain.startsWith("It has started to rain.") && rain.contains("my mood"))  // butler wording, no forced sir
     }
 }

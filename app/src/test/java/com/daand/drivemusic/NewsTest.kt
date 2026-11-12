@@ -90,7 +90,7 @@ class NewsTest {
         assertNull(DriveUpdates.compose(emptyList(), null, false, true, "Mr. Smith"))
         val butler = DriveUpdates.compose(listOf("It has started to rain, so the roads will be wet."), news, false, true, "Mr. Smith")!!
         assertTrue(butler, butler.startsWith("Pardon the interruption, sir. A brief update."))
-        assertTrue(butler, butler.contains("Some news you ought to know, sir: Kabinet gevallen.") && butler.endsWith("I shall leave you to your music."))
+        assertTrue(butler, butler.contains("Some news you ought to know: Kabinet gevallen.") && butler.endsWith("I'll leave you to your music."))
         assertTrue(DriveUpdates.compose(emptyList(), news, true, false, "")!!.startsWith("Even een update. Belangrijk nieuws:"))
     }
 
@@ -166,7 +166,7 @@ class NewsTest {
     @Test fun followedUpdateWording() {
         val f = item("VVD stapt uit het kabinet")
         val nl = DriveUpdates.compose(emptyList(), null, true, true, "", withIntro = false, followed = f, source = "NU.nl")!!
-        assertTrue(nl, nl.startsWith("Over het verhaal dat u volgt, meneer, meldt NU.nl: VVD stapt uit het kabinet."))
+        assertTrue(nl, nl.startsWith("Over het verhaal dat u volgt meldt NU.nl: VVD stapt uit het kabinet."))
         val casual = DriveUpdates.compose(emptyList(), null, true, false, "", withIntro = false, followed = f, source = "NU.nl")!!
         assertTrue(casual, casual.startsWith("Over het verhaal dat je volgt, meldt NU.nl:"))
         assertTrue(DriveUpdates.askLine(false, true, followedOnly = true).contains("the story you're following"))
