@@ -36,8 +36,8 @@ class ObdFullTest {
 
     @Test fun fuelConsumptionFromAirFlowOrIntakePressure() {
         val fromMaf = FuelMath.litresPerHour(mapOf(0x10 to 10.0), 1.6)!!
-        assertEquals(3.29, fromMaf, 0.01)
-        assertEquals(6.57, FuelMath.per100km(fromMaf, 50.0)!!, 0.01)
+        assertEquals(3.40, fromMaf, 0.01)                                // E10 petrol (Dutch Euro95)
+        assertEquals(6.81, FuelMath.per100km(fromMaf, 50.0)!!, 0.01)
         assertNull(FuelMath.per100km(fromMaf, 0.0))                       // standing still: L/h, not L/100km
         assertEquals(2.5, FuelMath.litresPerHour(mapOf(0x5E to 2.5, 0x10 to 10.0), 1.6)!!, 0.001)  // car's own fuel rate wins
         val est = FuelMath.litresPerHour(mapOf(0x0B to 50.0, 0x0F to 25.0, 0x0C to 2000.0), 1.6)!!  // speed-density estimate
@@ -129,5 +129,34 @@ class ObdFullTest {
         assertTrue(report, report.contains("Pending codes - noticed, not confirmed yet"))
         assertTrue(report, report.contains("P0141: rear oxygen sensor: heater fault"))
         assertTrue(report, report.contains("→ Safe to keep driving; have it checked soon."))
+    }
+
+    // ------------------------------------------------------------------ red team
+
+    @Test fun garbledValuesAreThrownAway() {
+        assertNull(Pids.info(0x10)!!.read(listOf(0xFF, 0xFF)))   // 655 g/s air flow: impossible
+        assertNull(Pids.info(0x05)!!.read(listOf(0xFF)))         // 215 °C coolant
+        assertEquals(60.0, Pids.info(0x0D)!!.read(listOf(60))!!, 0.0)
+    }
+
+    @Test fun aValueThatStopsAnsweringIsDroppedAndFuelStopsWithTheEngine() {
+        // Driving: everything answers.
+        val driving = FakeElm(FakeElm.ASX + mapOf("0110" to "41100190\r\r"))
+        val s1 = ObdSession(driving, 1.6)
+        assertNull(s1.start())
+        val first = s1.read(null, full = false, readCodes = false)
+        assertTrue(first.litresPerHour!! > 0)
+        // Stalled, ignition on: RPM 0, air flow no longer answers -> no stale air flow, no fuel used.
+        val stalled = FakeElm(FakeElm.ASX + mapOf("010C" to "410C0000\r\r", "0110" to "NO DATA\r\r"))
+        val s2 = ObdSession(stalled, 1.6)
+        assertNull(s2.start())
+        val after = s2.read(first, full = false, readCodes = false)
+        assertNull("stale air flow must not be kept", after.extra[0x10])
+        assertEquals(0.0, after.litresPerHour!!, 0.0)
+        // A garbled speed this round is not kept either.
+        val garbled = FakeElm(FakeElm.ASX + mapOf("010D" to "410DFF\r\r"))
+        val s3 = ObdSession(garbled, 1.6)
+        assertNull(s3.start())
+        assertNull("0xFF = 255 km/h is the typical garbage byte", s3.read(null, false, false).speedKmh)
     }
 }

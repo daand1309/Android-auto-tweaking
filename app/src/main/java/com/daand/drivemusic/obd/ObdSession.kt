@@ -58,9 +58,17 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
         val now = System.currentTimeMillis()
         val extra = (previous?.extra ?: emptyMap()).toMutableMap()
         val wanted = Pids.ALL.filter { it.fast || full }
-        for (info in wanted) raw(info.pid)?.let { d -> info.decode(d)?.let { extra[info.pid] = it } }
+        // A value that doesn't answer (or answers garbage) this time is dropped, not kept from before:
+        // a stale air-flow reading would otherwise keep "using fuel" after the engine stopped.
+        for (info in wanted) {
+            val v = raw(info.pid)?.let { info.read(it) }
+            if (v != null) extra[info.pid] = v else extra.remove(info.pid)
+        }
         // Seconds since start: interesting in the first minutes (the "ready to drive" countdown).
-        if (!full && (previous?.runtimeS ?: 0) < 300) raw(Elm327.PID_RUNTIME)?.let { d -> Elm327.runtimeS(d)?.let { extra[0x1F] = it.toDouble() } }
+        if (!full && (previous?.runtimeS ?: 0) < 300) {
+            val rt = raw(Elm327.PID_RUNTIME)?.let { Elm327.runtimeS(it) }
+            if (rt != null) extra[0x1F] = rt.toDouble() else extra.remove(0x1F)
+        }
 
         var volts = extra[0x42] ?: previous?.volts
         var status = previous?.checkEngine
@@ -82,7 +90,8 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
                 permanent = codes("0A", 0x4A)
             }
         }
-        val lph = FuelMath.litresPerHour(extra, engineLitres)
+        val running = (extra[0x0C] ?: 0.0) > 400
+        val lph = if (running) FuelMath.litresPerHour(extra, engineLitres) else if (extra.containsKey(0x0C)) 0.0 else null
         return CarSnapshot(
             at = now,
             coolantC = extra[0x05]?.toInt(), rpm = extra[0x0C]?.toInt(), speedKmh = extra[0x0D]?.toInt(),

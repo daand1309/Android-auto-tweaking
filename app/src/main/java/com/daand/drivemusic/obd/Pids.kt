@@ -15,8 +15,13 @@ object Pids {
         val pid: Int, val en: String, val nl: String, val unit: String, val decimals: Int, val group: Group,
         /** Read every few seconds (needed live, e.g. for fuel consumption) instead of every 30 s. */
         val fast: Boolean = false,
+        /** Values outside this are a garbled answer (cheap adapters send them) and are thrown away. */
+        val plausible: ClosedFloatingPointRange<Double> = -1e9..1e9,
         val decode: (List<Int>) -> Double?,
-    )
+    ) {
+        /** Decoded and sane, or null. */
+        fun read(d: List<Int>): Double? = decode(d)?.takeIf { it.isFinite() && it in plausible }
+    }
 
     private fun a(d: List<Int>) = d.getOrNull(0)?.toDouble()
     private fun ab(d: List<Int>) = if (d.size >= 2) (d[0] * 256 + d[1]).toDouble() else null
@@ -24,37 +29,37 @@ object Pids {
     private fun trim(d: List<Int>) = a(d)?.let { (it - 128) * 100 / 128 }
 
     val ALL: List<Info> = listOf(
-        Info(0x04, "Engine load", "Motorbelasting", "%", 0, Group.ENGINE, fast = true) { pct(it) },
-        Info(0x05, "Coolant temperature", "Koelvloeistof", "°C", 0, Group.ENGINE, fast = true) { a(it)?.minus(40) },
-        Info(0x0C, "RPM", "Toerental", "rpm", 0, Group.ENGINE, fast = true) { ab(it)?.div(4) },
-        Info(0x0D, "Speed", "Snelheid", "km/h", 0, Group.ENGINE, fast = true) { a(it) },
-        Info(0x0E, "Ignition timing", "Ontstekingsvervroeging", "°", 1, Group.ENGINE) { a(it)?.let { v -> v / 2 - 64 } },
-        Info(0x11, "Throttle position", "Gasklepstand", "%", 0, Group.ENGINE, fast = true) { pct(it) },
+        Info(0x04, "Engine load", "Motorbelasting", "%", 0, Group.ENGINE, fast = true, plausible = 0.0..100.0) { pct(it) },
+        Info(0x05, "Coolant temperature", "Koelvloeistof", "°C", 0, Group.ENGINE, fast = true, plausible = -40.0..150.0) { a(it)?.minus(40) },
+        Info(0x0C, "RPM", "Toerental", "rpm", 0, Group.ENGINE, fast = true, plausible = 0.0..9000.0) { ab(it)?.div(4) },
+        Info(0x0D, "Speed", "Snelheid", "km/h", 0, Group.ENGINE, fast = true, plausible = 0.0..250.0) { a(it) },
+        Info(0x0E, "Ignition timing", "Ontstekingsvervroeging", "°", 1, Group.ENGINE, plausible = -64.0..64.0) { a(it)?.let { v -> v / 2 - 64 } },
+        Info(0x11, "Throttle position", "Gasklepstand", "%", 0, Group.ENGINE, fast = true, plausible = 0.0..100.0) { pct(it) },
         Info(0x1F, "Running since start", "Draait sinds start", "s", 0, Group.ENGINE) { ab(it) },
-        Info(0x43, "Absolute load", "Absolute belasting", "%", 0, Group.ENGINE) { ab(it)?.let { v -> v * 100 / 255 } },
-        Info(0x45, "Relative throttle", "Relatieve gasklep", "%", 0, Group.ENGINE) { pct(it) },
-        Info(0x49, "Accelerator pedal", "Gaspedaal", "%", 0, Group.ENGINE) { pct(it) },
-        Info(0x5C, "Oil temperature", "Olietemperatuur", "°C", 0, Group.ENGINE) { a(it)?.minus(40) },
+        Info(0x43, "Absolute load", "Absolute belasting", "%", 0, Group.ENGINE, plausible = 0.0..400.0) { ab(it)?.let { v -> v * 100 / 255 } },
+        Info(0x45, "Relative throttle", "Relatieve gasklep", "%", 0, Group.ENGINE, plausible = 0.0..100.0) { pct(it) },
+        Info(0x49, "Accelerator pedal", "Gaspedaal", "%", 0, Group.ENGINE, plausible = 0.0..100.0) { pct(it) },
+        Info(0x5C, "Oil temperature", "Olietemperatuur", "°C", 0, Group.ENGINE, plausible = -40.0..170.0) { a(it)?.minus(40) },
 
-        Info(0x06, "Short-term fuel trim", "Korte brandstofcorrectie", "%", 1, Group.AIR_FUEL) { trim(it) },
-        Info(0x07, "Long-term fuel trim", "Lange brandstofcorrectie", "%", 1, Group.AIR_FUEL) { trim(it) },
+        Info(0x06, "Short-term fuel trim", "Korte brandstofcorrectie", "%", 1, Group.AIR_FUEL, plausible = -100.0..100.0) { trim(it) },
+        Info(0x07, "Long-term fuel trim", "Lange brandstofcorrectie", "%", 1, Group.AIR_FUEL, plausible = -100.0..100.0) { trim(it) },
         Info(0x0A, "Fuel pressure", "Brandstofdruk", "kPa", 0, Group.AIR_FUEL) { a(it)?.times(3) },
-        Info(0x0B, "Intake pressure (MAP)", "Inlaatdruk (MAP)", "kPa", 0, Group.AIR_FUEL, fast = true) { a(it) },
-        Info(0x0F, "Intake air temperature", "Inlaatluchttemperatuur", "°C", 0, Group.AIR_FUEL, fast = true) { a(it)?.minus(40) },
-        Info(0x10, "Air flow (MAF)", "Luchtmassa (MAF)", "g/s", 1, Group.AIR_FUEL, fast = true) { ab(it)?.div(100) },
-        Info(0x14, "O2 sensor 1 (front)", "Lambdasonde 1 (voor)", "V", 2, Group.AIR_FUEL) { a(it)?.div(200) },
-        Info(0x15, "O2 sensor 2 (rear)", "Lambdasonde 2 (achter)", "V", 2, Group.AIR_FUEL) { a(it)?.div(200) },
+        Info(0x0B, "Intake pressure (MAP)", "Inlaatdruk (MAP)", "kPa", 0, Group.AIR_FUEL, fast = true, plausible = 10.0..255.0) { a(it) },
+        Info(0x0F, "Intake air temperature", "Inlaatluchttemperatuur", "°C", 0, Group.AIR_FUEL, fast = true, plausible = -40.0..120.0) { a(it)?.minus(40) },
+        Info(0x10, "Air flow (MAF)", "Luchtmassa (MAF)", "g/s", 1, Group.AIR_FUEL, fast = true, plausible = 0.0..400.0) { ab(it)?.div(100) },
+        Info(0x14, "O2 sensor 1 (front)", "Lambdasonde 1 (voor)", "V", 2, Group.AIR_FUEL, plausible = 0.0..1.3) { a(it)?.div(200) },
+        Info(0x15, "O2 sensor 2 (rear)", "Lambdasonde 2 (achter)", "V", 2, Group.AIR_FUEL, plausible = 0.0..1.3) { a(it)?.div(200) },
         Info(0x2C, "EGR commanded", "EGR aangestuurd", "%", 0, Group.AIR_FUEL) { pct(it) },
         Info(0x2E, "Evap purge", "Dampspoeling", "%", 0, Group.AIR_FUEL) { pct(it) },
-        Info(0x2F, "Fuel level", "Brandstofniveau", "%", 0, Group.AIR_FUEL) { pct(it) },
-        Info(0x3C, "Catalyst temperature", "Katalysatortemperatuur", "°C", 0, Group.AIR_FUEL) { ab(it)?.let { v -> v / 10 - 40 } },
-        Info(0x44, "Air-fuel ratio (lambda)", "Lucht-brandstofverhouding (lambda)", "λ", 2, Group.AIR_FUEL) { ab(it)?.div(32768) },
-        Info(0x5E, "Fuel rate", "Brandstofverbruik", "L/h", 1, Group.AIR_FUEL, fast = true) { ab(it)?.div(20) },
+        Info(0x2F, "Fuel level", "Brandstofniveau", "%", 0, Group.AIR_FUEL, plausible = 0.0..100.0) { pct(it) },
+        Info(0x3C, "Catalyst temperature", "Katalysatortemperatuur", "°C", 0, Group.AIR_FUEL, plausible = -40.0..1200.0) { ab(it)?.let { v -> v / 10 - 40 } },
+        Info(0x44, "Air-fuel ratio (lambda)", "Lucht-brandstofverhouding (lambda)", "λ", 2, Group.AIR_FUEL, plausible = 0.0..2.0) { ab(it)?.div(32768) },
+        Info(0x5E, "Fuel rate", "Brandstofverbruik", "L/h", 1, Group.AIR_FUEL, fast = true, plausible = 0.0..60.0) { ab(it)?.div(20) },
 
-        Info(0x42, "System voltage", "Boordspanning", "V", 1, Group.ELECTRICAL) { ab(it)?.div(1000) },
+        Info(0x42, "System voltage", "Boordspanning", "V", 1, Group.ELECTRICAL, plausible = 5.0..20.0) { ab(it)?.div(1000) },
 
-        Info(0x33, "Air pressure", "Luchtdruk", "kPa", 0, Group.ENVIRONMENT) { a(it) },
-        Info(0x46, "Outside temperature", "Buitentemperatuur", "°C", 0, Group.ENVIRONMENT) { a(it)?.minus(40) },
+        Info(0x33, "Air pressure", "Luchtdruk", "kPa", 0, Group.ENVIRONMENT, plausible = 50.0..110.0) { a(it) },
+        Info(0x46, "Outside temperature", "Buitentemperatuur", "°C", 0, Group.ENVIRONMENT, plausible = -40.0..60.0) { a(it)?.minus(40) },
 
         Info(0x21, "Distance with engine light on", "Afstand met storingslampje aan", "km", 0, Group.DISTANCE) { ab(it) },
         Info(0x31, "Distance since codes cleared", "Afstand sinds codes gewist", "km", 0, Group.DISTANCE) { ab(it) },
@@ -86,8 +91,9 @@ object Pids {
  * intake temperature, RPM and engine size. Pure, unit tested.
  */
 object FuelMath {
-    private const val PETROL_AFR = 14.7          // kg air per kg petrol
-    private const val PETROL_DENSITY = 745.0     // g per litre
+    // Dutch Euro95 is E10 (10% ethanol): a little less air per kg of fuel, a little denser than pure petrol.
+    private const val PETROL_AFR = 14.1          // kg air per kg fuel (E10)
+    private const val PETROL_DENSITY = 750.0     // g per litre (E10)
     private const val VOLUMETRIC_EFFICIENCY = 0.85
 
     /** Litres per hour right now, or null if the car doesn't give enough to work it out. */

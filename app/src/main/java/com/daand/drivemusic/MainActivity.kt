@@ -489,7 +489,8 @@ class MainActivity : Activity() {
         val dutch = prefs.greetingDutch
         Thread {
             val result = com.daand.drivemusic.obd.ObdManager.testOnce(this, address, dutch)
-            DriveLog.log("OBD test: ${result.replace('\n', ' ')}")
+            // The VIN stays on screen but out of the log (logs get shared).
+            DriveLog.log("OBD test: ${result.replace(Regex("VIN: [A-Z0-9]{17}"), "VIN: (hidden)").replace('\n', ' ')}")
             runOnUiThread {
                 obdTestRunning = false
                 if (!isDestroyed) AlertDialog.Builder(this).setTitle("OBD test").setMessage(result).setPositiveButton("OK", null).show()
