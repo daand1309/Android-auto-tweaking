@@ -141,7 +141,8 @@ class DriveMediaService : MediaBrowserService() {
                 }
             }.start()
             MediaMenu.PLAY -> callback.onPlay()
-            MediaMenu.CAR -> speakOnce(com.daand.drivemusic.obd.CarStatusText.spoken(com.daand.drivemusic.obd.ObdManager.live(), p.greetingDutch, p.butler), p.greetingDutch)
+            MediaMenu.CAR -> speakOnce(com.daand.drivemusic.obd.CarStatusText.spoken(com.daand.drivemusic.obd.ObdManager.live(),
+                p.greetingDutch, p.butler, com.daand.drivemusic.obd.ObdManager.trip), p.greetingDutch)
         }
     }
 

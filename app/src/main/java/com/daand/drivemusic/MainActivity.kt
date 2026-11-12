@@ -421,10 +421,20 @@ class MainActivity : Activity() {
         }
         if (prefs.obdDevice.isNotBlank()) button("Test connection (ignition on)", accent = true) { testObd() }
 
+        stepperLike("Engine size: %.1f L".format(java.util.Locale.ROOT, prefs.obdEngineLitres), "Change") {
+            val sizes = listOf(1.6, 1.8, 2.0, 2.2, 1.0, 1.2, 1.4, 1.5, 2.4, 3.0)
+            AlertDialog.Builder(this).setTitle("Engine size (for fuel use)")
+                .setItems(sizes.map { "%.1f L".format(java.util.Locale.ROOT, it) + if (it == 1.6) "  (ASX 1.6 MIVEC)" else if (it == 1.8) "  (ASX 1.8 MIVEC)" else "" }.toTypedArray()) { _, i ->
+                    prefs.obdEngineLitres = sizes[i]; render()
+                }.show()
+        }
+
         header("Live")
-        val live = com.daand.drivemusic.obd.ObdManager.live()
-        text(if (live != null) com.daand.drivemusic.obd.CarStatusText.describe(live, prefs.greetingDutch)
-             else "Status: ${com.daand.drivemusic.obd.ObdManager.status}. Values appear here while you drive.")
+        val obd = com.daand.drivemusic.obd.ObdManager
+        val live = obd.live()
+        text(if (live != null) com.daand.drivemusic.obd.CarStatusText.report(live, prefs.greetingDutch, obd.trip) +
+                (obd.vin?.let { "\n\nVIN: $it" } ?: "") + "\n${obd.supportedCount} values shared by your car"
+             else "Status: ${obd.status}. Values appear here while you drive.")
 
         header("Tell me")
         text("Always: overheating, the check-engine light (with the fault code explained), a weak battery or charging.")

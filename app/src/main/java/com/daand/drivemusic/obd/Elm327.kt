@@ -81,6 +81,28 @@ object Elm327 {
         return out
     }
 
+    /**
+     * Emissions self-tests ("readiness monitors") from PID 01 bytes B-D: how many of the tests this
+     * car has are complete. Useful before the APK/MOT. (complete, available)
+     */
+    fun readiness(d: List<Int>): Pair<Int, Int>? {
+        if (d.size < 4) return null
+        val b = d[1]; val c = d[2]; val dd = d[3]
+        var available = 0; var complete = 0
+        for (i in 0..2) if (b and (1 shl i) != 0) { available++; if (b and (1 shl (i + 4)) == 0) complete++ }   // misfire, fuel, components
+        for (i in 0..7) if (c and (1 shl i) != 0) { available++; if (dd and (1 shl i) == 0) complete++ }       // catalyst, evap, O2...
+        return complete to available
+    }
+
+    /** Vehicle identification number from a mode 09 / PID 02 answer (17 characters), or null. */
+    fun vin(lines: List<String>): String? {
+        val all = lines.flatMap { bytes(it) }
+        val start = all.windowed(2).indexOfFirst { it[0] == 0x49 && it[1] == 0x02 }
+        if (start < 0) return null
+        val text = all.drop(start + 2).map { it.toChar() }.filter { it in '0'..'9' || it in 'A'..'Z' }.joinToString("")
+        return text.takeLast(17).takeIf { it.length == 17 && it.none { ch -> ch in "IOQ" } }
+    }
+
     /** "ATRV" answer like "12.4V" -> 12.4 (the adapter measures this itself; works on every car). */
     fun atrvVolts(lines: List<String>): Double? =
         lines.firstNotNullOfOrNull { Regex("""(\d{1,2}(?:\.\d{1,2})?)\s*V""").find(it)?.groupValues?.get(1)?.toDoubleOrNull() }

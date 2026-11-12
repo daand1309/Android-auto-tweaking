@@ -44,9 +44,12 @@ object ObdManager {
     /** How long the car's computer has been silent (ignition off), or Long.MAX_VALUE if never heard. */
     fun ecuSilentMs(): Long = if (lastEcuAnswerAt == 0L) Long.MAX_VALUE else System.currentTimeMillis() - lastEcuAnswerAt
 
-    // Trip stats for the log at the end of the drive.
-    @Volatile private var maxCoolant: Int? = null
-    @Volatile private var maxSpeed: Int? = null
+    /** This drive's trip numbers (distance, fuel, idle...). */
+    @Volatile var trip: Trip = Trip(); private set
+    /** Chassis number, once read. */
+    @Volatile var vin: String? = null; private set
+    @Volatile var supportedCount = 0; private set
+    @Volatile private var engineLitres = 1.6
 
     fun hasPermission(ctx: Context) = Build.VERSION.SDK_INT < 31 ||
         ctx.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
@@ -61,7 +64,8 @@ object ObdManager {
         if (!hasPermission(ctx)) { status = "Needs the 'Nearby devices' permission"; DriveLog.log("OBD: no Bluetooth permission"); return }
         running = true
         val myGen = ++gen
-        latest = null; maxCoolant = null; maxSpeed = null; lastEcuAnswerAt = 0L; connectedThisDrive = false
+        latest = null; trip = Trip(); lastEcuAnswerAt = 0L; connectedThisDrive = false
+        engineLitres = p.obdEngineLitres
         val app = ctx.applicationContext
         val address = p.obdDevice
         readySeconds = p.obdReadySeconds
@@ -89,9 +93,9 @@ object ObdManager {
         thread?.interrupt()
         thread = null
         status = "Off"
-        val parts = listOfNotNull(maxCoolant?.let { "max coolant $it °C" }, maxSpeed?.let { "max speed $it km/h" },
-            latest?.codes?.takeIf { it.isNotEmpty() }?.let { "fault codes ${it.joinToString()}" })
-        if (parts.isNotEmpty()) DriveLog.log("OBD: trip - ${parts.joinToString(", ")}")
+        val summary = trip.summary(dutch = false)
+        val codes = latest?.codes?.takeIf { it.isNotEmpty() }?.let { " · fault codes ${it.joinToString()}" } ?: ""
+        if (summary.isNotEmpty() || codes.isNotEmpty()) DriveLog.log("OBD: trip - $summary$codes")
     }
 
     private fun alive(myGen: Int) = running && gen == myGen
@@ -104,7 +108,7 @@ object ObdManager {
             try {
                 val l = BluetoothObd.connect(ctx, address) { socket = it }
                 link = l
-                val session = ObdSession(l) { DriveLog.log(it) }
+                val session = ObdSession(l, engineLitres) { DriveLog.log(it) }
                 val problem = session.start()
                 if (problem != null) {
                     status = "Adapter found, but $problem"
@@ -115,6 +119,8 @@ object ObdManager {
                 tries = 0  // connected: a later drop gets a fresh set of retries
                 status = "Connected"
                 connectedThisDrive = true
+                vin = session.vin ?: vin
+                supportedCount = session.supported.size
                 lastEcuAnswerAt = System.currentTimeMillis()  // it just answered "0100"
                 poll(session, myGen, onAlert)
                 session.close()
@@ -146,8 +152,7 @@ object ObdManager {
             if (codesDue) lastCodes = System.currentTimeMillis()
             latest = snap
             if (snap.coolantC != null || snap.rpm != null || snap.speedKmh != null) lastEcuAnswerAt = snap.at
-            snap.coolantC?.let { c -> maxCoolant = maxOf(maxCoolant ?: c, c) }
-            snap.speedKmh?.let { v -> maxSpeed = maxOf(maxSpeed ?: v, v) }
+            trip.add(snap)
             if (!alive(myGen)) break
             alerts.check(snap).forEach { a ->
                 DriveLog.log("OBD: alert ${a.kind}" + (a.value?.let { " ($it)" } ?: "") + (if (a.codes.isNotEmpty()) " ${a.codes}" else ""))
@@ -170,12 +175,13 @@ object ObdManager {
         var s: BluetoothSocket? = null
         return try {
             val l = BluetoothObd.connect(ctx, address) { s = it }
-            val session = ObdSession(l) { DriveLog.log(it) }
+            val session = ObdSession(l, Prefs(ctx).obdEngineLitres) { DriveLog.log(it) }
             try {
                 session.start()?.let { return "Adapter found ✓, but $it" }
                 val snap = session.read(null, full = true, readCodes = true)
-                "Adapter ✓  Car ✓  (${session.protocol})\n\n" + CarStatusText.describe(snap, dutch) +
-                    "\n\nYour car shares ${session.supported.size} values."
+                "Adapter ✓  Car ✓  (${session.protocol})\n" +
+                    (session.vin?.let { "VIN: $it\n" } ?: "") +
+                    "Your car shares ${session.supported.size} values.\n\n" + CarStatusText.report(snap, dutch)
             } finally { session.close() }
         } catch (e: Exception) {
             runCatching { s?.close() }
@@ -200,8 +206,60 @@ object CarStatusText {
         },
     ).joinToString("\n")
 
+    /** Everything the car shared, grouped, plus faults explained - for the settings page and the test. */
+    fun report(s: CarSnapshot, dutch: Boolean, trip: Trip? = null): String {
+        val sb = StringBuilder()
+        for (g in Pids.Group.values()) {
+            val rows = Pids.ALL.filter { it.group == g && s.extra.containsKey(it.pid) }
+                .map { "  ${if (dutch) it.nl else it.en}: ${Pids.format(it.pid, s.extra.getValue(it.pid))}" }
+                .toMutableList()
+            if (g == Pids.Group.ELECTRICAL && s.volts != null && 0x42 !in s.extra)
+                rows += "  ${if (dutch) "Accuspanning" else "Battery voltage"}: ${"%.1f".format(java.util.Locale.ROOT, s.volts)} V"
+            if (g == Pids.Group.AIR_FUEL) s.litresPerHour?.let { lph ->
+                val per100 = FuelMath.per100km(lph, s.speedKmh?.toDouble())
+                rows += "  ${if (dutch) "Verbruik nu" else "Fuel use now"}: " +
+                    (per100?.let { "%.1f L/100km".format(java.util.Locale.ROOT, it) } ?: "%.1f L/h".format(java.util.Locale.ROOT, lph))
+            }
+            if (rows.isNotEmpty()) sb.append(if (dutch) g.nl else g.en).append('\n').append(rows.joinToString("\n")).append("\n\n")
+        }
+        trip?.summary(dutch)?.takeIf { it.isNotEmpty() }?.let { sb.append(if (dutch) "Deze rit\n  " else "This trip\n  ").append(it).append("\n\n") }
+        sb.append(diagnostics(s, dutch))
+        return sb.toString().trim()
+    }
+
+    /** Fault codes with what they mean and what to do, plus the emissions self-tests. */
+    fun diagnostics(s: CarSnapshot, dutch: Boolean): String {
+        val sb = StringBuilder(if (dutch) "Diagnose\n" else "Diagnostics\n")
+        sb.append("  ").append(when (s.checkEngine) {
+            true -> if (dutch) "Motorstoringslampje: AAN" else "Check-engine light: ON"
+            false -> if (dutch) "Motorstoringslampje: uit ✓" else "Check-engine light: off ✓"
+            null -> if (dutch) "Motorstoringslampje: onbekend" else "Check-engine light: unknown"
+        }).append('\n')
+        fun list(title: String, codes: List<String>, note: String) {
+            if (codes.isEmpty()) return
+            sb.append("\n").append(title).append(" - ").append(note).append('\n')
+            codes.forEach { c ->
+                val e = TroubleCodes.explanation(c, dutch)
+                sb.append("  $c: ${e.what}\n    → ${e.advice}\n")
+            }
+        }
+        list(if (dutch) "Storingscodes" else "Fault codes", s.codes, if (dutch) "bevestigde storingen" else "confirmed faults")
+        list(if (dutch) "Mogelijke storingen" else "Pending codes", s.pendingCodes,
+            if (dutch) "gezien, nog niet bevestigd (vroege waarschuwing)" else "noticed, not confirmed yet (an early warning)")
+        list(if (dutch) "Permanente codes" else "Permanent codes", s.permanentCodes,
+            if (dutch) "blijven tot de auto de reparatie zelf heeft gecontroleerd" else "stay until the car has verified the repair itself")
+        if (s.codes.isEmpty() && s.pendingCodes.isEmpty() && s.permanentCodes.isEmpty())
+            sb.append(if (dutch) "  Geen storingscodes ✓\n" else "  No fault codes ✓\n")
+        s.readiness?.let { (done, all) ->
+            sb.append("  ").append(if (dutch) "Uitstoot-zelftests: $done van $all klaar" else "Emissions self-tests: $done of $all complete")
+            if (done < all) sb.append(if (dutch) " (rij nog wat; nodig voor de APK)" else " (drive a bit more - the APK/MOT needs these)")
+            sb.append('\n')
+        }
+        return sb.toString().trimEnd()
+    }
+
     /** Spoken summary ("Engine 90 degrees, battery 14.1 volts, ... no warning lights."). */
-    fun spoken(s: CarSnapshot?, dutch: Boolean, butler: Boolean): String {
+    fun spoken(s: CarSnapshot?, dutch: Boolean, butler: Boolean, trip: Trip? = null): String {
         if (s == null) return when {
             dutch -> "Ik heb nog geen gegevens van de auto. Is de OBD-adapter aangesloten?"
             butler -> "I have no word from the car yet, sir. Is the adapter plugged in?"
@@ -212,6 +270,7 @@ object CarStatusText {
             s.coolantC?.let { if (dutch) "motor $it graden" else "engine $it degrees" },
             s.volts?.let { if (dutch) "accu ${v(it)} volt" else "battery ${v(it)} volts" },
             s.fuelPct?.let { if (dutch) "brandstof $it procent" else "fuel $it percent" },
+            trip?.avgPer100()?.let { if (dutch) "verbruik deze rit ${v(it)} liter per honderd kilometer" else "this trip ${v(it)} litres per hundred kilometres" },
         )
         val faults = when {
             s.codes.isNotEmpty() -> if (dutch) "Er staan storingscodes: ${s.codes.joinToString(", ") { TroubleCodes.spoken(it) }}." else "There are fault codes: ${s.codes.joinToString(", ") { TroubleCodes.spoken(it) }}."

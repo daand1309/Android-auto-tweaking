@@ -398,9 +398,10 @@ class DriveMonitorService : NotificationListenerService() {
         val mins = (SystemClock.elapsedRealtime() - carConnectedAt) / 60000
         val brief = if (briefInterruptions > 0) ", $briefInterruptions brief blip(s) ignored" else ""
         DriveLog.log("=== CAR: drive ended ($reason) after ${mins} min. Pauses: $pausesThisDrive, auto-resumes: $resumesThisDrive$brief ===")
+        val tripLine = com.daand.drivemusic.obd.ObdManager.trip.summary(dutch = false).takeIf { it.isNotEmpty() }?.let { "\nCar: $it" } ?: ""
         prefs.lastDrive = java.text.SimpleDateFormat("EEE d MMM HH:mm", java.util.Locale.getDefault()).format(java.util.Date()) +
             " - ${mins} min, $pausesThisDrive pause(s), $resumesThisDrive auto-resume(s)" +
-            if (lastPauseClue.isNotEmpty()) "\nLast pause: $lastPauseClue" else ""
+            (if (lastPauseClue.isNotEmpty()) "\nLast pause: $lastPauseClue" else "") + tripLine
         Parking.captureAtDrop(this)
         if (driveDataStart >= 0) {
             val used = appBytes() - driveDataStart

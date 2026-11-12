@@ -141,6 +141,11 @@ class Prefs(context: Context) {
         }.toMap()
         set(v) = sp.edit().putString("obd_told", v.entries.take(50).joinToString(",") { "${it.key}=${it.value}" }).apply()
 
+    /** Engine size in litres (for fuel use when the car reports intake pressure but no air flow). */
+    var obdEngineLitres: Double
+        get() = sp.getFloat("obd_engine_l", 1.6f).toDouble().let { if (it.isNaN()) 1.6 else it.coerceIn(0.8, 6.0) }
+        set(v) = sp.edit().putFloat("obd_engine_l", v.toFloat()).apply()
+
     /** Say when fuel gets low. */
     var obdFuel: Boolean
         get() = sp.getBoolean("obd_fuel", true)
@@ -287,7 +292,7 @@ class Prefs(context: Context) {
         "weather" to "bool", "updates_weather" to "bool", "updates_news" to "bool", "ask_before_updates" to "bool",
         "obd_enabled" to "bool", "obd_warmup" to "bool", "obd_fuel" to "bool",
         "resume_delay" to "int", "start_delay" to "int", "volume_pct" to "int", "obd_ready_s" to "int",
-        "speech_pitch" to "float", "speech_rate" to "float", "weather_lat" to "float", "weather_lon" to "float",
+        "speech_pitch" to "float", "speech_rate" to "float", "obd_engine_l" to "float", "weather_lat" to "float", "weather_lon" to "float",
         "birthday" to "string", "car_name" to "string", "greeting_name" to "string", "music_pkg" to "string",
         "name_pronunciation" to "string", "theme" to "string", "tts_engine" to "string", "voice_name" to "string",
         "weather_place" to "string", "greeting_style" to "string",

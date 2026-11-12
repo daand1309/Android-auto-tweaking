@@ -112,7 +112,8 @@ class ObdTest {
         // Quick reads only ask for the fast values.
         fake.sent.clear()
         val quick = session.read(snap, full = false, readCodes = false)
-        assertEquals(listOf("0105", "010C", "010D", "011F"), fake.sent)  // + engine run time while it's young
+        // Only the fast values this car supports (+ engine run time while it's young) - nothing else.
+        assertEquals(listOf("0104", "0105", "010C", "010D", "0111", "010B", "010F", "0110", "011F"), fake.sent)
         assertEquals(snap.codes, quick.codes)
     }
 
@@ -211,7 +212,7 @@ class ObdTest {
         assertTrue(en, en.contains("P 0 4 2 0: the catalytic converter is underperforming"))
         assertTrue(CarAlerts.message(code, dutch = true, butler = false).contains("de katalysator werkt niet goed genoeg"))
         assertTrue(CarAlerts.message(CarAlerts.Alert(CarAlerts.Kind.LOW_BATTERY, false, 11.7), false, false).contains("11 point 7 volts"))
-        assertEquals("a Mitsubishi-specific code", TroubleCodes.explain("P1234", false))
+        assertEquals("a Mitsubishi-specific code: a fault in air and fuel metering", TroubleCodes.explain("P1234", false))
         val status = CarStatusText.spoken(CarSnapshot(0, coolantC = 90, volts = 14.1, fuelPct = 40, checkEngine = false), false, true)
         assertEquals("The car, sir: engine 90 degrees, battery 14 point 1 volts, fuel 40 percent. No warning lights.", status)
         assertNotNull(CarStatusText.spoken(null, true, false))

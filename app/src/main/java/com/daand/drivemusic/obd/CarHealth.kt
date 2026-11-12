@@ -13,59 +13,165 @@ data class CarSnapshot(
     val codes: List<String> = emptyList(),
     /** Seconds since the engine started (from the car, if it reports it). */
     val runtimeS: Int? = null,
+    /** Every other standard value the car reported, by PID (see [Pids]). */
+    val extra: Map<Int, Double> = emptyMap(),
+    /** Faults the car has noticed but not confirmed yet (an early warning). */
+    val pendingCodes: List<String> = emptyList(),
+    /** Faults that stay until the car itself has verified the repair. */
+    val permanentCodes: List<String> = emptyList(),
+    /** Emissions self-tests: (complete, available), from PID 01. */
+    val readiness: Pair<Int, Int>? = null,
+    /** Fuel use right now, if it can be worked out. */
+    val litresPerHour: Double? = null,
 ) {
     val engineRunning get() = (rpm ?: 0) > 400
 }
 
-/** Plain-language explanations for the most common generic fault codes. */
+/**
+ * Fault codes in plain language: what it means, how serious it is, what to do. A table of common
+ * codes, rules that decode the code's structure (cylinder, sensor position, coil...), and the code's
+ * category for anything else. Pure, unit tested.
+ */
 object TroubleCodes {
-    private val EN = mapOf(
-        "P0011" to "camshaft timing is off", "P0016" to "camshaft and crankshaft are out of sync",
-        "P0100" to "air flow sensor fault", "P0101" to "air flow sensor reading is implausible",
-        "P0102" to "air flow sensor signal low", "P0106" to "intake pressure sensor reading is implausible",
-        "P0113" to "intake air temperature sensor signal high", "P0115" to "coolant temperature sensor fault",
-        "P0117" to "coolant temperature sensor signal low", "P0118" to "coolant temperature sensor signal high",
-        "P0125" to "engine takes too long to warm up", "P0128" to "the thermostat may be stuck open",
-        "P0130" to "oxygen sensor fault", "P0131" to "oxygen sensor signal low", "P0133" to "oxygen sensor is slow to respond",
-        "P0134" to "no signal from the oxygen sensor", "P0135" to "oxygen sensor heater fault",
-        "P0141" to "rear oxygen sensor heater fault", "P0171" to "engine running too lean",
-        "P0172" to "engine running too rich", "P0300" to "random misfires",
-        "P0301" to "misfire in cylinder 1", "P0302" to "misfire in cylinder 2", "P0303" to "misfire in cylinder 3",
-        "P0304" to "misfire in cylinder 4", "P0325" to "knock sensor fault", "P0335" to "crankshaft sensor fault",
-        "P0340" to "camshaft sensor fault", "P0400" to "exhaust gas recirculation fault",
-        "P0401" to "exhaust gas recirculation flow too low", "P0420" to "the catalytic converter is underperforming",
-        "P0441" to "fuel vapour system flow problem", "P0442" to "small leak in the fuel vapour system",
-        "P0455" to "large leak in the fuel vapour system, check the fuel cap", "P0456" to "very small fuel vapour leak, check the fuel cap",
-        "P0500" to "vehicle speed sensor fault", "P0505" to "idle control problem", "P0507" to "idle speed higher than expected",
-        "P0562" to "system voltage is low", "P0563" to "system voltage is high", "P0601" to "engine computer memory error",
-        "P0700" to "the gearbox has a fault stored", "P0705" to "gear selector sensor fault",
-    )
-    private val NL = mapOf(
-        "P0011" to "de nokkenas-timing klopt niet", "P0016" to "nokkenas en krukas lopen niet gelijk",
-        "P0100" to "storing in de luchtmassameter", "P0101" to "de luchtmassameter geeft een onlogische waarde",
-        "P0102" to "signaal luchtmassameter te laag", "P0106" to "inlaatdruksensor geeft een onlogische waarde",
-        "P0113" to "signaal inlaatluchttemperatuur te hoog", "P0115" to "storing in de koelvloeistoftemperatuursensor",
-        "P0117" to "signaal koelvloeistoftemperatuur te laag", "P0118" to "signaal koelvloeistoftemperatuur te hoog",
-        "P0125" to "de motor wordt te langzaam warm", "P0128" to "de thermostaat blijft mogelijk openstaan",
-        "P0130" to "storing in de lambdasonde", "P0131" to "signaal lambdasonde te laag", "P0133" to "de lambdasonde reageert traag",
-        "P0134" to "geen signaal van de lambdasonde", "P0135" to "storing in de verwarming van de lambdasonde",
-        "P0141" to "storing in de verwarming van de achterste lambdasonde", "P0171" to "het mengsel is te arm",
-        "P0172" to "het mengsel is te rijk", "P0300" to "willekeurige overslagen",
-        "P0301" to "overslag in cilinder 1", "P0302" to "overslag in cilinder 2", "P0303" to "overslag in cilinder 3",
-        "P0304" to "overslag in cilinder 4", "P0325" to "storing in de klopsensor", "P0335" to "storing in de krukassensor",
-        "P0340" to "storing in de nokkenassensor", "P0400" to "storing in de uitlaatgasrecirculatie",
-        "P0401" to "te weinig uitlaatgasrecirculatie", "P0420" to "de katalysator werkt niet goed genoeg",
-        "P0441" to "probleem in het dampsysteem van de brandstof", "P0442" to "klein lek in het brandstofdampsysteem",
-        "P0455" to "groot lek in het brandstofdampsysteem, controleer de tankdop", "P0456" to "heel klein dampleek, controleer de tankdop",
-        "P0500" to "storing in de snelheidssensor", "P0505" to "probleem met de stationairregeling", "P0507" to "stationair toerental hoger dan verwacht",
-        "P0562" to "de boordspanning is te laag", "P0563" to "de boordspanning is te hoog", "P0601" to "geheugenfout in de motorcomputer",
-        "P0700" to "de versnellingsbak heeft een storing opgeslagen", "P0705" to "storing in de sensor van de keuzehendel",
+    enum class Severity { INFO, CHECK_SOON, CAREFUL, STOP }
+
+    class Explanation(val what: String, val severity: Severity, val advice: String)
+
+    private fun t(en: String, nl: String, sev: Severity = Severity.CHECK_SOON) = Triple(en, nl, sev)
+
+    private val TABLE: Map<String, Triple<String, String, Severity>> = mapOf(
+        "P0010" to t("camshaft timing actuator circuit fault", "storing in de nokkenasverstelling"),
+        "P0011" to t("camshaft timing is off (often low or old oil)", "de nokkenas-timing klopt niet (vaak te weinig of oude olie)"),
+        "P0016" to t("camshaft and crankshaft are out of sync (timing chain?)", "nokkenas en krukas lopen niet gelijk (distributieketting?)", Severity.CAREFUL),
+        "P0030" to t("front oxygen sensor heater fault", "storing in de verwarming van de voorste lambdasonde"),
+        "P0100" to t("air flow sensor fault", "storing in de luchtmassameter"),
+        "P0101" to t("air flow sensor reading is implausible (dirty sensor or air leak)", "de luchtmassameter geeft een onlogische waarde (vuil of luchtlek)"),
+        "P0102" to t("air flow sensor signal low", "signaal luchtmassameter te laag"),
+        "P0103" to t("air flow sensor signal high", "signaal luchtmassameter te hoog"),
+        "P0106" to t("intake pressure sensor reading is implausible", "inlaatdruksensor geeft een onlogische waarde"),
+        "P0107" to t("intake pressure sensor signal low", "signaal inlaatdruksensor te laag"),
+        "P0108" to t("intake pressure sensor signal high", "signaal inlaatdruksensor te hoog"),
+        "P0112" to t("intake air temperature sensor signal low", "signaal inlaatluchttemperatuur te laag"),
+        "P0113" to t("intake air temperature sensor signal high", "signaal inlaatluchttemperatuur te hoog"),
+        "P0115" to t("coolant temperature sensor fault", "storing in de koelvloeistoftemperatuursensor"),
+        "P0116" to t("coolant temperature sensor reading is implausible", "koelvloeistoftemperatuursensor geeft een onlogische waarde"),
+        "P0117" to t("coolant temperature sensor signal low", "signaal koelvloeistoftemperatuur te laag"),
+        "P0118" to t("coolant temperature sensor signal high", "signaal koelvloeistoftemperatuur te hoog"),
+        "P0120" to t("throttle position sensor fault", "storing in de gasklepsensor", Severity.CAREFUL),
+        "P0121" to t("throttle position sensor reading is implausible", "gasklepsensor geeft een onlogische waarde", Severity.CAREFUL),
+        "P0122" to t("throttle position sensor signal low", "signaal gasklepsensor te laag", Severity.CAREFUL),
+        "P0123" to t("throttle position sensor signal high", "signaal gasklepsensor te hoog", Severity.CAREFUL),
+        "P0125" to t("engine takes too long to warm up", "de motor wordt te langzaam warm"),
+        "P0128" to t("the thermostat may be stuck open (engine stays too cold)", "de thermostaat blijft mogelijk open (motor blijft te koud)"),
+        "P0171" to t("engine running too lean (air leak, dirty air flow sensor or weak fuel pump)", "het mengsel is te arm (luchtlek, vuile luchtmassameter of zwakke benzinepomp)"),
+        "P0172" to t("engine running too rich (leaking injector or air flow sensor)", "het mengsel is te rijk (lekkende injector of luchtmassameter)"),
+        "P0300" to t("random misfires", "willekeurige overslagen", Severity.CAREFUL),
+        "P0325" to t("knock sensor fault", "storing in de klopsensor"),
+        "P0335" to t("crankshaft position sensor fault (the engine may cut out)", "storing in de krukassensor (de motor kan afslaan)", Severity.CAREFUL),
+        "P0340" to t("camshaft position sensor fault", "storing in de nokkenassensor", Severity.CAREFUL),
+        "P0400" to t("exhaust gas recirculation fault", "storing in de uitlaatgasrecirculatie"),
+        "P0401" to t("exhaust gas recirculation flow too low", "te weinig uitlaatgasrecirculatie"),
+        "P0420" to t("the catalytic converter is underperforming", "de katalysator werkt niet goed genoeg"),
+        "P0421" to t("the catalytic converter is slow to warm up", "de katalysator wordt te langzaam warm"),
+        "P0440" to t("fuel vapour system fault", "storing in het brandstofdampsysteem"),
+        "P0441" to t("fuel vapour system flow problem", "probleem met de doorstroming in het dampsysteem"),
+        "P0442" to t("small leak in the fuel vapour system", "klein lek in het brandstofdampsysteem"),
+        "P0443" to t("fuel vapour purge valve fault", "storing in de spoelklep van het dampsysteem"),
+        "P0446" to t("fuel vapour vent valve fault", "storing in de ontluchtingsklep van het dampsysteem"),
+        "P0455" to t("large leak in the fuel vapour system - check the fuel cap first", "groot lek in het brandstofdampsysteem - controleer eerst de tankdop", Severity.INFO),
+        "P0456" to t("very small fuel vapour leak - check the fuel cap first", "heel klein dampleek - controleer eerst de tankdop", Severity.INFO),
+        "P0457" to t("fuel cap loose or missing", "tankdop los of afwezig", Severity.INFO),
+        "P0500" to t("vehicle speed sensor fault", "storing in de snelheidssensor"),
+        "P0505" to t("idle control problem", "probleem met de stationairregeling"),
+        "P0506" to t("idle speed lower than expected", "stationair toerental lager dan verwacht"),
+        "P0507" to t("idle speed higher than expected (air leak or dirty throttle)", "stationair toerental hoger dan verwacht (luchtlek of vuile gasklep)"),
+        "P0560" to t("system voltage problem", "probleem met de boordspanning"),
+        "P0562" to t("system voltage is low (battery or alternator)", "de boordspanning is te laag (accu of dynamo)", Severity.CAREFUL),
+        "P0563" to t("system voltage is high (alternator regulator)", "de boordspanning is te hoog (dynamoregelaar)", Severity.CAREFUL),
+        "P0600" to t("engine computer communication fault", "communicatiestoring in de motorcomputer", Severity.CAREFUL),
+        "P0601" to t("engine computer memory error", "geheugenfout in de motorcomputer", Severity.CAREFUL),
+        "P0606" to t("engine computer processor fault", "processorfout in de motorcomputer", Severity.CAREFUL),
+        "P0700" to t("the gearbox computer has a fault stored", "de versnellingsbakcomputer heeft een storing opgeslagen", Severity.CAREFUL),
+        "P0705" to t("gear selector sensor fault", "storing in de sensor van de keuzehendel", Severity.CAREFUL),
+        "P0715" to t("gearbox input speed sensor fault", "storing in de ingaande toerentalsensor van de bak", Severity.CAREFUL),
+        "P0720" to t("gearbox output speed sensor fault", "storing in de uitgaande toerentalsensor van de bak", Severity.CAREFUL),
+        "P0740" to t("torque converter clutch fault", "storing in de koppelomvormer", Severity.CAREFUL),
+        "P0841" to t("gearbox fluid pressure sensor fault", "storing in de oliedruksensor van de bak", Severity.CAREFUL),
+        "P2135" to t("the two throttle sensors disagree (limp mode possible)", "de twee gasklepsensoren zijn het oneens (noodloop mogelijk)", Severity.CAREFUL),
+        "P2138" to t("the two accelerator pedal sensors disagree", "de twee gaspedaalsensoren zijn het oneens", Severity.CAREFUL),
+        "U0001" to t("communication fault on the car's network", "communicatiestoring op het netwerk van de auto", Severity.CAREFUL),
+        "U0100" to t("lost communication with the engine computer", "geen communicatie met de motorcomputer", Severity.CAREFUL),
+        "U0101" to t("lost communication with the gearbox computer", "geen communicatie met de versnellingsbakcomputer", Severity.CAREFUL),
+        "U0121" to t("lost communication with the ABS unit", "geen communicatie met de ABS-unit", Severity.CAREFUL),
     )
 
-    /** "P0420" -> "the catalytic converter is underperforming"; unknown codes get a generic phrase. */
-    fun explain(code: String, dutch: Boolean): String = (if (dutch) NL else EN)[code] ?: when {
-        code.length == 5 && code[1] == '1' -> if (dutch) "een Mitsubishi-specifieke code" else "a Mitsubishi-specific code"
-        else -> if (dutch) "een storing die ik niet ken" else "a fault I don't have a description for"
+    private val O2_FAULT_EN = mapOf('0' to "circuit fault", '1' to "signal low", '2' to "signal high", '3' to "slow to respond",
+        '4' to "no activity", '5' to "heater fault")
+    private val O2_FAULT_NL = mapOf('0' to "storing in het circuit", '1' to "signaal te laag", '2' to "signaal te hoog", '3' to "reageert traag",
+        '4' to "geen activiteit", '5' to "storing in de verwarming")
+
+    /** Rules that read the code's structure, for the families that follow a pattern. */
+    private fun pattern(code: String, dutch: Boolean): Pair<String, Severity>? {
+        if (code.length != 5 || code[0] != 'P' || code[1] != '0') return null
+        val n = code.substring(2).toIntOrNull(16)?.let { code.substring(2) } ?: return null
+        val last = code[4]
+        return when {
+            n.startsWith("30") && last in '1'..'8' -> (if (dutch) "overslag in cilinder $last" else "misfire in cylinder $last") to Severity.CAREFUL
+            n.startsWith("20") && last in '1'..'8' -> (if (dutch) "storing in de injector van cilinder $last" else "fuel injector fault, cylinder $last") to Severity.CAREFUL
+            n.startsWith("35") && last in '1'..'8' -> (if (dutch) "storing in bobine $last" else "ignition coil $last fault") to Severity.CAREFUL
+            n.toIntOrNull() in 130..167 -> {
+                // SAE groups of six: circuit, low, high, slow, no activity, heater.
+                val num = n.toInt()
+                val groups = listOf(130 to (1 to 1), 136 to (1 to 2), 142 to (1 to 3), 150 to (2 to 1), 156 to (2 to 2), 162 to (2 to 3))
+                val (start, pos) = groups.lastOrNull { num >= it.first } ?: return null
+                val offset = num - start
+                if (offset > 5) return null
+                val (bank, sensor) = pos
+                val where = if (dutch) (when (sensor) { 1 -> "voorste"; 2 -> "achterste"; else -> "derde" }) + " lambdasonde" + (if (bank == 2) " (bank 2)" else "")
+                            else (when (sensor) { 1 -> "front"; 2 -> "rear"; else -> "third" }) + " oxygen sensor" + (if (bank == 2) " (bank 2)" else "")
+                val fault = (if (dutch) O2_FAULT_NL else O2_FAULT_EN)['0' + offset] ?: if (dutch) "storing" else "fault"
+                "$where: $fault" to Severity.CHECK_SOON
+            }
+            else -> null
+        }
+    }
+
+    /** What part of the car the code belongs to, from its structure. */
+    private fun category(code: String, dutch: Boolean): Pair<String, Severity> {
+        val manufacturer = code.length == 5 && (code[1] == '1' || code[1] == '3')
+        val brand = if (manufacturer) (if (dutch) "een Mitsubishi-specifieke code: " else "a Mitsubishi-specific code: ") else ""
+        val part = when (code.firstOrNull()) {
+            'C' -> (if (dutch) "het onderstel (ABS, remmen, stuur)" else "the chassis (ABS, brakes, steering)") to Severity.CAREFUL
+            'B' -> (if (dutch) "de carrosserie (airbags, sloten, klimaat)" else "the body (airbags, locks, climate)") to Severity.CHECK_SOON
+            'U' -> (if (dutch) "de communicatie tussen de computers" else "communication between the car's computers") to Severity.CAREFUL
+            else -> when (code.getOrNull(2)) {
+                '1', '2' -> (if (dutch) "het lucht- en brandstofsysteem" else "air and fuel metering") to Severity.CHECK_SOON
+                '3' -> (if (dutch) "de ontsteking of overslagen" else "ignition or misfires") to Severity.CAREFUL
+                '4' -> (if (dutch) "de uitlaatgasreiniging" else "the emissions controls") to Severity.CHECK_SOON
+                '5' -> (if (dutch) "snelheid, stationair toerental of hulpsystemen" else "speed, idle or auxiliary inputs") to Severity.CHECK_SOON
+                '6' -> (if (dutch) "de motorcomputer of de aansturing" else "the engine computer or its outputs") to Severity.CAREFUL
+                '7', '8', '9' -> (if (dutch) "de versnellingsbak" else "the gearbox") to Severity.CAREFUL
+                else -> (if (dutch) "de aandrijflijn" else "the powertrain") to Severity.CHECK_SOON
+            }
+        }
+        return (brand + (if (dutch) "een storing in " else "a fault in ") + part.first) to part.second
+    }
+
+    fun explanation(code: String, dutch: Boolean): Explanation {
+        TABLE[code]?.let { (en, nl, sev) -> return Explanation(if (dutch) nl else en, sev, advice(sev, dutch)) }
+        pattern(code, dutch)?.let { (what, sev) -> return Explanation(what, sev, advice(sev, dutch)) }
+        val (what, sev) = category(code, dutch)
+        return Explanation(what, sev, advice(sev, dutch))
+    }
+
+    /** Short "what it means" (kept for the voice). */
+    fun explain(code: String, dutch: Boolean): String = explanation(code, dutch).what
+
+    fun advice(sev: Severity, dutch: Boolean): String = when (sev) {
+        Severity.INFO -> if (dutch) "Niet urgent. Vaak een kleinigheid (bijvoorbeeld de tankdop)." else "Not urgent. Often something small (like the fuel cap)."
+        Severity.CHECK_SOON -> if (dutch) "Je kunt doorrijden; laat het binnenkort nakijken." else "Safe to keep driving; have it checked soon."
+        Severity.CAREFUL -> if (dutch) "Rij rustig, vermijd vol gas, en laat het snel nakijken." else "Drive gently, avoid hard acceleration, and get it checked soon."
+        Severity.STOP -> if (dutch) "Stop zodra het veilig kan." else "Stop as soon as it's safe."
     }
 
     /** Codes read out letter by letter, so "P0420" doesn't become "P four hundred and twenty". */
@@ -85,7 +191,7 @@ class CarAlerts(
      */
     toldRecently: Set<String> = emptySet(),
 ) {
-    enum class Kind { READY_TO_DRIVE, OVERHEAT, CHECK_ENGINE, LOW_BATTERY, WEAK_CHARGING, ENGINE_WARM, LOW_FUEL }
+    enum class Kind { READY_TO_DRIVE, OVERHEAT, CHECK_ENGINE, ICY_ROAD, LOW_BATTERY, WEAK_CHARGING, ENGINE_WARM, LOW_FUEL }
     /** [timely] = only useful right now (say it as soon as possible, or not at all). */
     data class Alert(val kind: Kind, val urgent: Boolean, val value: Double? = null, val codes: List<String> = emptyList(),
                      val timely: Boolean = false)
@@ -100,6 +206,8 @@ class CarAlerts(
     private var engineEverRan = false
     private var lowBatterySince: Long? = null
     private var hotReadings = 0
+    private var icyDone = false
+    private var firstCoolant: Int? = null
     private var lowChargeSince: Long? = null
     private var lastCheckEngine = false
     private var readyDone = false
@@ -145,6 +253,12 @@ class CarAlerts(
                 } else lowChargeSince = null
             }
         }
+        // Icy roads: the car's outside sensor if the engine computer shares it; otherwise the intake air
+        // temperature right after a cold start (the engine hasn't heated it yet) is close to outside.
+        if (firstCoolant == null) firstCoolant = s.coolantC
+        if (!icyDone) outsideC(s)?.let { t ->
+            if (t <= ICY_C) { icyDone = true; out += Alert(Kind.ICY_ROAD, urgent = false, value = t) }
+        }
         s.fuelPct?.let { f -> if (!fuelDone && f in 1 until LOW_FUEL_PCT) { fuelDone = true; out += Alert(Kind.LOW_FUEL, false, f.toDouble()) } }
         return out
     }
@@ -168,6 +282,15 @@ class CarAlerts(
         if (ran < need) return null
         readyDone = true
         return Alert(Kind.READY_TO_DRIVE, urgent = false, value = need.toDouble(), timely = true)
+    }
+
+    /** Outside temperature: the real sensor, or the intake air in the first 90 s of a cold start. */
+    private fun outsideC(s: CarSnapshot): Double? {
+        s.ambientC?.let { return it.toDouble() }
+        val intake = s.extra[0x0F] ?: return null
+        val coldStart = (firstCoolant ?: return null) < 40
+        val early = (s.runtimeS ?: return null) < 90
+        return if (coldStart && early) intake else null
     }
 
     /** Codes told this drive (to remember across drives). */
@@ -202,6 +325,8 @@ class CarAlerts(
         const val LOW_BATTERY_V = 12.0     // engine off: a healthy battery rests around 12.4-12.7 V
         const val WEAK_CHARGE_V = 12.8     // engine running: the alternator should give ~13.5-14.7 V
         const val LOW_FUEL_PCT = 12
+        /** Like the car's own snowflake warning. */
+        const val ICY_C = 3.0
 
         /** What the voice says for an alert. */
         fun message(a: Alert, dutch: Boolean, butler: Boolean): String {
@@ -217,13 +342,24 @@ class CarAlerts(
                     val list = a.codes.take(3).joinToString(if (dutch) ". En " else ". And ") {
                         "${TroubleCodes.spoken(it)}: ${TroubleCodes.explain(it, dutch)}"
                     }
+                    // The advice for the most serious one ("drive gently, avoid hard acceleration...").
+                    val worst = a.codes.map { TroubleCodes.explanation(it, dutch).severity }.maxOrNull() ?: TroubleCodes.Severity.CHECK_SOON
+                    val advice = TroubleCodes.advice(worst, dutch)
                     when {
-                        dutch && list.isEmpty() -> "Het motorstoringslampje is aangegaan. Laat het binnenkort even nakijken."
-                        dutch -> "Het motorstoringslampje is aan. Code $list. Laat het binnenkort even nakijken."
-                        butler && list.isEmpty() -> "Pardon me, sir. The engine warning light has come on. Worth having it looked at soon."
-                        butler -> "Pardon me, sir. The engine warning light is on. Code $list. Worth having it looked at soon."
-                        list.isEmpty() -> "The check-engine light just came on. Worth getting it looked at soon."
-                        else -> "The check-engine light is on. Code $list. Worth getting it looked at soon."
+                        dutch && list.isEmpty() -> "Het motorstoringslampje is aangegaan. $advice"
+                        dutch -> "Het motorstoringslampje is aan. Code $list. $advice"
+                        butler && list.isEmpty() -> "Pardon me, sir. The engine warning light has come on. $advice"
+                        butler -> "Pardon me, sir. The engine warning light is on. Code $list. $advice"
+                        list.isEmpty() -> "The check-engine light just came on. $advice"
+                        else -> "The check-engine light is on. Code $list. $advice"
+                    }
+                }
+                Kind.ICY_ROAD -> {
+                    val t = a.value?.let { com.daand.drivemusic.SpeechText.number(Math.round(it).toInt(), dutch) } ?: ""
+                    when {
+                        dutch -> "Het is $t graden buiten. Pas op voor gladheid."
+                        butler -> "It is $t degrees outside, sir. Mind the black ice."
+                        else -> "It's $t degrees outside. Watch out for ice."
                     }
                 }
                 Kind.LOW_BATTERY -> when {
