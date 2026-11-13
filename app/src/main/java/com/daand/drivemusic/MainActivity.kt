@@ -62,6 +62,12 @@ class MainActivity : Activity() {
             isFillViewport = true
         }
         setContentView(scroll)
+        animateNext = ENTER
+        // Android 12+: the animated launch icon grows and fades into the home screen.
+        if (Build.VERSION.SDK_INT >= 31) splashScreen.setOnExitAnimationListener { sv ->
+            sv.iconView?.animate()?.scaleX(1.6f)?.scaleY(1.6f)?.alpha(0f)?.setDuration(300)?.start()
+            sv.animate().alpha(0f).setDuration(320).withEndAction { sv.remove() }.start()
+        }
         window.statusBarColor = Style.BG
         window.navigationBarColor = Style.BG
         if (Build.VERSION.SDK_INT >= 33) {
@@ -117,8 +123,12 @@ class MainActivity : Activity() {
         return (scroll.getChildAt(0)?.height ?: 0) > scroll.height
     }
 
-    private fun go(p: Page) {
+    /** How the next render appears: glide in (a new page / app start), fade (going back), or not at all (a refresh). */
+    private var animateNext = 0
+
+    private fun go(p: Page, back: Boolean = false) {
         page = p
+        animateNext = if (back) BACK else ENTER
         render()
         scroll.post { scroll.scrollTo(0, 0) }
     }
@@ -126,8 +136,8 @@ class MainActivity : Activity() {
     private fun handleBack() {
         when (page) {
             Page.HOME -> finish()
-            Page.VOICE -> go(Page.GREETING)
-            else -> go(Page.HOME)
+            Page.VOICE -> go(Page.GREETING, back = true)
+            else -> go(Page.HOME, back = true)
         }
     }
 
@@ -205,6 +215,8 @@ class MainActivity : Activity() {
             Page.CAR -> renderCar()
             Page.BACKUP -> renderBackup()
         }
+        when (animateNext) { ENTER -> Motion.enter(root); BACK -> Motion.fadeIn(root) }
+        animateNext = 0
         scroll.post { scroll.scrollTo(0, y) }
     }
 
@@ -1045,10 +1057,13 @@ class MainActivity : Activity() {
             textSize = 14f
             setTextColor(when { svc == null -> Style.AMBER; driving -> Style.GREEN; prefs.lastCarState == DriveHold.STATE -> Style.AMBER; else -> Style.TEXT2 })
             setPadding(dp(4), dp(2), 0, 0)
+            if (driving || prefs.lastCarState == DriveHold.STATE) Motion.pulse(this)
         })
         val photo = IntroImage.load(this, IntroImage.HERO)
         if (photo != null) {
+            val settle = animateNext == ENTER
             root.addView(CarPhotoView(this, photo).apply {
+                if (settle) Motion.settle(this)
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                     .apply { topMargin = dp(6) }
                 setOnClickListener {
@@ -1203,7 +1218,7 @@ class MainActivity : Activity() {
     private fun pageHeader(back: Page = Page.HOME) = root.addView(TextView(this).apply {
         text = "‹  ${page.title}"; textSize = 24f; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT)
         setPadding(dp(4), dp(4), 0, dp(14))
-        setOnClickListener { go(back) }
+        setOnClickListener { go(back, back = true) }
     })
 
     /** Menu row: title + short subtitle, opens something when tapped. */
@@ -1738,6 +1753,8 @@ class MainActivity : Activity() {
     })
 
     companion object {
+        private const val ENTER = 1
+        private const val BACK = 2
         private const val REQ_LOCATION = 3
         private const val REQ_PARKING = 14
         private const val REQ_BT_OBD = 15

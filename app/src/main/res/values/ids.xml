@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Motion.countUp: the running animation and the value it's heading for. -->
+    <item name="count_anim" type="id" />
+    <item name="count_target" type="id" />
+</resources>

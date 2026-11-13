@@ -68,6 +68,25 @@ class ScreenshotTour {
                 0x42 to 14.1, 0x46 to 6.0, 0x31 to 2310.0, 0x21 to 0.0)), trip)
     }
 
+    /** Frames from the middle of the animations: the launch icon and the Drive Mode power-up sweep. */
+    private fun tourAnimations() {
+        shell("sh -c 'rm -f /data/local/tmp/screens/[d]_*.png'")
+        // Launch from cold, like tapping the app icon: the animated launch screen.
+        shell("am start -n ${ctx.packageName}/.MainActivity -a android.intent.action.MAIN -c android.intent.category.LAUNCHER")
+        SystemClock.sleep(350); shell("screencap -p /data/local/tmp/screens/d_boot_1.png")
+        SystemClock.sleep(350); shell("screencap -p /data/local/tmp/screens/d_boot_2.png")
+        SystemClock.sleep(1_500); shell("screencap -p /data/local/tmp/screens/d_boot_3_home.png")
+        // Drive Mode with its intro: the rev-counter sweep.
+        Prefs(ctx).showSplash = true
+        ctx.startActivity(Intent(ctx, DriveModeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        SystemClock.sleep(900); shell("screencap -p /data/local/tmp/screens/d_drive_intro_1.png")
+        SystemClock.sleep(400); shell("screencap -p /data/local/tmp/screens/d_drive_intro_2.png")
+        SystemClock.sleep(2_000)
+        driveMode()?.let { dm -> instr.runOnMainSync { dm.finish() } }
+        Prefs(ctx).showSplash = false
+        SystemClock.sleep(800)
+    }
+
     private fun tourMainApp(prefix: String) {
         ActivityScenario.launch(MainActivity::class.java).use { sc ->
             var pages = emptyList<String>()
@@ -118,6 +137,7 @@ class ScreenshotTour {
         // Only this test's own photos (a_/b_/c_): the new-user journey (j..) shares the folder.
         shell("mkdir -p /data/local/tmp/screens"); shell("sh -c 'rm -f /data/local/tmp/screens/[abc]_*.png'")
         setUpRealisticState()
+        tourAnimations()
         tourMainApp("a_")
         tourDriveMode("b_", landscape = false)
         tourDriveMode("b_", landscape = true)

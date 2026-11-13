@@ -223,7 +223,10 @@ class DriveModeActivity : Activity() {
         }
         for ((key, tv) in carValues) {
             val (text, color) = v[key] ?: ("—" to null)
-            if (tv.text != text) tv.text = text
+            // First value after "—": count up like a dashboard waking up; after that just update.
+            if (Motion.target(tv) != text) {
+                if (tv.text == "—" && text != "—") Motion.countUp(tv, text) else { Motion.stop(tv); tv.text = text }
+            }
             val c = color ?: Style.TEXT
             if (tv.currentTextColor != c) tv.setTextColor(c)
         }
@@ -286,59 +289,60 @@ class DriveModeActivity : Activity() {
      *  Deliberately not a manufacturer emblem - just a clean custom motion piece. */
     private fun playIntro(frame: android.widget.FrameLayout) {
         val name = Prefs(this).carName.ifBlank { "Drive" }
-        val overlay = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
+        val overlay = android.widget.FrameLayout(this).apply {
             setBackgroundColor(Style.BG)
             isClickable = true
         }
-        val bar = View(this).apply {
-            background = Style.rounded(Style.PRIMARY, dp(3).toFloat())
-            layoutParams = LinearLayout.LayoutParams(0, dp(5)).apply { topMargin = dp(14) }
-        }
-        val nameTv = TextView(this).apply {
-            text = name.uppercase(); setTextColor(Color.WHITE); textSize = 56f
-            setTypeface(typeface, Typeface.BOLD); letterSpacing = 0.2f
-            alpha = 0f; scaleX = 0.8f; scaleY = 0.8f
-        }
+        val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
         val sub = TextView(this).apply {
             text = "DRIVE MODE"; setTextColor(Style.TEXT2); textSize = 14f
-            letterSpacing = 0.4f; alpha = 0f; setPadding(0, dp(10), 0, 0)
+            letterSpacing = 0.4f; alpha = 0f; setPadding(0, dp(14), 0, 0); gravity = Gravity.CENTER
         }
-        // Your own intro image (e.g. the car badge) replaces the text when one is set.
+        val side = (minOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels) * 0.72).toInt()
+        // Your own intro image (e.g. the car badge) replaces the gauge when one is set.
         val logo = IntroImage.load(this)
-        val hero: View = if (logo != null) android.widget.ImageView(this).apply {
-            setImageBitmap(logo)
-            adjustViewBounds = true
-            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-            alpha = 0f; scaleX = 0.8f; scaleY = 0.8f
-            val side = (minOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels) * 0.75).toInt()
-            layoutParams = LinearLayout.LayoutParams(side, LinearLayout.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.CENTER }
-            maxHeight = side
-        } else nameTv
-        overlay.addView(hero)
-        overlay.addView(bar)
-        overlay.addView(sub)
+        val hero: View
+        var gauge: GaugeSweepView? = null
+        if (logo != null) {
+            hero = android.widget.ImageView(this).apply {
+                setImageBitmap(logo); adjustViewBounds = true
+                scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                alpha = 0f; scaleX = 0.8f; scaleY = 0.8f; maxHeight = side
+            }
+            column.addView(hero, LinearLayout.LayoutParams(side, LinearLayout.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.CENTER })
+        } else {
+            // The power-up: a rev counter self-test around your car's name.
+            val dial = android.widget.FrameLayout(this)
+            gauge = GaugeSweepView(this, Style.PRIMARY, Style.SURFACE2)
+            dial.addView(gauge, android.widget.FrameLayout.LayoutParams(-1, -1))
+            hero = TextView(this).apply {
+                text = name.uppercase(); setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD)
+                letterSpacing = 0.15f; gravity = Gravity.CENTER; maxLines = 1
+                setAutoSizeTextTypeUniformWithConfiguration(18, 56, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
+                alpha = 0f; scaleX = 0.85f; scaleY = 0.85f
+            }
+            dial.addView(hero, android.widget.FrameLayout.LayoutParams((side * 0.62).toInt(), (side * 0.3).toInt(), Gravity.CENTER))
+            column.addView(dial, LinearLayout.LayoutParams(side, side).apply { gravity = Gravity.CENTER })
+        }
+        column.addView(sub, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
+        overlay.addView(column, android.widget.FrameLayout.LayoutParams(-1, -1))
         frame.addView(overlay, android.widget.FrameLayout.LayoutParams(-1, -1))
 
         val remove = Runnable {
-            overlay.animate().alpha(0f).setDuration(400).withEndAction {
+            overlay.animate().alpha(0f).scaleX(1.06f).scaleY(1.06f).setDuration(350).withEndAction {
                 (overlay.parent as? android.widget.FrameLayout)?.removeView(overlay)
             }.start()
         }
         // Skip on tap - only cancel the intro's own timer, not the screen's refresh.
         overlay.setOnClickListener { handler.removeCallbacks(remove); remove.run() }
 
-        hero.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(if (logo != null) 650 else 420).start()
-        sub.animate().alpha(1f).setStartDelay(250).setDuration(400).start()
-        val fullW = resources.displayMetrics.widthPixels / 3
-        android.animation.ValueAnimator.ofInt(0, fullW).apply {
-            duration = 520; startDelay = 150
-            addUpdateListener { bar.layoutParams = (bar.layoutParams as LinearLayout.LayoutParams).apply { width = it.animatedValue as Int }; bar.requestLayout() }
-            start()
-        }
-        handler.postDelayed(remove, if (logo != null) 2300 else 1700)
+        hero.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(if (logo != null) 650 else 500)
+            .setInterpolator(android.view.animation.OvershootInterpolator(1.4f)).start()
+        sub.animate().alpha(1f).setStartDelay(350).setDuration(400).start()
+        gauge?.play()
+        handler.postDelayed(remove, if (logo != null) 2300 else 1900)
     }
+
 
     override fun onResume() {
         super.onResume()
@@ -452,9 +456,11 @@ class DriveModeActivity : Activity() {
         val key = "$songText|$statusText|$playing|$resumeOn"
         if (key == lastShown) return
         lastShown = key
-        nowPlaying.text = songText
+        Motion.swapText(nowPlaying, songText)
         status.text = statusText
-        playBtn.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
+        val icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play
+        if (playBtn.tag != icon) { if (playBtn.tag != null) Motion.pop(playBtn); playBtn.tag = icon }
+        playBtn.setImageResource(icon)
         playBtn.contentDescription = if (playing) "Pause" else "Play"
         resumeBtn.text = if (resumeOn) "Resume on" else "Resume off"
         // Bright green needs dark text and icon to stay readable.
