@@ -128,8 +128,9 @@ object ObdManager {
             tries++
             status = "Connecting (try $tries)..."
             try {
-                val l = BluetoothObd.connect(ctx, address) { socket = it }
+                val l = BluetoothObd.connect(ctx, address, cancelled = { !alive(myGen) }) { socket = it }
                 link = l
+                if (!alive(myGen)) { runCatching { l.close() }; break }  // stopped while connecting
                 val session = ObdSession(l, engineLitres) { DriveLog.log(it) }
                 val problem = session.start()
                 if (problem != null) {
