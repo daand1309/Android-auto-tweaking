@@ -46,6 +46,8 @@ object GreetingText {
         butler: Boolean = false,
         /** A short reminder (e.g. the car's service is due), said before the music starts. */
         reminder: String? = null,
+        /** The very first greeting: "welcome", not "welcome back". */
+        firstDrive: Boolean = false,
     ): String {
         val hour = cal.get(Calendar.HOUR_OF_DAY)
         val day = cal.get(Calendar.DAY_OF_WEEK)
@@ -54,6 +56,10 @@ object GreetingText {
         val who = SpeechText.spokenName(name, dutch)
         parts += if (who.isEmpty()) timeGreeting(hour, dutch) + "." else "${timeGreeting(hour, dutch)}, $who."
         parts += when {
+            firstDrive && butler && dutch -> "Welkom aan boord, meneer. Alles staat voor u klaar."
+            firstDrive && butler -> "Welcome aboard, sir. Everything is in order."
+            firstDrive && dutch -> "Welkom."
+            firstDrive -> "Welcome."
             butler && dutch -> "Welkom terug, meneer. Alles staat voor u klaar."
             butler -> "Welcome back, sir. Everything is in order."
             dutch -> "Welkom terug."
@@ -975,7 +981,7 @@ object WelcomeAnnouncer {
             val text = GreetingText.build(
                 p.namePronunciation.ifBlank { p.greetingName }, p.greetingDutch, Calendar.getInstance(), weather, p.weatherPlace,
                 roads = p.roadConditionsEnabled, song = song.takeIf { p.announceSong }, birthday = p.birthday,
-                butler = p.butler,
+                butler = p.butler, firstDrive = p.lastGreetingAt == 0L,
                 reminder = listOfNotNull(earlyWarningToSay(ctx, p, recordAsGreeted), serviceReminderIfDue(ctx, p, recordAsGreeted))
                     .joinToString(" ").ifEmpty { null },
             )

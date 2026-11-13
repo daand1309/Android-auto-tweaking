@@ -85,4 +85,15 @@ class VoiceTest {
         val rain = DriveUpdates.changes(dry, dry.copy(code = 63, precipMm = 1.0), dutch = false, butler = true).single()
         assertTrue(rain, rain.startsWith("It has started to rain.") && rain.contains("my mood"))  // butler wording, no forced sir
     }
+
+    @Test fun theVeryFirstGreetingSaysWelcomeNotWelcomeBack() {
+        val cal = java.util.Calendar.getInstance()
+        fun g(first: Boolean, butler: Boolean = false, dutch: Boolean = false) =
+            GreetingText.build("", dutch, cal, null, "", kotlin.random.Random(1), butler = butler, firstDrive = first)
+        org.junit.Assert.assertFalse(g(true).contains("Welcome back"))
+        org.junit.Assert.assertTrue(g(true).contains("Welcome."))
+        org.junit.Assert.assertTrue(g(true, butler = true).contains("Welcome aboard, sir"))
+        org.junit.Assert.assertFalse(g(true, dutch = true).contains("terug"))
+        org.junit.Assert.assertTrue(g(false).contains("Welcome back"))
+    }
 }
