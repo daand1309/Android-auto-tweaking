@@ -496,6 +496,22 @@ class DriveFlowTest {
         }
         val a = activity!!
         assertEquals(0, a.currentTab())
+        // The tab buttons are big enough to find and hit at a glance, and tapping one switches tabs.
+        var carTab: android.widget.TextView? = null
+        onMain {
+            fun find(v: android.view.View) {
+                if (v is android.widget.TextView && v.text.toString().trim() == "Car" && v.isShown) carTab = v
+                if (v is android.view.ViewGroup) for (k in 0 until v.childCount) find(v.getChildAt(k))
+            }
+            find(a.window.decorView)
+        }
+        val minPx = (56 * ctx.resources.displayMetrics.density).toInt()
+        assertTrue("Car tab is ${carTab?.height}px tall, want >= $minPx", (carTab?.height ?: 0) >= minPx)
+        onMain { carTab!!.performClick() }
+        SystemClock.sleep(500)
+        assertEquals("tapping the Car tab opens it", 1, a.currentTab())
+        onMain { a.pagerForTest().goTo(0, animate = false) }
+        SystemClock.sleep(300)
         val instr = InstrumentationRegistry.getInstrumentation()
 
         /** A real finger swipe across the screen, starting at (startX, y). */

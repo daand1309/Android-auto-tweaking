@@ -104,16 +104,18 @@ class DriveModeActivity : Activity() {
 
     private fun buildTabs(): View {
         val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Style.BG) }
-        val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(dp(12), dp(8), dp(12), 0) }
+        val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(dp(12), dp(10), dp(12), dp(2)) }
+        // Big, solid tab buttons: easy to find and hit at a glance (64 dp tall; a bit less in landscape).
+        val tabHeight = dp(if (wide) 52 else 64)
         listOf(R.drawable.ic_music to "Music", R.drawable.ic_gauge to "Car").forEachIndexed { i, (icon, label) ->
             val tv = TextView(this).apply {
-                text = label; textSize = 18f; gravity = Gravity.CENTER; setPadding(dp(8), dp(10), dp(8), dp(10))
+                text = label; textSize = if (wide) 19f else 22f; gravity = Gravity.CENTER; setPadding(dp(8), 0, dp(8), 0)
                 tag = icon  // the icon goes inline, right next to the word (see highlightTab)
                 setOnClickListener { pager.goTo(i) }
                 Feel.press(this, 0.97f)
             }
             tabLabels += tv
-            bar.addView(tv, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(dp(4), 0, dp(4), 0) })
+            bar.addView(tv, LinearLayout.LayoutParams(0, tabHeight, 1f).apply { setMargins(dp(5), 0, dp(5), 0) })
         }
         column.addView(bar, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
         pager = SwipePager(this)
@@ -135,14 +137,24 @@ class DriveModeActivity : Activity() {
             // Selected tab: raised card, accent icon (the accent is kept for what matters most).
             tv.setTextColor(if (on) Style.TEXT else Style.TEXT2)
             val label = tv.text.toString().trim()
+            val icon = dp(if (wide) 24 else 28)
             val d = getDrawable(tv.tag as Int)!!.mutate().apply {
-                setBounds(0, 0, dp(22), dp(22)); setTint(if (on) Style.PRIMARY else Style.TEXT2)
+                setBounds(0, 0, icon, icon); setTint(if (on) Style.PRIMARY else Style.TEXT2)
             }
             tv.text = android.text.SpannableString("  $label").apply {
                 setSpan(android.text.style.ImageSpan(d, android.text.style.DynamicDrawableSpan.ALIGN_CENTER), 0, 1, 0)
             }
             tv.setTypeface(null, if (on) Typeface.BOLD else Typeface.NORMAL)
-            tv.background = if (on) Style.rounded(Style.SURFACE2, dp(Style.R_CARD).toFloat()) else null
+            // Both are solid buttons; the selected one is raised with a red bar along its bottom.
+            val r = dp(Style.R_CARD).toFloat()
+            tv.background = if (on) android.graphics.drawable.LayerDrawable(arrayOf(
+                Style.rounded(Style.SURFACE2, r),
+                android.graphics.drawable.GradientDrawable().apply { setColor(Style.PRIMARY); cornerRadius = dp(2).toFloat() },
+            )).apply {
+                setLayerGravity(1, Gravity.BOTTOM or Gravity.FILL_HORIZONTAL); setLayerHeight(1, dp(4))
+                setLayerInsetLeft(1, dp(18)); setLayerInsetRight(1, dp(18)); setLayerInsetBottom(1, dp(2))
+            }
+            else Style.rounded(Style.SURFACE, r)
         }
     }
 
