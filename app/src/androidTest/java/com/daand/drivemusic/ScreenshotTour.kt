@@ -115,7 +115,8 @@ class ScreenshotTour {
 
     @Test
     fun photographEveryScreen() {
-        shell("rm -rf /data/local/tmp/screens"); shell("mkdir -p /data/local/tmp/screens")
+        // Only this test's own photos (a_/b_/c_): the new-user journey (j..) shares the folder.
+        shell("mkdir -p /data/local/tmp/screens"); shell("sh -c 'rm -f /data/local/tmp/screens/[abc]_*.png'")
         setUpRealisticState()
         tourMainApp("a_")
         tourDriveMode("b_", landscape = false)

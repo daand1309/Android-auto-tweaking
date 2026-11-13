@@ -80,7 +80,7 @@ class NewUserJourney {
 
     @Test
     fun aNewUserSetsUpAndDrives() {
-        shell("mkdir -p $dir")
+        shell("mkdir -p $dir"); shell("sh -c 'rm -f $dir/j*.png $dir/journey.txt'")
         // ---- A clean install: no settings, no permissions, no history.
         ctx.getSharedPreferences("drive_music", 0).edit().clear().commit()
         File(ctx.filesDir, "trips.json").delete()
@@ -209,6 +209,7 @@ class NewUserJourney {
             look("help_page", root)
         }
         instr.runOnMainSync { session.release() }
+        journal.lines().forEach { android.util.Log.i("Journey", it) }   // also in the test's logcat
         // Written through the shell (the app's own files aren't readable from there): piped into cat.
         val fds = instr.uiAutomation.executeShellCommandRw("sh -c 'cat > $dir/journey.txt'")
         android.os.ParcelFileDescriptor.AutoCloseOutputStream(fds[1]).use { it.write(journal.toString().toByteArray()) }
