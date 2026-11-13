@@ -96,25 +96,28 @@ class HealthTrendTest {
         fun early(l: List<CarAlerts.Alert>) = l.filter { it.kind == CarAlerts.Kind.EARLY_CODE }
         fun snap(at: Long, read: Long, vararg codes: String) = CarSnapshot(at, rpm = 800, pendingCodes = codes.toList(), codesReadAt = read)
         val a = CarAlerts(readySeconds = 0)
-        // A pending code has nothing else backing it: 3 actual reads in a row before it's told.
+        // A pending code has nothing else backing it: it must keep showing up (3 reads, at least half).
         assertTrue(early(a.check(snap(0, 0, "P0301"))).isEmpty())
         assertTrue("same read kept in between: not a new read", early(a.check(snap(5_000, 0, "P0301"))).isEmpty())
         assertTrue(early(a.check(snap(600_000, 600_000, "P0301"))).isEmpty())
-        assertEquals(setOf("P0301"), a.pendingWorthRemembering())
+        assertEquals(2, a.pendingTracker.hits("P0301"))
         val told = early(a.check(snap(1_200_000, 1_200_000, "P0301")))
         assertEquals(listOf("P0301"), told.single().codes)
         assertTrue(CarAlerts.message(told.single(), false, true).contains("P"))
         assertTrue("once", early(a.check(snap(1_800_000, 1_800_000, "P0301"))).isEmpty())
-        // Missing from one read: starts over.
+        // Missing from one read (bad connection) doesn't start over: 3 of 4 reads is still real.
         val b = CarAlerts(0)
         b.check(snap(0, 0, "P0171")); b.check(snap(600_000, 600_000)); b.check(snap(1_200_000, 1_200_000, "P0171"))
-        assertTrue(early(b.check(snap(1_800_000, 1_800_000, "P0171"))).isEmpty())
-        // Seen in 2+ reads on an earlier drive: this drive's first read confirms it.
-        val next = CarAlerts(0, pendingSeenBefore = setOf("P0171"))
-        assertEquals(listOf("P0171"), early(next.check(snap(0, 0, "P0171"))).single().codes)
+        assertEquals(listOf("P0171"), early(b.check(snap(1_800_000, 1_800_000, "P0171"))).single().codes)
+        // Remembered across drives: two earlier sightings + this drive's first read.
+        val memory = com.daand.drivemusic.obd.CodeTracker().apply { update(1, listOf("P0442")); update(2, listOf("P0442")) }.save()
+        val next = CarAlerts(0, pendingTracker = com.daand.drivemusic.obd.CodeTracker(memory))
+        assertEquals(listOf("P0442"), early(next.check(snap(0, 3, "P0442"))).single().codes)
         // Already told on an earlier drive: not again.
-        val later = CarAlerts(0, setOf(CarAlerts.pendingKey("P0171")), setOf("P0171"))
-        assertTrue(early(later.check(snap(0, 0, "P0171"))).isEmpty())
+        val later = CarAlerts(0, setOf(CarAlerts.pendingKey("P0442")), pendingTracker = com.daand.drivemusic.obd.CodeTracker(memory))
+        assertTrue(early(later.check(snap(0, 3, "P0442"))).isEmpty())
+        // A corrupt saved memory starts fresh instead of crashing.
+        assertEquals(0, com.daand.drivemusic.obd.CodeTracker("x|P0442:a:b:c;;").hits("P0442"))
         // Once confirmed it's a real check-engine alert (a different, urgent message).
         assertTrue(a.check(CarSnapshot(2_000_000, rpm = 800, checkEngine = true, codes = listOf("P0301"), codeCount = 1))
             .any { it.kind == CarAlerts.Kind.CHECK_ENGINE })

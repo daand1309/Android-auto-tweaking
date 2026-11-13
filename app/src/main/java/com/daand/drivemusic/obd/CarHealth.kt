@@ -254,19 +254,16 @@ class CarAlerts(
      * light that's been on for weeks shouldn't be announced like news at every start.
      */
     toldRecently: Set<String> = emptySet(),
-    /** Pending codes already seen in a code read on an earlier drive (so this drive's read confirms them). */
-    private val pendingSeenBefore: Set<String> = emptySet(),
+    /** How often each stored / pending code showed up in actual reads, across drives (see [CodeTracker]). */
+    val storedTracker: CodeTracker = CodeTracker(),
+    val pendingTracker: CodeTracker = CodeTracker(),
 ) {
     enum class Kind { READY_TO_DRIVE, OVERHEAT, CHECK_ENGINE, EARLY_CODE, ICY_ROAD, LOW_BATTERY, WEAK_CHARGING, THERMOSTAT, ENGINE_WARM, LOW_FUEL }
     /** [timely] = only useful right now (say it as soon as possible, or not at all). */
     data class Alert(val kind: Kind, val urgent: Boolean, val value: Double? = null, val codes: List<String> = emptyList(),
                      val timely: Boolean = false)
 
-    private val pendingStreak = Streak()
-    private val storedStreak = Streak()
 
-    /** Pending codes seen in 2+ reads in a row: worth remembering for the next drive. */
-    fun pendingWorthRemembering(): Set<String> = pendingStreak.atLeast(2)
     // Fuel level and outside temperature come with the slower full reads (every 9-30 s) and are kept in
     // between, so one garbled read would repeat for a while: they must hold for longer than that.
     private val fuelLow = Held(40_000L)
@@ -307,10 +304,11 @@ class CarAlerts(
             if (!warmDone && coldAtStart == true && c >= WARM_C) { warmDone = true; out += Alert(Kind.ENGINE_WARM, false, c.toDouble()) }
         }
         // Stored codes: trusted straight away when the list agrees with the car's own count (a separate
-        // answer). Otherwise - a garbled or overflowing answer - a code must be in 3 good reads in a row.
-        storedStreak.update(s.storedReadAt, s.codes)
+        // answer). Otherwise (a garbled answer, or a second control unit answering too) the code must
+        // keep showing up: see [CodeTracker.confirmed].
+        storedTracker.update(s.storedReadAt, s.codes)
         val countAgrees = s.codeCount != null && s.codes.size <= s.codeCount
-        val newCodes = s.codes.filter { it !in reportedCodes && (countAgrees || storedStreak[it] >= CONFIRM_READS) }
+        val newCodes = s.codes.filter { it !in reportedCodes && (countAgrees || storedTracker.confirmed(it)) }
         val lightJustCameOn = s.checkEngine == true && !lastCheckEngine
         if (newCodes.isNotEmpty()) {
             reportedCodes += newCodes
@@ -324,11 +322,8 @@ class CarAlerts(
         // A pending code isn't corroborated by anything else (unlike confirmed codes, which the status
         // count must agree with), so one garbled answer could invent one: it must show up in two
         // separate code reads - this drive, or once on an earlier drive and again now.
-        pendingStreak.update(s.codesReadAt, s.pendingCodes)
-        val newPending = s.pendingCodes.filter {
-            it !in s.codes && pendingKey(it) !in reportedCodes &&
-                (pendingStreak[it] >= CONFIRM_READS || (it in pendingSeenBefore && pendingStreak[it] >= 1))
-        }
+        pendingTracker.update(s.codesReadAt, s.pendingCodes)
+        val newPending = s.pendingCodes.filter { it !in s.codes && pendingKey(it) !in reportedCodes && pendingTracker.confirmed(it) }
         if (newPending.isNotEmpty()) {
             reportedCodes += newPending.map(::pendingKey)
             out += Alert(Kind.EARLY_CODE, urgent = false, codes = newPending)
@@ -439,9 +434,6 @@ class CarAlerts(
         const val LOW_FUEL_PCT = 12
         /** Like the car's own snowflake warning. */
         const val ICY_C = 3.0
-        /** Good reads in a row a code needs when nothing else backs it up. */
-        const val CONFIRM_READS = 3
-
         /** How a pending code is remembered (separately from the same code once confirmed). */
         fun pendingKey(code: String) = "pending:$code"
 
@@ -601,18 +593,63 @@ class Held(private val ms: Long) {
 }
 
 /**
- * For each code: in how many actual reads in a row it appeared. A read is identified by its time, so
- * the same answer kept between reads isn't counted twice; a code missing from a read starts over.
+ * How often each code showed up in actual fault-code reads, remembered across drives (30 days).
+ *
+ * A code counts as real when it appeared in at least [MIN_HITS] reads AND in at least half of all
+ * reads since it first showed up. A real code keeps coming back, even with a bad connection that
+ * drops it from some answers, a bit flip now and then, or only one read per (short) drive. Garbage
+ * from a garbled answer is random: it almost never repeats, and when it does by chance, it's a tiny
+ * share of the reads. A read is identified by its time, so an answer kept between reads isn't counted
+ * twice. Pure, unit tested; saved with [save] / restored with the constructor.
  */
-class Streak {
-    private val count = HashMap<String, Int>()
+class CodeTracker(saved: String = "") {
+    private class Entry(val first: Int, var hits: Int, var lastAt: Long)
+    private val entries = HashMap<String, Entry>()
+    private var reads = 0
     private var lastReadAt: Long? = null
+
+    init {
+        runCatching {
+            val parts = saved.split('|')
+            if (parts.size == 2) {
+                reads = parts[0].toInt()
+                parts[1].split(';').filter { it.isNotBlank() }.forEach {
+                    val f = it.split(':')
+                    if (f.size == 4 && f[0].length in 4..6) entries[f[0]] = Entry(f[1].toInt(), f[2].toInt(), f[3].toLong())
+                }
+            }
+        }.onFailure { reads = 0; entries.clear() }
+    }
+
     fun update(readAt: Long?, codes: List<String>) {
         if (readAt == null || readAt == lastReadAt) return
         lastReadAt = readAt
-        val next = codes.toSet().associateWith { (count[it] ?: 0) + 1 }
-        count.clear(); count.putAll(next)
+        reads++
+        for (c in codes.distinct()) {
+            val e = entries.getOrPut(c) { Entry(reads, 0, readAt) }
+            e.hits++; e.lastAt = readAt
+        }
+        entries.values.removeAll { readAt - it.lastAt > KEEP_MS }
+        if (entries.size > MAX) {
+            // A flood of garbage: keep the codes that came back most often (then the most recent).
+            val keep = entries.entries.sortedWith(compareByDescending<Map.Entry<String, Entry>> { it.value.hits }.thenByDescending { it.value.lastAt })
+                .take(MAX).map { it.key }.toSet()
+            entries.keys.retainAll(keep)
+        }
     }
-    operator fun get(code: String) = count[code] ?: 0
-    fun atLeast(n: Int) = count.filterValues { it >= n }.keys
+
+    fun confirmed(code: String): Boolean {
+        val e = entries[code] ?: return false
+        return e.hits >= MIN_HITS && e.hits * 2 >= reads - e.first + 1
+    }
+
+    fun hits(code: String) = entries[code]?.hits ?: 0
+
+    fun save(): String = "$reads|" + entries.entries.joinToString(";") { (c, e) -> "$c:${e.first}:${e.hits}:${e.lastAt}" }
+
+    companion object {
+        const val MIN_HITS = 3
+        const val MAX = 300
+        const val KEEP_MS = 30 * 86_400_000L
+    }
 }

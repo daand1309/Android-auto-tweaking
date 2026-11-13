@@ -85,8 +85,7 @@ object ObdManager {
         readySeconds = p.obdReadySeconds
         val now = System.currentTimeMillis()
         val recent = p.obdToldCodes.filter { now - it.value < CarAlerts.REMIND_AFTER_MS }.keys
-        val seenBefore = p.pendingSeen.filter { now - it.value < 30 * 86_400_000L }.keys
-        alerts = CarAlerts(readySeconds, recent, seenBefore)
+        alerts = CarAlerts(readySeconds, recent, CodeTracker(p.storedCodeLog), CodeTracker(p.pendingCodeLog))
         val remember: (CarAlerts.Alert) -> Unit = { a ->
             if (a.kind == CarAlerts.Kind.CHECK_ENGINE || a.kind == CarAlerts.Kind.EARLY_CODE) {
                 val told = Prefs(app).obdToldCodes.toMutableMap()
@@ -201,13 +200,10 @@ object ObdManager {
                 onAlert(a)
             }
             if (codesDue) {
-                // Pending codes seen in 2+ reads in a row are remembered, so the next drive can confirm
-                // them sooner. One garbled answer mustn't plant codes for next time.
-                val keep = alerts.pendingWorthRemembering()
-                val c = appCtx
-                if (keep.isNotEmpty() && c != null) {
+                // How often each code showed up is kept across drives (short drives add up).
+                appCtx?.let { c ->
                     val p = Prefs(c)
-                    p.pendingSeen = p.pendingSeen.filter { lastCodes - it.value < 30 * 86_400_000L } + keep.associateWith { lastCodes }
+                    p.storedCodeLog = alerts.storedTracker.save(); p.pendingCodeLog = alerts.pendingTracker.save()
                 }
             }
             n++
