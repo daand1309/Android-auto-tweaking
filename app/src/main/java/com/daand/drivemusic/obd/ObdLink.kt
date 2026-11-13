@@ -30,7 +30,13 @@ object ReadOnly {
 class StreamLink(private val input: InputStream, private val output: OutputStream, private val onClose: () -> Unit = {}) : ObdLink {
     override fun send(cmd: String, timeoutMs: Long): String {
         if (!ReadOnly.allowed(cmd)) throw IllegalArgumentException("refused to send '$cmd': this app only reads from the car")
-        while (input.available() > 0) input.read()  // drop anything left over from a previous answer
+        // Drop anything left over from a previous answer - but an adapter that never stops talking
+        // (stuck monitoring the bus) must not keep us here forever.
+        var dropped = 0
+        while (input.available() > 0) {
+            if (input.read() < 0) throw IOException("adapter closed the connection")
+            if (++dropped > MAX_LEFTOVER) throw IOException("adapter keeps sending data nobody asked for")
+        }
         output.write("$cmd\r".toByteArray(Charsets.US_ASCII))
         output.flush()
         val sb = StringBuilder()
@@ -63,6 +69,7 @@ class StreamLink(private val input: InputStream, private val output: OutputStrea
     companion object {
         const val GRACE_MS = 2_000L
         const val MAX_ANSWER = 4096
+        const val MAX_LEFTOVER = 16_384
     }
 }
 

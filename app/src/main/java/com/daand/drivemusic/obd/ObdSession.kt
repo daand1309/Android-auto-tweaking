@@ -16,6 +16,12 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
     /** Questions the car didn't answer / garbled answers this session (for the log). */
     var unanswered = 0; private set
     var questions = 0; private set
+    /**
+     * When the car's computer last gave a real answer - updated per answer, not per reading: one
+     * reading can take a while on a slow adapter, and the stall safeguard must not mistake that for
+     * the ignition being off.
+     */
+    @Volatile var lastAnswerAt = 0L; private set
     private val droppedLogged = mutableSetOf<Int>()
 
     /** Returns null when the car answers, or a readable reason why not. */
@@ -61,7 +67,7 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
         questions++
         val lines = Elm327.lines(link.send("01%02X".format(pid), 1_500))
         val d = if (Elm327.isError(lines)) null else Elm327.pidData(lines, pid)
-        if (d == null) unanswered++
+        if (d == null) unanswered++ else lastAnswerAt = System.currentTimeMillis()
         return d
     }
 
@@ -75,6 +81,7 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
             val lines = Elm327.lines(link.send("01" + chunk.joinToString("") { "%02X".format(it) }, 2_000))
             val got = if (Elm327.isError(lines)) emptyMap() else Elm327.multiPid(lines) { Pids.lengthOf(it) }.filterKeys { it in chunk }
             out.putAll(got)
+            if (got.isNotEmpty()) lastAnswerAt = System.currentTimeMillis()
             if (got.isEmpty() && chunk.size > 1) {
                 if (++batchFailures >= 2 && batching) {
                     batching = false

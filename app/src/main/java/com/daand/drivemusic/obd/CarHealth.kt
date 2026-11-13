@@ -580,16 +580,22 @@ class CarAlerts(
 }
 
 /**
- * True once a condition has held for [ms] (from its first sighting): one bad reading, even one that
- * is repeated until the next read, can't trigger anything. Resets as soon as it doesn't hold. Pure.
+ * True once a condition has held for [ms]: one bad reading, even one repeated until the next read,
+ * can't trigger anything. Time is added per reading and at most [MAX_STEP_MS] at a time, so a clock
+ * jump (network time, time zone) can't make it "hold" in one go. Resets as soon as it doesn't hold. Pure.
  */
 class Held(private val ms: Long) {
-    private var since: Long? = null
+    private var heldFor: Long? = null
+    private var lastAt = 0L
     fun held(condition: Boolean, at: Long): Boolean {
-        if (!condition) { since = null; return false }
-        val start = since ?: at.also { since = it }
-        return at - start >= ms
+        if (!condition) { heldFor = null; return false }
+        val sofar = heldFor
+        heldFor = if (sofar == null) 0L else sofar + (at - lastAt).coerceIn(0L, MAX_STEP_MS)
+        lastAt = at
+        return heldFor!! >= ms
     }
+
+    companion object { const val MAX_STEP_MS = 15_000L }
 }
 
 /**

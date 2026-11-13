@@ -108,7 +108,17 @@ object FuelMath {
     private const val VOLUMETRIC_EFFICIENCY = 0.85
 
     /** Litres per hour right now, or null if the car doesn't give enough to work it out. */
-    fun litresPerHour(extra: Map<Int, Double>, engineLitres: Double): Double? {
+    fun litresPerHour(extra: Map<Int, Double>, engineLitres: Double): Double? =
+        rawLitresPerHour(extra, engineLitres)?.takeIf { it.isFinite() && it >= 0 && it <= maxLitresPerHour(engineLitres) }
+
+    /**
+     * Even flat out an engine can't burn more than roughly 12 L/h per litre of engine size (a 1.6
+     * at full throttle: ~15-20 L/h). Above that the inputs were garbled: unknown, not a huge number
+     * that would wreck the trip's fuel, costs and range.
+     */
+    fun maxLitresPerHour(engineLitres: Double) = 15.0 * engineLitres.coerceIn(0.8, 6.0)
+
+    private fun rawLitresPerHour(extra: Map<Int, Double>, engineLitres: Double): Double? {
         extra[0x5E]?.let { return it }
         val maf = extra[0x10] ?: run {
             val map = extra[0x0B] ?: return null

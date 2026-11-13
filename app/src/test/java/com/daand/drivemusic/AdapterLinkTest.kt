@@ -94,4 +94,15 @@ class AdapterLinkTest {
         assertTrue("everything sent was a question: ${a.sent}", a.sent.all { ReadOnly.allowed(it) })
         assertFalse(a.sent.any { it == "04" || it.startsWith("08") })
     }
+
+    @Test fun anAdapterThatNeverStopsTalkingDoesntFreezeTheApp() {
+        val flood = object : InputStream() {
+            override fun available() = 1_000
+            override fun read() = 'A'.code
+        }
+        val l = StreamLink(flood, object : OutputStream() { override fun write(b: Int) {} })
+        val started = System.currentTimeMillis()
+        try { l.send("010C", 200); fail() } catch (e: IOException) { assertTrue(e.message!!.contains("nobody asked")) }
+        assertTrue(System.currentTimeMillis() - started < 2_000)
+    }
 }

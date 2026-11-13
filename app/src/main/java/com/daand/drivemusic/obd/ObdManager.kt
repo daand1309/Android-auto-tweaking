@@ -42,7 +42,10 @@ object ObdManager {
     fun isConnected() = running && status == "Connected"
 
     /** How long the car's computer has been silent (ignition off), or Long.MAX_VALUE if never heard. */
-    fun ecuSilentMs(): Long = if (lastEcuAnswerAt == 0L) Long.MAX_VALUE else System.currentTimeMillis() - lastEcuAnswerAt
+    fun ecuSilentMs(): Long {
+        val last = maxOf(lastEcuAnswerAt, lastSession?.lastAnswerAt ?: 0L)
+        return if (last == 0L) Long.MAX_VALUE else System.currentTimeMillis() - last
+    }
 
     /** This drive's trip numbers (distance, fuel, idle...). */
     @Volatile var trip: Trip = Trip(); private set

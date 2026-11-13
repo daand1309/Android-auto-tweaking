@@ -99,6 +99,7 @@ class ObdFullTest {
         fun icy(l: List<CarAlerts.Alert>) = l.any { it.kind == CarAlerts.Kind.ICY_ROAD }
         val real = CarAlerts()
         assertFalse("one reading isn't enough (could be a garbled byte)", icy(real.check(CarSnapshot(0, ambientC = 2, rpm = 900, coolantC = 70))))
+        for (t in 5_000L..35_000L step 5_000L) assertFalse(icy(real.check(CarSnapshot(t, ambientC = 2, rpm = 900, coolantC = 70))))
         assertTrue("still cold 40 s later: real", icy(real.check(CarSnapshot(40_000, ambientC = 2, rpm = 900, coolantC = 70))))
         assertFalse("once", icy(real.check(CarSnapshot(80_000, ambientC = 1, rpm = 900, coolantC = 70))))
         // A garbled 0 °C held until the next read (30 s), then normal again: nothing.
@@ -109,6 +110,7 @@ class ObdFullTest {
         assertFalse(icy(glitch.check(CarSnapshot(75_000, ambientC = 12, rpm = 900, coolantC = 70))))
         val proxy = CarAlerts()  // no outside sensor: cold engine, intake air in the first 90 s
         proxy.check(CarSnapshot(0, coolantC = 5, rpm = 1000, runtimeS = 20, extra = mapOf(0x0F to 0.0)))
+        for (t in 5_000L..35_000L step 5_000L) proxy.check(CarSnapshot(t, coolantC = 6, rpm = 1000, runtimeS = 20 + (t / 1000).toInt(), extra = mapOf(0x0F to 0.0)))
         assertTrue(icy(proxy.check(CarSnapshot(40_000, coolantC = 6, rpm = 1000, runtimeS = 60, extra = mapOf(0x0F to 0.0)))))
         val warmEngine = CarAlerts()  // intake air of a warm engine says nothing about outside
         assertTrue(warmEngine.check(CarSnapshot(0, coolantC = 80, rpm = 1000, runtimeS = 20, extra = mapOf(0x0F to 2.0))).none { it.kind == CarAlerts.Kind.ICY_ROAD })

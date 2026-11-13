@@ -200,6 +200,7 @@ class ObdTest {
         assertTrue(a.checkOthers(CarSnapshot(5_000, rpm = 900, volts = 12.5)).isEmpty())          // low charge: wait a minute
         assertEquals(CarAlerts.Kind.WEAK_CHARGING, a.checkOthers(CarSnapshot(70_000, rpm = 900, volts = 12.5)).single().kind)
         assertTrue("one fuel read could be garbled: wait", a.checkOthers(CarSnapshot(80_000, rpm = 900, volts = 14.0, fuelPct = 9)).isEmpty())
+        for (t in 85_000L..115_000L step 5_000L) a.checkOthers(CarSnapshot(t, rpm = 900, volts = 14.0, fuelPct = 9))
         assertEquals(CarAlerts.Kind.LOW_FUEL, a.checkOthers(CarSnapshot(120_000, rpm = 900, volts = 14.0, fuelPct = 9)).single().kind)
         assertTrue(a.checkOthers(CarSnapshot(170_000, rpm = 900, volts = 14.0, fuelPct = 8)).isEmpty())
         // A healthy alternator never triggers the charging warning.
