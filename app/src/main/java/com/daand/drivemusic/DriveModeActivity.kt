@@ -215,7 +215,8 @@ class DriveModeActivity : Activity() {
         val v = CarDash.values(s, obd.trip, p.greetingDutch, range)
         carLabels["load"]?.let { val l = CarDash.loadLabel(range, p.greetingDutch); if (it.text != l) it.text = l }
         for ((key, sub) in carSubs) {
-            val t = v["${key}_sub"]?.first ?: ""
+            // Landscape tiles are too short for a second line: it would shrink the main number.
+            val t = if (wide) "" else v["${key}_sub"]?.first ?: ""
             if (sub.text != t) sub.text = t
             val vis = if (t.isEmpty()) View.GONE else View.VISIBLE
             if (sub.visibility != vis) sub.visibility = vis
