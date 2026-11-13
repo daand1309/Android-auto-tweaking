@@ -15,6 +15,8 @@ class Trip {
     var highRpmSeconds = 0.0; private set
     var hardAccelerations = 0; private set
     var hardBrakes = 0; private set
+    /** Early-warning numbers for this drive (see [HealthStats]). */
+    val health = HealthStats()
     private var last: CarSnapshot? = null
     private var inHardAccel = false
     private var inHardBrake = false
@@ -24,9 +26,10 @@ class Trip {
         last = s
         s.speedKmh?.let { maxSpeed = maxOf(maxSpeed, it) }
         s.coolantC?.let { c -> if (c <= CarAlerts.MAX_PLAUSIBLE_C) maxCoolant = maxOf(maxCoolant ?: c, c) }
-        if (prev == null) return
+        if (prev == null) { health.add(s, 0.0); return }
         // Gaps (adapter reconnecting) aren't counted as driving.
         val dt = (s.at - prev.at) / 1000.0
+        health.add(s, dt)
         if (dt <= 0 || dt > 15) return
         val speed = (((prev.speedKmh ?: 0) + (s.speedKmh ?: 0)) / 2.0)
         km += speed * dt / 3600

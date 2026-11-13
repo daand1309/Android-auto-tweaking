@@ -491,6 +491,23 @@ class MainActivity : Activity() {
             battery.joinToString("  ") { "%.2f".format(java.util.Locale.ROOT, it.second) } + " V" +
             if (com.daand.drivemusic.obd.CarAlerts.batteryTrendWeak(prefs.batteryLog)) "  ⚠ getting weaker" else "")
 
+        header("Early warnings")
+        run {
+            val history = com.daand.drivemusic.obd.TripHistory.load(this).mapNotNull { it.health }
+            val dutch = prefs.greetingDutch
+            val findings = com.daand.drivemusic.obd.CarTrends.findings(history)
+            findings.forEach { f -> warnCard(com.daand.drivemusic.obd.CarTrends.message(f, dutch, false)) }
+            val rows = com.daand.drivemusic.obd.CarTrends.overview(history, dutch)
+            if (rows.isEmpty()) text("After a few drives with the adapter, the app learns what's normal for your car and " +
+                "warns you when something slowly changes - before a fault code or warning light appears.")
+            else {
+                if (findings.isEmpty()) text("Nothing unusual. Compared with your car's normal from earlier drives:")
+                rows.forEach { (k, v) -> statRow(k, v) }
+                text("Tracks fuel mixture (air leaks, sensors), charging (alternator, belt), idle steadiness (plugs, coils), " +
+                    "warm-up time (thermostat) and road temperature (cooling). Pending fault codes are told the moment they appear.")
+            }
+        }
+
         header("Tell me")
         text("Always: overheating, the check-engine light (with the fault code explained), a weak battery or charging.")
         switch("When the engine is ready to drive (after a cold start)", prefs.obdReadySeconds > 0) {
@@ -1259,6 +1276,16 @@ class MainActivity : Activity() {
             })
         })
     }
+
+    /** An amber card for an early warning. */
+    private fun warnCard(msg: String) = root.addView(TextView(this).apply {
+        text = "⚠  $msg"; textSize = 14f; setTextColor(Style.TEXT); setLineSpacing(dp(2).toFloat(), 1f)
+        background = Style.rounded(Style.WARN_BG, dp(Style.R_CARD).toFloat())
+        setPadding(dp(16), dp(12), dp(16), dp(12))
+        LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also {
+            it.topMargin = dp(8); layoutParams = it
+        }
+    })
 
     /** Copy the car's own service reminder: km left, then time left (days, weeks or months). */
     private fun syncServiceWithCar() = askText("Service: km left", "What the dashboard shows, e.g. 3200", "") { kmIn ->

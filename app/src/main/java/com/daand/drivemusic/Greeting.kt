@@ -976,7 +976,8 @@ object WelcomeAnnouncer {
                 p.namePronunciation.ifBlank { p.greetingName }, p.greetingDutch, Calendar.getInstance(), weather, p.weatherPlace,
                 roads = p.roadConditionsEnabled, song = song.takeIf { p.announceSong }, birthday = p.birthday,
                 butler = p.butler,
-                reminder = serviceReminderIfDue(ctx, p, recordAsGreeted),
+                reminder = listOfNotNull(earlyWarningToSay(ctx, p, recordAsGreeted), serviceReminderIfDue(ctx, p, recordAsGreeted))
+                    .joinToString(" ").ifEmpty { null },
             )
             if (recordAsGreeted) p.lastGreetingAt = System.currentTimeMillis()
             // On screen: your name as written, not the phonetic spelling used for the voice.
@@ -1003,6 +1004,21 @@ object WelcomeAnnouncer {
           }
         }.start()
     }
+
+    /**
+     * An early warning found after an earlier drive (fuel trim drifting, charging sagging...), said
+     * once in the next real greeting - only if it still holds. One per greeting; the rest wait.
+     */
+    private fun earlyWarningToSay(ctx: Context, p: Prefs, realDrive: Boolean): String? = try {
+        val kinds = p.trendToSay
+        if (kinds.isEmpty()) null else {
+            val history = com.daand.drivemusic.obd.TripHistory.load(ctx).mapNotNull { it.health }
+            val still = com.daand.drivemusic.obd.CarTrends.latest(history, kinds)
+            val f = still.firstOrNull()
+            if (realDrive) p.trendToSay = if (f == null) emptyList() else still.drop(1).map { it.kind.name }
+            f?.let { com.daand.drivemusic.obd.CarTrends.message(it, p.greetingDutch, p.butler) }
+        }
+    } catch (e: Exception) { null }
 
     /** The service reminder when it's due and not said in the last week (only on real drives). */
     private fun serviceReminderIfDue(ctx: Context, p: Prefs, realDrive: Boolean): String? = try {

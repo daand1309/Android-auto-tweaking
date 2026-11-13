@@ -87,9 +87,10 @@ object ObdManager {
         val recent = p.obdToldCodes.filter { now - it.value < CarAlerts.REMIND_AFTER_MS }.keys
         alerts = CarAlerts(readySeconds, recent)
         val remember: (CarAlerts.Alert) -> Unit = { a ->
-            if (a.kind == CarAlerts.Kind.CHECK_ENGINE) {
+            if (a.kind == CarAlerts.Kind.CHECK_ENGINE || a.kind == CarAlerts.Kind.EARLY_CODE) {
                 val told = Prefs(app).obdToldCodes.toMutableMap()
-                (a.codes.ifEmpty { listOf(CarAlerts.MIL) }).forEach { told[it] = System.currentTimeMillis() }
+                val keys = if (a.kind == CarAlerts.Kind.EARLY_CODE) a.codes.map(CarAlerts::pendingKey) else a.codes.ifEmpty { listOf(CarAlerts.MIL) }
+                keys.forEach { told[it] = System.currentTimeMillis() }
                 Prefs(app).obdToldCodes = told
             }
             onAlert(a)
@@ -211,11 +212,37 @@ object ObdManager {
         if (t.km < 0.3) return
         // Snapshot now (a new drive may start right away), write the file off the main thread.
         val rec = TripRecord(System.currentTimeMillis(), ((t.drivingSeconds + t.idleSeconds) / 60).toInt(), t.km, t.litres,
-            t.score(), t.maxCoolant, latest?.codes ?: emptyList())
+            t.score(), t.maxCoolant, latest?.codes ?: emptyList(), t.health.sample())
         Thread({
             runCatching { TripHistory.add(ctx, rec) }.onFailure { DriveLog.log("OBD: couldn't save the trip (${it.javaClass.simpleName})") }
             runCatching { TripNotice.post(ctx, rec, Prefs(ctx)) }
+            runCatching { checkTrends(ctx) }.onFailure { DriveLog.log("OBD: trend check failed (${it.javaClass.simpleName})") }
         }, "trip-save").start()
+    }
+
+    /**
+     * After each drive: compare the latest drives with this car's normal. A new finding (not told in
+     * the last 2 weeks) gets a quiet notification now and is said once in the next greeting.
+     */
+    private fun checkTrends(ctx: Context) {
+        val history = TripHistory.load(ctx).mapNotNull { it.health }
+        val h = history.lastOrNull()
+        if (h != null) DriveLog.log("OBD: health this drive - " + listOfNotNull(
+            h.ltft?.let { "fuel trim $it%" }, h.chargeV?.let { "charging $it V" },
+            h.idleSpread?.let { "idle ±$it rpm" }, h.warmupMin?.let { "warm-up $it min" }, h.cruiseCoolant?.let { "road temp $it °C" },
+        ).joinToString(", ").ifEmpty { "not enough data" })
+        val p = Prefs(ctx)
+        val now = System.currentTimeMillis()
+        val told = p.trendTold.toMutableMap()
+        val fresh = CarTrends.findings(history).filter { now - (told[it.kind.name] ?: 0L) > CarTrends.REMIND_AFTER_MS }
+        if (fresh.isEmpty()) return
+        fresh.forEach { f ->
+            told[f.kind.name] = now
+            DriveLog.log("OBD: early warning ${f.kind} (now ${f.now}, usually ${f.usual})")
+        }
+        p.trendTold = told
+        p.trendToSay = (p.trendToSay + fresh.map { it.kind.name }).distinct()
+        TripNotice.postEarlyWarning(ctx, fresh.joinToString("\n") { CarTrends.message(it, p.greetingDutch, false) }, p.greetingDutch)
     }
 
     /** km left on this tank (fuel level × tank ÷ typical consumption, else this trip's). */

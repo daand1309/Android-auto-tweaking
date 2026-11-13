@@ -39,4 +39,23 @@ object TripNotice {
             .build()
         try { NotificationManagerCompat.from(ctx).notify(ID, n) } catch (_: SecurityException) {}
     }
+
+    /** "Early warning" after a drive: something is slowly changing (see CarTrends). */
+    fun postEarlyWarning(ctx: Context, text: String, dutch: Boolean) {
+        val nm = ctx.getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(NotificationChannel(EARLY_CHANNEL, "Early warnings about the car", NotificationManager.IMPORTANCE_DEFAULT))
+        val open = PendingIntent.getActivity(ctx, 4, Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val n = NotificationCompat.Builder(ctx, EARLY_CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat_note)
+            .setContentTitle(if (dutch) "Vroege waarschuwing voor de auto" else "Early warning about the car")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(open).setAutoCancel(true)
+            .build()
+        try { NotificationManagerCompat.from(ctx).notify(EARLY_ID, n) } catch (_: SecurityException) {}
+    }
+
+    private const val EARLY_CHANNEL = "early_warning"
+    private const val EARLY_ID = 12
 }

@@ -180,6 +180,15 @@ class Prefs(context: Context) {
     var serviceSyncDays: Int
         get() = sp.getInt("service_sync_days", 0).coerceIn(-3650, 3650)
         set(v) = sp.edit().putInt("service_sync_days", v).apply()
+    /** Early-warning trends: when each kind was last told (kind=time), and kinds still to say in a greeting. */
+    var trendTold: Map<String, Long>
+        get() = (sp.getString("trend_told", "") ?: "").split(',').mapNotNull {
+            val kv = it.split('='); if (kv.size != 2) null else kv[1].toLongOrNull()?.let { t -> kv[0] to t }
+        }.toMap()
+        set(v) = sp.edit().putString("trend_told", v.entries.joinToString(",") { "${it.key}=${it.value}" }).apply()
+    var trendToSay: List<String>
+        get() = (sp.getString("trend_say", "") ?: "").split(',').filter { it.isNotBlank() }
+        set(v) = sp.edit().putString("trend_say", v.joinToString(",")).apply()
     var lastServiceReminder: Long
         get() = sp.getLong("service_reminded", 0L)
         set(v) = sp.edit().putLong("service_reminded", v).apply()
@@ -327,7 +336,7 @@ class Prefs(context: Context) {
         "last_car_state", "last_drive", "last_greeting", "last_weather", "last_weather_at",
         "last_update_check", "notified_update", "update_status", "last_seen_music_app", "last_music_change_at",
         "parked_spot", "told_news", "follow_topic", "follow_until", "obd_told",
-        "service_reminded", "battery_log", "battery_warned",
+        "service_reminded", "battery_log", "battery_warned", "trend_told", "trend_say",
     )
 
     /**

@@ -249,7 +249,7 @@ class CarAlerts(
      */
     toldRecently: Set<String> = emptySet(),
 ) {
-    enum class Kind { READY_TO_DRIVE, OVERHEAT, CHECK_ENGINE, ICY_ROAD, LOW_BATTERY, WEAK_CHARGING, THERMOSTAT, ENGINE_WARM, LOW_FUEL }
+    enum class Kind { READY_TO_DRIVE, OVERHEAT, CHECK_ENGINE, EARLY_CODE, ICY_ROAD, LOW_BATTERY, WEAK_CHARGING, THERMOSTAT, ENGINE_WARM, LOW_FUEL }
     /** [timely] = only useful right now (say it as soon as possible, or not at all). */
     data class Alert(val kind: Kind, val urgent: Boolean, val value: Double? = null, val codes: List<String> = emptyList(),
                      val timely: Boolean = false)
@@ -296,6 +296,13 @@ class CarAlerts(
         } else if (lightJustCameOn && s.codes.isEmpty() && MIL !in reportedCodes) {
             reportedCodes += MIL
             out += Alert(Kind.CHECK_ENGINE, urgent = true, codes = emptyList())
+        }
+        // Pending codes: the engine computer saw a problem once but hasn't lit the warning light (it
+        // waits for a second drive to confirm). The earliest warning there is.
+        val newPending = s.pendingCodes.filter { it !in s.codes && pendingKey(it) !in reportedCodes }
+        if (newPending.isNotEmpty()) {
+            reportedCodes += newPending.map(::pendingKey)
+            out += Alert(Kind.EARLY_CODE, urgent = false, codes = newPending)
         }
         if (s.checkEngine != null) lastCheckEngine = s.checkEngine
         s.volts?.let { v ->
@@ -401,6 +408,9 @@ class CarAlerts(
         const val LOW_FUEL_PCT = 12
         /** Like the car's own snowflake warning. */
         const val ICY_C = 3.0
+        /** How a pending code is remembered (separately from the same code once confirmed). */
+        fun pendingKey(code: String) = "pending:$code"
+
         /** A healthy engine is well above this after 15 minutes of driving. */
         const val THERMOSTAT_C = 70
 
@@ -508,6 +518,16 @@ class CarAlerts(
                     dutch -> "De olie is rond. Je kunt rustig wegrijden."
                     butler -> "The oil has had its moment, sir. You may proceed. Gently, for the first few minutes."
                     else -> "Oil's had its moment. You're good to go, take it easy for the first few minutes."
+                }
+                Kind.EARLY_CODE -> {
+                    val list = a.codes.take(3).joinToString(if (dutch) ". En " else ". And ") {
+                        "${TroubleCodes.spoken(it)}: ${TroubleCodes.explain(it, dutch)}"
+                    }
+                    when {
+                        dutch -> "Een vroege waarschuwing: de motorcomputer heeft code $list één keer gezien. Het lampje is nog niet aan; gebeurt het opnieuw, dan gaat het aan. Houd het in de gaten."
+                        butler -> "An early word, sir: the engine computer has noticed code $list once. The warning light isn't on yet; should it happen again, it will be. Worth keeping an eye on."
+                        else -> "Early heads-up: the engine computer noticed code $list once. The warning light isn't on yet - if it happens again, it will be. Worth keeping an eye on."
+                    }
                 }
                 Kind.THERMOSTAT -> when {
                     dutch -> "De motor blijft na een kwartier rijden maar ${n(a.value)} graden. Mogelijk blijft de thermostaat open staan. Laat het binnenkort nakijken."

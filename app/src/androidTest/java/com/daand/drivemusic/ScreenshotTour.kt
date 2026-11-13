@@ -47,9 +47,12 @@ class ScreenshotTour {
         Prefs(ctx).apply { fuelPrice = 2.05; tankLitres = 60.0 }
         com.daand.drivemusic.obd.TripHistory.clear(ctx)
         val now = System.currentTimeMillis()
-        for (d in 0 until 12) com.daand.drivemusic.obd.TripHistory.add(ctx, com.daand.drivemusic.obd.TripRecord(
+        for (d in 11 downTo 0) com.daand.drivemusic.obd.TripHistory.add(ctx, com.daand.drivemusic.obd.TripRecord(
             at = now - d * 86_400_000L, minutes = 18 + d % 5 * 4, km = 14.0 + d % 4 * 6.5, litres = 0.95 + d % 4 * 0.4,
-            score = 72 + d % 3 * 9, maxCoolant = 89 + d % 3))
+            score = 72 + d % 3 * 9, maxCoolant = 89 + d % 3,
+            // Newest 4 drives drift lean, so the Early warnings card shows up in the screenshots.
+            health = com.daand.drivemusic.obd.HealthSample(ltft = if (d < 4) 11.0 else 2.0, chargeV = 14.2, idleRpm = 750.0,
+                idleSpread = 12.0, warmupMin = 9.0, cruiseCoolant = 90.0, ambient = 8)))
         refreshLive()
     }
 
