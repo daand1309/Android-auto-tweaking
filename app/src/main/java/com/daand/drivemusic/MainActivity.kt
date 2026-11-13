@@ -504,7 +504,7 @@ class MainActivity : Activity() {
                 if (findings.isEmpty()) text("Nothing unusual. Compared with your car's normal from earlier drives:")
                 rows.forEach { (k, v) -> statRow(k, v) }
                 text("Tracks fuel mixture (air leaks, sensors), charging (alternator, belt), idle steadiness (plugs, coils), " +
-                    "warm-up time (thermostat) and road temperature (cooling). Pending fault codes are told the moment they appear.")
+                    "warm-up time (thermostat) and road temperature (cooling). A pending fault code (seen before the warning light comes on) is told once a second read confirms it.")
             }
         }
 
