@@ -44,6 +44,13 @@ object CarDash {
     }
 
     /** Red bar text when something needs attention, or null. */
+    /** Red (stop / be careful) or amber (get it checked) for the warning bar. Pure, unit tested. */
+    fun warningIsSevere(s: CarSnapshot?): Boolean {
+        if (s == null) return false
+        if (s.coolantC?.let { it in 110..150 } == true) return true
+        return s.codes.any { TroubleCodes.explanation(it, false).severity >= TroubleCodes.Severity.CAREFUL }
+    }
+
     fun warning(s: CarSnapshot?, dutch: Boolean): String? {
         if (s == null) return null
         val hot = s.coolantC?.takeIf { it >= 110 && it <= 150 }

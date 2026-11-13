@@ -212,13 +212,13 @@ class MainActivity : Activity() {
         lastHomeSignature = homeSignature()
         heroCard()
 
-        button("🚗  Drive Mode", accent = true) { startActivity(Intent(this, DriveModeActivity::class.java)) }
+        button("Drive Mode", accent = true) { startActivity(Intent(this, DriveModeActivity::class.java)) }
         row(
-            quickBtn("▶  Start music") {
+            quickBtn("Start music") {
                 val svc = DriveMonitorService.instance
                 if (svc == null) toast("Finish setup first") else { svc.startMusic("manual test button", requireCar = false); toast("Starting...") }
             },
-            quickBtn("🔊  Greeting") {
+            quickBtn("Greeting") {
                 toast("Speaking...")
                 WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false)
             },
@@ -288,7 +288,7 @@ class MainActivity : Activity() {
         pageHeader()
         switch("Welcome me when the car connects", prefs.greetingEnabled) { prefs.greetingEnabled = it; render() }
         if (!prefs.greetingEnabled) return
-        button("🔊  Test greeting", accent = true) {
+        button("Test greeting", accent = true) {
             toast("Speaking...")
             WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false)
         }
@@ -306,7 +306,7 @@ class MainActivity : Activity() {
             }
             stepperLike("Location: $place", "Change") {
                 AlertDialog.Builder(this).setTitle("Weather location")
-                    .setItems(arrayOf("📍  Use my location", "🔎  Type a city")) { _, i -> if (i == 0) useMyLocation() else askCity() }
+                    .setItems(arrayOf("Use my location", "Type a city")) { _, i -> if (i == 0) useMyLocation() else askCity() }
                     .show()
             }
         }
@@ -319,13 +319,13 @@ class MainActivity : Activity() {
         switch("Ask first, with 🟢 / 🔴 buttons", prefs.askBeforeUpdates) { prefs.askBeforeUpdates = it }
         if (prefs.followActive) {
             val until = java.text.SimpleDateFormat("EEE d MMM HH:mm", java.util.Locale.getDefault()).format(java.util.Date(prefs.followUntil))
-            stepperLike("📰 Following: ${prefs.followTopic} (until $until)", "Change") { askFollowTopic() }
+            stepperLike("Following: ${prefs.followTopic} (until $until)", "Change") { askFollowTopic() }
             button("Stop following") {
                 prefs.followTopic = ""; prefs.followUntil = 0L
                 DriveLog.log("Setting changed: stopped following a story"); render()
             }
         } else {
-            navRow("📰  Follow a story", "New headlines about it from NU.nl and NOS during your drives (stops after 3 days)") { askFollowTopic() }
+            navRow("Follow a story", "New headlines about it from NU.nl and NOS during your drives (stops after 3 days)") { askFollowTopic() }
         }
         text("Checks every 15 minutes and stays quiet unless something matters.\n" +
             "•  Weather: rain or snow starting, ice, fog, strong gusts\n" +
@@ -431,7 +431,10 @@ class MainActivity : Activity() {
         button("Open Bluetooth settings") {
             try { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) } catch (e: Exception) { toast("Settings → Connections → Bluetooth") }
         }
-        if (prefs.obdDevice.isNotBlank()) button("Test connection (ignition on)", accent = true) { testObd() }
+        if (prefs.obdDevice.isNotBlank()) {
+            if (obdTestRunning) button("Connecting to the adapter…") { }
+            else button("Test connection (ignition on)", accent = true) { testObd() }
+        }
 
         stepperLike("Engine size: %.1f L".format(java.util.Locale.ROOT, prefs.obdEngineLitres), "Change") {
             val sizes = listOf(1.6, 1.8, 2.0, 2.2, 1.0, 1.2, 1.4, 1.5, 2.4, 3.0)
@@ -536,7 +539,7 @@ class MainActivity : Activity() {
     private fun testObd() {
         if (obdTestRunning) return
         obdTestRunning = true
-        toast("Connecting to the adapter...")
+        render()  // the button turns into "Connecting…" so you can see it's busy
         val address = prefs.obdDevice
         val dutch = prefs.greetingDutch
         Thread {
@@ -545,6 +548,7 @@ class MainActivity : Activity() {
             DriveLog.log("OBD test: ${result.replace(Regex("VIN: [A-Z0-9]{17}"), "VIN: (hidden)").replace('\n', ' ')}")
             runOnUiThread {
                 obdTestRunning = false
+                if (!isDestroyed && page == Page.OBD) render()
                 if (!isDestroyed) AlertDialog.Builder(this).setTitle("OBD test").setMessage(result).setPositiveButton("OK", null).show()
             }
         }.start()
@@ -560,7 +564,7 @@ class MainActivity : Activity() {
             styleCard("😏  Sassy", "Cheeky one-liners", !prefs.butler) { setStyle(butler = false) },
             styleCard("🎩  Butler", if (dutch) "Refined, polite (u)" else "Refined, British", prefs.butler) { setStyle(butler = true) },
         )
-        button("▶  Hear a full greeting", accent = true) { previewVoice() }
+        button("Hear a full greeting", accent = true) { previewVoice() }
 
         header("Voice")
         if (!voiceTtsReady) {
@@ -571,7 +575,7 @@ class MainActivity : Activity() {
             val accents = voiceList.map { VoicePicker.accent(it) }.distinct().sortedBy { if (it == "GB") "" else it }
             if (accents.size > 1) accentChips(listOf("") + accents)
             val names = VoicePicker.friendlyNames(voiceList)
-            voiceRow("✨  Automatic", if (prefs.butler && !dutch) "Best British voice for the butler" else "Best voice on this phone",
+            voiceRow("Automatic", if (prefs.butler && !dutch) "Best British voice for the butler" else "Best voice on this phone",
                 prefs.voiceName.isBlank(), onPlay = { playSample(null, automatic = true) }) {
                 prefs.voiceName = ""
                 DriveLog.log("Setting changed: voice = automatic")
@@ -727,7 +731,7 @@ class MainActivity : Activity() {
 
     private fun styleCard(title: String, subtitle: String, selected: Boolean, onClick: () -> Unit) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = Style.button(if (selected) Style.HIGHLIGHT else Style.SURFACE, dp(14).toFloat())
+        background = Style.button(if (selected) Style.HIGHLIGHT else Style.SURFACE, dp(Style.R_CARD).toFloat())
         setPadding(dp(14), dp(14), dp(14), dp(14))
         layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(0, dp(6), dp(6), 0) }
         isClickable = true
@@ -765,7 +769,7 @@ class MainActivity : Activity() {
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
-            background = Style.button(if (selected) Style.HIGHLIGHT else Style.SURFACE, dp(14).toFloat())
+            background = Style.button(if (selected) Style.HIGHLIGHT else Style.SURFACE, dp(Style.R_CARD).toFloat())
             setPadding(dp(16), dp(10), dp(10), dp(10))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 .apply { topMargin = dp(8) }
@@ -781,12 +785,21 @@ class MainActivity : Activity() {
                     text = details; textSize = 13f; setTextColor(Style.TEXT2); setPadding(0, dp(2), 0, 0)
                 })
             })
-            addView(smallBtn("▶") { onPlay() })
+            // Play icon (not the ▶ character, which some phones draw as a coloured emoji). Its corners
+            // follow the card's: inner radius = outer radius - padding.
+            addView(android.widget.ImageButton(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_play); imageTintList = Style.tint(Style.TEXT)
+                contentDescription = "Listen"
+                background = Style.button(Style.SURFACE2, dp(Style.R_CARD - 10).toFloat())
+                layoutParams = LinearLayout.LayoutParams(dp(64), dp(48))
+                setOnClickListener { onPlay() }
+                Feel.press(this, 0.9f)
+            })
         })
 
     private fun renderDriveMode() {
         pageHeader()
-        button("🚗  Open Drive Mode", accent = true) { startActivity(Intent(this, DriveModeActivity::class.java)) }
+        button("Open Drive Mode", accent = true) { startActivity(Intent(this, DriveModeActivity::class.java)) }
         switch("Open automatically when the car connects", prefs.autoOpenDriveMode) { prefs.autoOpenDriveMode = it; render() }
         if (prefs.autoOpenDriveMode) {
             text("Pops up when the phone is locked; otherwise shows a tap banner.")
@@ -808,13 +821,13 @@ class MainActivity : Activity() {
             else stepperLike("Intro text: ${prefs.carName.ifBlank { "none" }}", "Change") {
                 askText("Text shown in the intro", "e.g. ASX", prefs.carName) { prefs.carName = it.take(12); render() }
             }
-            button("▶  Preview intro") { startActivity(Intent(this, DriveModeActivity::class.java)) }
+            button("Preview intro") { startActivity(Intent(this, DriveModeActivity::class.java)) }
         }
     }
 
     private fun renderSound() {
         pageHeader()
-        button("🎚  Open equalizer", accent = true) { openEqualizer() }
+        button("Open equalizer", accent = true) { openEqualizer() }
         button("Phone sound settings") {
             try { startActivity(Intent(Settings.ACTION_SOUND_SETTINGS)) } catch (e: Exception) { toast("Open Settings → Sounds") }
         }
@@ -1025,7 +1038,7 @@ class MainActivity : Activity() {
                 }
             })
         } else {
-            navRow("📷  Add a photo of your car", "Shown here; stays on your phone") { pickCarPhoto() }
+            navRow("Add a photo of your car", "Shown here; stays on your phone") { pickCarPhoto() }
         }
 
         val song = svc?.currentSong()
@@ -1057,7 +1070,7 @@ class MainActivity : Activity() {
                         "🌡", "🔋", "⚠" -> { { go(Page.OBD) } }
                         else -> null
                     }
-                    if (action != null) { background = Style.button(Style.SURFACE, dp(12).toFloat()); setOnClickListener { action() } }
+                    if (action != null) { background = Style.button(Style.SURFACE, dp(Style.R_CARD).toFloat()); setOnClickListener { action() }; Feel.press(this, 0.97f) }
                 }
             }.toTypedArray())
         }
@@ -1081,11 +1094,11 @@ class MainActivity : Activity() {
         val tracker = Parking.trackerApp(this)
         val on = prefs.rememberParking && Parking.hasPermission(this) && Parking.hasBackgroundPermission(this)
         val items = mutableListOf<Pair<String, () -> Unit>>()
-        if (spot != null) items += "🗺  Walk there in Maps" to {
+        if (spot != null) items += "Walk there in Maps" to {
             try { startActivity(Parking.mapsIntent(spot)) } catch (e: Exception) { toast("No maps app found") }
         }
-        if (tracker != null) items += "📡  Open ${tracker.second} (tracker)" to { startActivity(tracker.first) }
-        items += (if (on) "Stop remembering where I park" else "📍  Remember where I park") to {
+        if (tracker != null) items += "Open ${tracker.second} (tracker)" to { startActivity(tracker.first) }
+        items += (if (on) "Stop remembering where I park" else "Remember where I park") to {
             if (on) { prefs.rememberParking = false; DriveLog.log("Setting changed: remember parking = off"); render() }
             else enableParking()
         }
@@ -1136,21 +1149,23 @@ class MainActivity : Activity() {
         }, REQ_CAR_PHOTO)
     }
 
-    /** Home tile: small icon + caption on top, the value underneath (up to two lines, never cut mid-word). */
-    private fun statusTile(icon: String, label: String, value: String) = LinearLayout(this).apply {
+    /** Home tile: caption on top, the value underneath (up to two lines, never cut mid-word). */
+    private fun statusTile(@Suppress("UNUSED_PARAMETER") icon: String, label: String, value: String) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = Style.rounded(Style.SURFACE, dp(14).toFloat())
+        background = Style.rounded(Style.SURFACE, dp(Style.R_CARD).toFloat())
         setPadding(dp(14), dp(12), dp(12), dp(12))
         minimumHeight = dp(76)
         layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply {
             setMargins(0, dp(6), dp(6), 0)
         }
+        val warn = icon == "⚠"
         addView(TextView(this@MainActivity).apply {
-            text = "$icon  $label"; textSize = 12f; setTextColor(Style.TEXT2)
+            text = label; textSize = 13f; setTextColor(if (warn) Style.AMBER else Style.TEXT2)
             maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
         })
         addView(TextView(this@MainActivity).apply {
             text = value; textSize = 15f; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD)
+            fontFeatureSettings = Style.TABULAR
             maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(0, dp(4), 0, 0)
         })
@@ -1169,7 +1184,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
             background = Style.button(
-                when { highlight -> Style.HIGHLIGHT; warn -> Style.WARN_BG; else -> Style.SURFACE }, dp(14).toFloat()
+                when { highlight -> Style.HIGHLIGHT; warn -> Style.WARN_BG; else -> Style.SURFACE }, dp(Style.R_CARD).toFloat()
             )
             setPadding(dp(16), dp(14), dp(14), dp(14))
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also {
@@ -1177,6 +1192,7 @@ class MainActivity : Activity() {
             }
             isClickable = true
             setOnClickListener { onClick() }
+            Feel.press(this, 0.98f)
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -1193,12 +1209,13 @@ class MainActivity : Activity() {
     /** Half-width button for the home screen's quick actions. */
     private fun quickBtn(label: String, onClick: () -> Unit) = Button(this).apply {
         text = label; isAllCaps = false; textSize = 15f; setTextColor(Style.TEXT)
-        background = Style.button(Style.SURFACE2, dp(14).toFloat()); stateListAnimator = null
+        background = Style.button(Style.SURFACE2, dp(Style.R_CARD).toFloat()); stateListAnimator = null
         setPadding(dp(12), dp(14), dp(12), dp(14))
         layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
             setMargins(0, dp(6), dp(6), 0)
         }
         setOnClickListener { onClick() }
+        Feel.press(this)
     }
 
     // ---------------------------------------------------------------- greeting settings
@@ -1214,7 +1231,7 @@ class MainActivity : Activity() {
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
-            background = Style.button(Style.SURFACE, dp(14).toFloat())
+            background = Style.button(Style.SURFACE, dp(Style.R_CARD).toFloat())
             setPadding(dp(16), dp(12), dp(14), dp(12))
             minimumHeight = dp(56)
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also {
@@ -1223,6 +1240,7 @@ class MainActivity : Activity() {
             isClickable = true
             contentDescription = "$label. $action"
             setOnClickListener { onClick() }
+            Feel.press(this, 0.98f)
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -1323,7 +1341,7 @@ class MainActivity : Activity() {
     /** A label over a value, in a card - for the trips page. */
     private fun statRow(label: String, value: String) = root.addView(LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = Style.rounded(Style.SURFACE, dp(14).toFloat())
+        background = Style.rounded(Style.SURFACE, dp(Style.R_CARD).toFloat())
         setPadding(dp(16), dp(12), dp(16), dp(12))
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) }
         addView(TextView(this@MainActivity).apply { text = label; textSize = 13f; setTextColor(Style.TEXT2) })
@@ -1567,10 +1585,11 @@ class MainActivity : Activity() {
     private fun button(label: String, accent: Boolean = false, onClick: () -> Unit) = root.addView(Button(this).apply {
         text = label; isAllCaps = false; textSize = 15f
         setTextColor(if (accent) Color.WHITE else Style.TEXT)
-        background = Style.button(if (accent) Style.PRIMARY else Style.SURFACE2, dp(14).toFloat())
+        background = Style.button(if (accent) Style.PRIMARY else Style.SURFACE2, dp(Style.R_CARD).toFloat())
         stateListAnimator = null
         setPadding(dp(18), dp(14), dp(18), dp(14))
         setOnClickListener { onClick() }
+        Feel.press(this, 0.97f)
         (layoutParams as? LinearLayout.LayoutParams ?: LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         )).also { it.topMargin = dp(6); layoutParams = it }
@@ -1598,11 +1617,12 @@ class MainActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
             isClickable = true; contentDescription = "$desc $label"
             setOnClickListener { act(); render() }
+            Feel.press(this, 0.9f)
         }
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
-            background = Style.rounded(Style.SURFACE, dp(14).toFloat())
+            background = Style.rounded(Style.SURFACE, dp(Style.R_CARD).toFloat())
             setPadding(dp(16), dp(8), dp(10), dp(8))
             minimumHeight = dp(60)
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also {
@@ -1615,7 +1635,7 @@ class MainActivity : Activity() {
             addView(round("−", "Less", minus))
             addView(TextView(this@MainActivity).apply {
                 text = value; textSize = 16f; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT)
-                gravity = android.view.Gravity.CENTER; maxLines = 1
+                gravity = android.view.Gravity.CENTER; maxLines = 1; fontFeatureSettings = Style.TABULAR
                 minWidth = dp(64); setPadding(dp(6), 0, dp(6), 0)
             })
             addView(round("+", "More", plus))
@@ -1627,7 +1647,7 @@ class MainActivity : Activity() {
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.TOP
-            background = Style.rounded(Style.SURFACE, dp(14).toFloat())
+            background = Style.rounded(Style.SURFACE, dp(Style.R_CARD).toFloat())
             setPadding(dp(14), dp(12), dp(14), dp(12))
             (LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)).also {
                 it.topMargin = dp(8); layoutParams = it
@@ -1654,6 +1674,7 @@ class MainActivity : Activity() {
                     text = action; isAllCaps = false; textSize = 14f; setTextColor(Color.WHITE)
                     background = Style.button(Style.PRIMARY, dp(12).toFloat()); stateListAnimator = null
                     setPadding(dp(18), dp(10), dp(18), dp(10)); minHeight = dp(44)
+                    Feel.press(this)
                     layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) }
                     setOnClickListener { onClick() }
                 })
@@ -1663,7 +1684,7 @@ class MainActivity : Activity() {
 
     private fun switch(label: String, value: Boolean, onChange: (Boolean) -> Unit) = root.addView(Switch(this).apply {
         text = label; textSize = 15f; isChecked = value; setTextColor(Style.TEXT)
-        background = Style.rounded(Style.SURFACE, dp(14).toFloat())
+        background = Style.rounded(Style.SURFACE, dp(Style.R_CARD).toFloat())
         setPadding(dp(14), dp(14), dp(14), dp(14))
         thumbTintList = Style.tint(if (value) Style.PRIMARY else Style.TEXT2)
         trackTintList = Style.tint(if (value) Style.primarySoft() else Style.SURFACE2)

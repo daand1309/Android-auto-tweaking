@@ -308,9 +308,9 @@ class DriveFlowTest {
             SystemClock.sleep(600)  // let it lay out
             scenario.onActivity { a ->
                 assertTrue(!a.isFinishing)
-                val buttons = mutableListOf<android.widget.Button>()
+                val buttons = mutableListOf<android.view.View>()
                 fun walk(v: android.view.View) {
-                    if (v is android.widget.Button) buttons += v
+                    if (v is android.widget.Button || v is android.widget.ImageButton) buttons += v
                     if (v is android.view.ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
                 }
                 walk(a.window.decorView)
@@ -523,10 +523,10 @@ class DriveFlowTest {
         assertEquals(0, a.currentTab())
 
         // A swipe that STARTS on a big button still switches tabs (and doesn't press it).
-        var play: android.widget.Button? = null
+        var play: android.view.View? = null
         onMain {
             fun find(v: android.view.View) {
-                if (v is android.widget.Button && (v.text == "▶" || v.text == "⏸") && v.isShown) play = v
+                if (v is android.widget.ImageButton && (v.contentDescription == "Play" || v.contentDescription == "Pause") && v.isShown) play = v
                 if (v is android.view.ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i))
             }
             find(a.window.decorView)

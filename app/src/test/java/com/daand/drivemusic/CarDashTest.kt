@@ -5,9 +5,18 @@ import com.daand.drivemusic.obd.Trip
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class CarDashTest {
+    @Test fun warningColourMatchesHowUrgentItIs() {
+        assertFalse("get it checked = amber", CarDash.warningIsSevere(CarSnapshot(0, codes = listOf("P0420"))))
+        assertTrue("misfires = red", CarDash.warningIsSevere(CarSnapshot(0, codes = listOf("P0420", "P0300"))))
+        assertTrue("overheating = red", CarDash.warningIsSevere(CarSnapshot(0, coolantC = 114)))
+        assertFalse("garbage temperature isn't a warning", CarDash.warningIsSevere(CarSnapshot(0, coolantC = 215)))
+        assertFalse(CarDash.warningIsSevere(null))
+    }
+
     @Test fun bigNumbersWithColours() {
         val s = CarSnapshot(0, coolantC = 45, rpm = 2100, speedKmh = 82, volts = 14.2, ambientC = 2, litresPerHour = 5.0,
             extra = mapOf(0x11 to 18.0, 0x04 to 37.4, 0x0F to 9.0))

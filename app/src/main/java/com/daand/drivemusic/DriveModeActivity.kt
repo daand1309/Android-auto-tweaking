@@ -27,7 +27,7 @@ class DriveModeActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var nowPlaying: TextView
     private lateinit var status: TextView
-    private lateinit var playBtn: Button
+    private lateinit var playBtn: android.widget.ImageButton
     private lateinit var resumeBtn: Button
     private lateinit var rootFrame: android.widget.FrameLayout
     private var promptView: View? = null
@@ -63,9 +63,9 @@ class DriveModeActivity : Activity() {
         val buttons = LinearLayout(this@DriveModeActivity).apply {
             orientation = if (wide) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
         }
-        val no = answerButton("✕\nNo thanks", 0xFFD32F2F.toInt()) { UpdatePrompt.answer(this@DriveModeActivity, false) }
+        val no = answerButton(R.drawable.ic_answer_no, "No thanks", Style.DANGER) { UpdatePrompt.answer(this@DriveModeActivity, false) }
             .apply { contentDescription = "Not interested" }
-        val yes = answerButton("✓\nGo ahead", 0xFF2E7D32.toInt()) { UpdatePrompt.answer(this@DriveModeActivity, true) }
+        val yes = answerButton(R.drawable.ic_answer_yes, "Go ahead", 0xFF2E7D32.toInt()) { UpdatePrompt.answer(this@DriveModeActivity, true) }
         if (wide) {
             buttons.addView(yes, vLp(weight = 1f)); buttons.addView(no, vLp(weight = 1f))
             addView(q, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1.2f).apply { marginEnd = dp(10) })
@@ -76,11 +76,14 @@ class DriveModeActivity : Activity() {
             addView(buttons, vLp(weight = 2f))
         }
     }
-    private fun answerButton(label: String, color: Int, onClick: () -> Unit) = Button(this).apply {
+    private fun answerButton(icon: Int, label: String, color: Int, onClick: () -> Unit) = Button(this).apply {
         text = label; isAllCaps = false; setTextColor(Color.WHITE)
-        setTypeface(typeface, Typeface.BOLD); fitText(14, 28, 2)
-        background = Style.button(color, dp(24).toFloat()); stateListAnimator = null
+        setTypeface(typeface, Typeface.BOLD); fitText(14, 26, 1)
+        val d = getDrawable(icon)!!.mutate().apply { setBounds(0, 0, dp(40), dp(40)) }
+        setCompoundDrawablesRelative(null, d, null, null); compoundDrawableTintList = Style.tint(Color.WHITE)
+        background = Style.button(color, dp(Style.R_BIG).toFloat()); stateListAnimator = null
         setOnClickListener { onClick() }
+        Feel.press(this)
     }
 
     private val tick = object : Runnable {
@@ -102,10 +105,13 @@ class DriveModeActivity : Activity() {
     private fun buildTabs(): View {
         val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Style.BG) }
         val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(dp(12), dp(8), dp(12), 0) }
-        listOf("🎵  Music", "📊  Car").forEachIndexed { i, label ->
+        listOf(R.drawable.ic_music to "Music", R.drawable.ic_gauge to "Car").forEachIndexed { i, (icon, label) ->
             val tv = TextView(this).apply {
                 text = label; textSize = 18f; gravity = Gravity.CENTER; setPadding(dp(8), dp(10), dp(8), dp(10))
+                val d = getDrawable(icon)!!.mutate().apply { setBounds(0, 0, dp(22), dp(22)) }
+                setCompoundDrawablesRelative(d, null, null, null); compoundDrawablePadding = dp(8)
                 setOnClickListener { pager.goTo(i) }
+                Feel.press(this, 0.97f)
             }
             tabLabels += tv
             bar.addView(tv, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(dp(4), 0, dp(4), 0) })
@@ -127,9 +133,11 @@ class DriveModeActivity : Activity() {
     private fun highlightTab(i: Int) {
         tabLabels.forEachIndexed { idx, tv ->
             val on = idx == i
-            tv.setTextColor(if (on) Color.WHITE else Style.TEXT2)
+            // Selected tab: raised card, accent icon (the accent is kept for what matters most).
+            tv.setTextColor(if (on) Style.TEXT else Style.TEXT2)
+            tv.compoundDrawableTintList = Style.tint(if (on) Style.PRIMARY else Style.TEXT2)
             tv.setTypeface(null, if (on) Typeface.BOLD else Typeface.NORMAL)
-            tv.background = if (on) Style.rounded(Style.PRIMARY, dp(14).toFloat()) else null
+            tv.background = if (on) Style.rounded(Style.SURFACE2, dp(Style.R_CARD).toFloat()) else null
         }
     }
 
@@ -171,12 +179,13 @@ class DriveModeActivity : Activity() {
     private fun carTile(key: String, label: String) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER
-        background = Style.rounded(Style.SURFACE, dp(18).toFloat())
+        background = Style.rounded(Style.SURFACE, dp(Style.R_CARD).toFloat())
         setPadding(dp(8), dp(8), dp(8), dp(8))
         addView(TextView(this@DriveModeActivity).apply { text = label; textSize = 14f; setTextColor(Style.TEXT2); gravity = Gravity.CENTER }
             .also { carLabels[key] = it })
         val value = TextView(this@DriveModeActivity).apply {
             text = "—"; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT); gravity = Gravity.CENTER
+            fontFeatureSettings = Style.TABULAR
             maxLines = 1
             // Fill the tile as large as the text allows, on any screen and in portrait or landscape.
             setAutoSizeTextTypeUniformWithConfiguration(12, 48, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
@@ -201,11 +210,20 @@ class DriveModeActivity : Activity() {
         val warning = CarDash.warning(s, p.greetingDutch)
         carWarning.visibility = if (warning == null) View.GONE else View.VISIBLE
         if (warning != null && carWarning.text != warning) carWarning.text = warning
-        carStatus.text = when {
+        // Red only for "stop / be careful"; amber with dark text for "get it checked".
+        val severe = CarDash.warningIsSevere(s)
+        if (warning != null && carWarning.tag != severe) {
+            carWarning.tag = severe
+            carWarning.background = Style.rounded(if (severe) Style.DANGER else Style.AMBER, dp(Style.R_SMALL).toFloat())
+            carWarning.setTextColor(if (severe) Color.WHITE else Style.ON_BRIGHT)
+        }
+        val statusText = when {
             !p.obdEnabled -> "Set up \"Car data (OBD)\" in the app to see live engine data here."
             s == null -> "Waiting for the car… (${obd.status})"
-            else -> "Live from the car · swipe right for music"
+            else -> ""  // live: the numbers say it all
         }
+        if (carStatus.text != statusText) carStatus.text = statusText
+        carStatus.visibility = if (statusText.isEmpty()) View.GONE else View.VISIBLE
     }
 
     /** True once the car has been connected while this screen was open. */
@@ -344,24 +362,24 @@ class DriveModeActivity : Activity() {
 
         // Big transport row (horizontal: weight drives WIDTH, height fills the row).
         val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        controls.addView(bigButton("⏮", "Previous song") { svc()?.skipPrevious(); flash() }, hLp(1f))
-        playBtn = bigButton("▶", "Play or pause") { svc()?.playPause(); handler.postDelayed({ updateDynamic() }, 300) }
+        controls.addView(bigButton(R.drawable.ic_prev, "Previous song", accent = false) { svc()?.skipPrevious(); flash() }, hLp(1f))
+        playBtn = bigButton(R.drawable.ic_play, "Play", accent = true) { svc()?.playPause(); handler.postDelayed({ updateDynamic() }, 300) }
         controls.addView(playBtn, hLp(1.3f))
-        controls.addView(bigButton("⏭", "Next song") { svc()?.skipNext(); flash() }, hLp(1f))
+        controls.addView(bigButton(R.drawable.ic_next, "Next song", accent = false) { svc()?.skipNext(); flash() }, hLp(1f))
 
         // Bottom row: icon on top, one short word underneath.
         val bottom = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        bottom.addView(smallButton("🔊\nWelcome") {
+        bottom.addView(smallButton(R.drawable.ic_volume, "Welcome") {
             WelcomeAnnouncer.run(this, svc()?.currentSong(), recordAsGreeted = false)
         }, hLp(1f))
-        resumeBtn = smallButton("") {
+        resumeBtn = smallButton(R.drawable.ic_repeat, "") {
             val p = Prefs(this)
             p.autoResume = !p.autoResume
             if (p.autoResume) svc()?.resumeOffThisDrive = false
             updateDynamic()
         }
         bottom.addView(resumeBtn, hLp(1f))
-        bottom.addView(smallButton("✕\nClose") { finish() }, hLp(0.8f))
+        bottom.addView(smallButton(R.drawable.ic_answer_no, "Close") { finish() }, hLp(0.8f))
 
         val pad = if (wide) dp(12) else dp(20)
         if (wide) {
@@ -416,25 +434,42 @@ class DriveModeActivity : Activity() {
         lastShown = key
         nowPlaying.text = songText
         status.text = statusText
-        playBtn.text = if (playing) "⏸" else "▶"
-        resumeBtn.text = if (resumeOn) "↻\nResume on" else "↻\nResume off"
-        resumeBtn.background = Style.button(if (resumeOn) Style.GREEN else Style.SURFACE2, dp(16).toFloat())
+        playBtn.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
+        playBtn.contentDescription = if (playing) "Pause" else "Play"
+        resumeBtn.text = if (resumeOn) "Resume on" else "Resume off"
+        // Bright green needs dark text and icon to stay readable.
+        val fg = if (resumeOn) Style.ON_BRIGHT else Style.TEXT
+        resumeBtn.setTextColor(fg); resumeBtn.compoundDrawableTintList = Style.tint(fg)
+        resumeBtn.background = Style.button(if (resumeOn) Style.GREEN else Style.SURFACE2, dp(Style.R_CARD).toFloat())
     }
 
     private fun flash() = handler.postDelayed({ updateDynamic() }, 400)
 
-    private fun bigButton(label: String, desc: String, onClick: () -> Unit) = Button(this).apply {
-        text = label; isAllCaps = false; contentDescription = desc
-        fitText(20, 48, 1); setPadding(0, 0, 0, 0)
-        setTextColor(Color.WHITE); background = Style.button(Style.PRIMARY, dp(20).toFloat()); stateListAnimator = null
+    /** Big icon-only transport button. Only play gets the accent colour; the rest stay calm. */
+    private fun bigButton(icon: Int, desc: String, accent: Boolean, onClick: () -> Unit) = android.widget.ImageButton(this).apply {
+        setImageResource(icon); contentDescription = desc
+        scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+        imageTintList = Style.tint(Color.WHITE)
+        background = Style.button(if (accent) Style.PRIMARY else Style.SURFACE2, dp(Style.R_BIG).toFloat())
+        // Icon about half the button, whatever its size (portrait, landscape, small phones).
+        addOnLayoutChangeListener { v, l, t, r, btm, _, _, _, _ ->
+            val pad = (minOf(r - l, btm - t) * 0.27f).toInt()
+            if (v.paddingLeft != pad) v.setPadding(pad, pad, pad, pad)
+        }
         setOnClickListener { onClick() }
+        Feel.press(this)
     }
 
-    private fun smallButton(label: String, onClick: () -> Unit) = Button(this).apply {
+    /** Smaller button: icon on top, one short label underneath (shrinks to fit, never split mid-word). */
+    private fun smallButton(icon: Int, label: String, onClick: () -> Unit) = Button(this).apply {
         text = label; isAllCaps = false
-        fitText(10, 18, 2); setPadding(dp(4), dp(4), dp(4), dp(4))
-        setTextColor(Style.TEXT); background = Style.button(Style.SURFACE2, dp(16).toFloat()); stateListAnimator = null
+        fitText(10, 17, 1); setPadding(dp(4), dp(8), dp(4), dp(6))
+        val d = getDrawable(icon)!!.mutate().apply { setBounds(0, 0, dp(26), dp(26)) }
+        setCompoundDrawablesRelative(null, d, null, null); compoundDrawablePadding = dp(2)
+        compoundDrawableTintList = Style.tint(Style.TEXT)
+        setTextColor(Style.TEXT); background = Style.button(Style.SURFACE2, dp(Style.R_CARD).toFloat()); stateListAnimator = null
         setOnClickListener { onClick() }
+        Feel.press(this)
     }
 
     /** Vertical child: full width, weighted height (0 so the weight controls it). */
