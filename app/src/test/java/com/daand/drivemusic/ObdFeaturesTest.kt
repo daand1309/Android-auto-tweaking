@@ -33,17 +33,14 @@ class ObdFeaturesTest {
     }
 
     @Test fun hardAccelerationCountsOncePerPushAndIgnoresJitter() {
-        // One long hard push (0 -> 100 in ~8 s, read every 1.5 s) is one event, not five.
-        val t = Trip(); var at = 0L
-        for (v in listOf(0, 0, 19, 38, 56, 75, 94, 100, 100)) { t.add(CarSnapshot(at, rpm = 3000, speedKmh = v)); at += 1_500 }
-        assertEquals(1, t.hardAccelerations)
-        // Readings 0.2 s apart with a 2 km/h step (coarse speed steps) aren't a hard acceleration.
-        val j = Trip(); at = 0L
-        for (v in listOf(50, 52, 50, 52, 50)) { j.add(CarSnapshot(at, rpm = 2000, speedKmh = v)); at += 200 }
+        fun trip(every: Long, speeds: List<Int>) = Trip().also { t -> speeds.forEachIndexed { i, v -> t.add(CarSnapshot(i * every, rpm = 3000, speedKmh = v)) } }
+        // One long hard push (0 -> 100 in ~9 s, read every 1.5 s) is one event, not five.
+        assertEquals(1, trip(1_500, listOf(0, 0, 19, 38, 56, 75, 94, 100, 100, 100, 100)).hardAccelerations)
+        // Readings 0.2 s apart with 2 km/h steps aren't hard acceleration.
+        val j = trip(200, List(30) { 50 + (it % 2) * 2 })
         assertEquals(0, j.hardAccelerations); assertEquals(0, j.hardBrakes)
-        // Two separate hard stops are two events.
-        val b = Trip(); at = 0L
-        for (v in listOf(80, 50, 20, 20, 20, 80, 80, 50, 20)) { b.add(CarSnapshot(at, rpm = 2000, speedKmh = v)); at += 2_000 }
+        // Two separate hard stops (80 -> 0 in 4 s: 5.6 m/s²) are two events; a normal stop (8 s) is none.
+        val b = trip(2_000, listOf(80, 80, 40, 0, 0, 0, 30, 60, 80, 80, 80, 40, 0, 0, 0, 40, 80, 80, 60, 40, 20, 0, 0, 0))
         assertEquals(2, b.hardBrakes)
     }
 
