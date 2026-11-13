@@ -33,7 +33,7 @@ object Motion {
     /** Going back: a quick, plain fade (no stagger - you've seen this page already). */
     fun fadeIn(root: View) {
         root.alpha = 0f
-        root.animate().alpha(1f).setDuration(180).start()
+        root.animate().alpha(1f).setStartDelay(0).setInterpolator(ease).setDuration(180).start()
     }
 
     /** A gentle, endless pulse (the "Driving" dot). Stops by itself when the view leaves the screen. */
@@ -62,7 +62,7 @@ object Motion {
         if (tv.text.isNullOrEmpty() || !tv.isAttachedToWindow) { tv.text = text; return }
         val d = tv.resources.displayMetrics.density
         tv.animate().cancel()
-        tv.animate().alpha(0f).translationY(-8 * d).setDuration(120).withEndAction {
+        tv.animate().alpha(0f).translationY(-8 * d).setStartDelay(0).setInterpolator(ease).setDuration(120).withEndAction {
             tv.text = text
             tv.translationY = 10 * d
             tv.animate().alpha(1f).translationY(0f).setDuration(220).setInterpolator(ease).start()
@@ -73,7 +73,7 @@ object Motion {
     fun pop(v: View) {
         v.animate().cancel()
         v.scaleX = 0.82f; v.scaleY = 0.82f; v.rotation = -12f
-        v.animate().scaleX(1f).scaleY(1f).rotation(0f).setDuration(260).setInterpolator(OvershootInterpolator(2.5f)).start()
+        v.animate().scaleX(1f).scaleY(1f).rotation(0f).setStartDelay(0).setDuration(260).setInterpolator(OvershootInterpolator(2.5f)).start()
     }
 
     /**

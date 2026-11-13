@@ -17,13 +17,15 @@ object Feel {
         v.isHapticFeedbackEnabled = true
         v.setOnTouchListener { view, e ->
             when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> view.animate().scaleX(scale).scaleY(scale).setDuration(80).start()
+                // Start delay and interpolator stay set on a view's animator from earlier animations
+                // (e.g. a page's staggered glide-in): reset them, or the press would answer late.
+                MotionEvent.ACTION_DOWN -> view.animate().scaleX(scale).scaleY(scale).setStartDelay(0).setInterpolator(null).setDuration(80).start()
                 MotionEvent.ACTION_UP -> {
-                    view.animate().scaleX(1f).scaleY(1f).setDuration(140).start()
+                    view.animate().scaleX(1f).scaleY(1f).setStartDelay(0).setInterpolator(null).setDuration(140).start()
                     if (e.x in 0f..view.width.toFloat() && e.y in 0f..view.height.toFloat())
                         view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                 }
-                MotionEvent.ACTION_CANCEL -> view.animate().scaleX(1f).scaleY(1f).setDuration(140).start()
+                MotionEvent.ACTION_CANCEL -> view.animate().scaleX(1f).scaleY(1f).setStartDelay(0).setInterpolator(null).setDuration(140).start()
             }
             false
         }
