@@ -268,6 +268,7 @@ class DriveModeActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Motion.enabled = Prefs(this).animations
         DriveLog.init(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Opened: the "tap to open" banner isn't needed any more.
@@ -329,16 +330,17 @@ class DriveModeActivity : Activity() {
         frame.addView(overlay, android.widget.FrameLayout.LayoutParams(-1, -1))
 
         val remove = Runnable {
-            overlay.animate().alpha(0f).scaleX(1.06f).scaleY(1.06f).setDuration(350).withEndAction {
-                (overlay.parent as? android.widget.FrameLayout)?.removeView(overlay)
-            }.start()
+            Motion.play(350, update = { f -> overlay.alpha = 1 - f; overlay.scaleX = 1 + 0.06f * f; overlay.scaleY = overlay.scaleX },
+                end = { (overlay.parent as? android.widget.FrameLayout)?.removeView(overlay) })
         }
         // Skip on tap - only cancel the intro's own timer, not the screen's refresh.
         overlay.setOnClickListener { handler.removeCallbacks(remove); remove.run() }
 
-        hero.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(if (logo != null) 650 else 500)
-            .setInterpolator(android.view.animation.OvershootInterpolator(1.4f)).start()
-        sub.animate().alpha(1f).setStartDelay(350).setDuration(400).start()
+        val heroFrom = hero.scaleX
+        Motion.play(if (logo != null) 650 else 500, interp = android.view.animation.OvershootInterpolator(1.4f), update = { f ->
+            hero.alpha = f.coerceIn(0f, 1f); hero.scaleX = heroFrom + (1 - heroFrom) * f; hero.scaleY = hero.scaleX
+        })
+        Motion.play(400, delayMs = 350, update = { sub.alpha = it })
         gauge?.play()
         handler.postDelayed(remove, if (logo != null) 2300 else 1900)
     }

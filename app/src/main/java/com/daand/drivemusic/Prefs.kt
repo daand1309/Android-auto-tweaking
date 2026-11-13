@@ -216,6 +216,10 @@ class Prefs(context: Context) {
     var cloudVoiceMonth: String
         get() = sp.getString("cloud_voice_month", "") ?: ""
         set(v) = sp.edit().putString("cloud_voice_month", v).apply()
+    /** The app's animations (launch, pages, Drive Mode power-up); independent of the phone's setting. */
+    var animations: Boolean
+        get() = sp.getBoolean("animations", true)
+        set(v) = sp.edit().putBoolean("animations", v).apply()
     var lastServiceReminder: Long
         get() = sp.getLong("service_reminded", 0L)
         set(v) = sp.edit().putLong("service_reminded", v).apply()
@@ -377,7 +381,7 @@ class Prefs(context: Context) {
         "auto_update" to "bool", "greeting" to "bool", "greeting_dutch" to "bool", "pause_on_disconnect" to "bool",
         "remember_parking" to "bool", "road_conditions" to "bool", "set_volume" to "bool", "show_splash" to "bool",
         "weather" to "bool", "updates_weather" to "bool", "updates_news" to "bool", "ask_before_updates" to "bool",
-        "obd_enabled" to "bool", "service_reminder_on" to "bool", "cloud_voice_on" to "bool", "obd_warmup" to "bool", "obd_fuel" to "bool",
+        "obd_enabled" to "bool", "service_reminder_on" to "bool", "cloud_voice_on" to "bool", "animations" to "bool", "obd_warmup" to "bool", "obd_fuel" to "bool",
         "resume_delay" to "int", "start_delay" to "int", "volume_pct" to "int", "obd_ready_s" to "int", "service_km" to "int", "service_months" to "int", "service_sync_km" to "int", "service_sync_days" to "int",
         "speech_pitch" to "float", "speech_rate" to "float", "obd_engine_l" to "float",
         "tank_l" to "float", "fuel_price" to "float", "service_date" to "long", "service_sync_at" to "long", "weather_lat" to "float", "weather_lon" to "float",

@@ -63,11 +63,17 @@ class MainActivity : Activity() {
         }
         setContentView(scroll)
         animateNext = ENTER
+        Motion.enabled = prefs.animations
         // Android 12+: the animated launch icon grows and fades into the home screen.
         if (Build.VERSION.SDK_INT >= 31) splashScreen.setOnExitAnimationListener { sv ->
-            sv.iconView?.animate()?.scaleX(1.6f)?.scaleY(1.6f)?.alpha(0f)?.setDuration(300)?.start()
-            sv.animate().alpha(0f).setDuration(320).withEndAction { sv.remove() }.start()
+            val icon = sv.iconView
+            Motion.play(320, update = { f ->
+                sv.alpha = 1 - f
+                icon?.let { it.scaleX = 1 + 0.6f * f; it.scaleY = it.scaleX }
+            }, end = { sv.remove() })
         }
+        // With the phone's animations off Android shows no launch animation at all: play our own.
+        if (savedInstanceState == null && prefs.animations && !android.animation.ValueAnimator.areAnimatorsEnabled()) playLaunchIntro()
         window.statusBarColor = Style.BG
         window.navigationBarColor = Style.BG
         if (Build.VERSION.SDK_INT >= 33) {
@@ -843,6 +849,9 @@ class MainActivity : Activity() {
                 catch (e: Exception) { openAppSettings(packageName) }
             }
         }
+        switch("Animations (launch, pages, power-up sweep)", prefs.animations) {
+            prefs.animations = it; Motion.enabled = it; render()
+        }
         switch("Intro animation", prefs.showSplash) { prefs.showSplash = it; render() }
         if (prefs.showSplash) {
             val hasImage = IntroImage.exists(this)
@@ -1478,6 +1487,18 @@ class MainActivity : Activity() {
             "1. portal.azure.com → Create a resource → Speech (Azure AI services).\n" +
             "2. Pricing tier: Free F0 - the free tier can't be charged. Region: West Europe.\n" +
             "3. Open it → Keys and Endpoint → copy Key 1 → Paste above.")
+    }
+
+    /** The launch animation, drawn by the app (see LaunchIntroView), over the home screen; tap skips. */
+    private fun playLaunchIntro() {
+        val content = window.decorView as android.view.ViewGroup
+        val intro = LaunchIntroView(this).apply { setBackgroundColor(Style.BG); isClickable = true }
+        content.addView(intro, android.view.ViewGroup.LayoutParams(-1, -1))
+        fun out() = Motion.play(320, update = { f -> intro.alpha = 1 - f; intro.scaleX = 1 + 0.15f * f; intro.scaleY = intro.scaleX },
+            end = { content.removeView(intro) })
+        var gone = false
+        intro.setOnClickListener { if (!gone) { gone = true; out() } }
+        intro.play { handler.postDelayed({ if (!gone) { gone = true; out() } }, 250) }
     }
 
     private fun sampleButlerLine() = "Good afternoon, sir. The car is warm, the music is ready, and the weather is behaving itself. Shall we?"

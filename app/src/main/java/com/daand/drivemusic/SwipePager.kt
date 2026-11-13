@@ -38,7 +38,7 @@ class SwipePager(context: Context) : FrameLayout(context) {
 
     private fun place(dragDx: Float) {
         pages.forEachIndexed { i, v ->
-            v.animate().cancel()
+            (v.getTag(R.id.motion_enter) as? Motion.Handle)?.cancel()
             v.translationX = (i - current) * width + dragDx
             v.visibility = if (i == current || dragDx != 0f) View.VISIBLE else View.INVISIBLE
         }
@@ -107,8 +107,12 @@ class SwipePager(context: Context) : FrameLayout(context) {
         pages.forEachIndexed { i, v ->
             val target = ((i - current) * width).toFloat()
             v.visibility = View.VISIBLE
-            if (animate && width > 0) v.animate().translationX(target).setDuration(220)
-                .withEndAction { if (i != current) v.visibility = View.INVISIBLE }.start()
+            if (animate && width > 0) {
+                val from = v.translationX
+                (v.getTag(R.id.motion_enter) as? Motion.Handle)?.cancel()
+                v.setTag(R.id.motion_enter, Motion.play(220, update = { f -> v.translationX = from + (target - from) * f },
+                    end = { if (i != current) v.visibility = View.INVISIBLE }))
+            }
             else { v.translationX = target; v.visibility = if (i == current) View.VISIBLE else View.INVISIBLE }
         }
         if (old != current) onPageChanged(current)

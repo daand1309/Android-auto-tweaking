@@ -1,6 +1,5 @@
 package com.daand.drivemusic
 
-import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -24,15 +23,10 @@ class GaugeSweepView(context: Context, private val accent: Int, private val trac
     private val oval = RectF()
 
     fun play(onDone: () -> Unit = {}) {
-        ValueAnimator.ofFloat(0f, 1f, 0f).apply {
-            duration = 1300; startDelay = 150
-            interpolator = AccelerateDecelerateInterpolator()
-            addUpdateListener { level = it.animatedValue as Float; invalidate() }
-            addListener(object : android.animation.AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: android.animation.Animator) = onDone()
-            })
-            start()
-        }
+        // Up to full scale and back down: 0 -> 1 -> 0 over the run (own frame clock, see Motion).
+        Motion.play(1300, delayMs = 150, interp = AccelerateDecelerateInterpolator(), update = { f ->
+            level = if (f < 0.5f) f * 2 else (1 - f) * 2; invalidate()
+        }, end = { level = 0f; invalidate(); onDone() })
     }
 
     override fun onDraw(canvas: Canvas) {

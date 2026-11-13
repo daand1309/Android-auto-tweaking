@@ -58,6 +58,7 @@ class DriveFlowTest {
             showSplash = true
             greetingStyle = "sassy"
             obdEnabled = false
+            animations = false   // steady timings: no launch/page animations in the way
         }
         com.daand.drivemusic.obd.ObdManager.setLiveForTest(null)
         // Old tests expect "left the car" right away; the stall test sets its own hold.

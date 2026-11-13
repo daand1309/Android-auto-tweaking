@@ -98,6 +98,7 @@ class NewUserJourney {
         ActivityScenario.launch(MainActivity::class.java).use { sc ->
             var root: View? = null
             sc.onActivity { root = it.window.decorView }
+            SystemClock.sleep(1_200)   // the launch animation (the emulator's own animations are off)
             look("first_open", root)
             // ---- What does the first screen ask me to do? Follow the setup prompt.
             if (!tap(root!!, "Setup")) tap(root!!, "steps")
