@@ -11,6 +11,7 @@ import com.daand.drivemusic.obd.TroubleCodes
 import com.daand.drivemusic.obd.Trip
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -95,11 +96,20 @@ class ObdFullTest {
     }
 
     @Test fun icyRoadFromTheOutsideSensorOrTheColdIntakeAir() {
+        fun icy(l: List<CarAlerts.Alert>) = l.any { it.kind == CarAlerts.Kind.ICY_ROAD }
         val real = CarAlerts()
-        assertEquals(CarAlerts.Kind.ICY_ROAD, real.check(CarSnapshot(0, ambientC = 2, rpm = 900, coolantC = 70)).single { it.kind == CarAlerts.Kind.ICY_ROAD }.kind)
-        assertTrue(real.check(CarSnapshot(5_000, ambientC = 1, rpm = 900, coolantC = 70)).none { it.kind == CarAlerts.Kind.ICY_ROAD })   // once
+        assertFalse("one reading isn't enough (could be a garbled byte)", icy(real.check(CarSnapshot(0, ambientC = 2, rpm = 900, coolantC = 70))))
+        assertTrue("still cold 40 s later: real", icy(real.check(CarSnapshot(40_000, ambientC = 2, rpm = 900, coolantC = 70))))
+        assertFalse("once", icy(real.check(CarSnapshot(80_000, ambientC = 1, rpm = 900, coolantC = 70))))
+        // A garbled 0 °C held until the next read (30 s), then normal again: nothing.
+        val glitch = CarAlerts()
+        assertFalse(icy(glitch.check(CarSnapshot(0, ambientC = 0, rpm = 900, coolantC = 70))))
+        assertFalse(icy(glitch.check(CarSnapshot(25_000, ambientC = 0, rpm = 900, coolantC = 70))))
+        assertFalse(icy(glitch.check(CarSnapshot(30_000, ambientC = 12, rpm = 900, coolantC = 70))))
+        assertFalse(icy(glitch.check(CarSnapshot(75_000, ambientC = 12, rpm = 900, coolantC = 70))))
         val proxy = CarAlerts()  // no outside sensor: cold engine, intake air in the first 90 s
-        assertTrue(proxy.check(CarSnapshot(0, coolantC = 5, rpm = 1000, runtimeS = 20, extra = mapOf(0x0F to 0.0))).any { it.kind == CarAlerts.Kind.ICY_ROAD })
+        proxy.check(CarSnapshot(0, coolantC = 5, rpm = 1000, runtimeS = 20, extra = mapOf(0x0F to 0.0)))
+        assertTrue(icy(proxy.check(CarSnapshot(40_000, coolantC = 6, rpm = 1000, runtimeS = 60, extra = mapOf(0x0F to 0.0)))))
         val warmEngine = CarAlerts()  // intake air of a warm engine says nothing about outside
         assertTrue(warmEngine.check(CarSnapshot(0, coolantC = 80, rpm = 1000, runtimeS = 20, extra = mapOf(0x0F to 2.0))).none { it.kind == CarAlerts.Kind.ICY_ROAD })
         assertTrue(CarAlerts.message(CarAlerts.Alert(CarAlerts.Kind.ICY_ROAD, false, 1.0), false, true).contains("black ice"))

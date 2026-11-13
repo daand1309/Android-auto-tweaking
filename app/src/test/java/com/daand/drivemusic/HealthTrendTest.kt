@@ -35,7 +35,7 @@ class HealthTrendTest {
         assertEquals(3.1, s.ltft!!, 0.01)
         assertEquals(14.15, s.chargeV!!, 0.01)
         assertEquals(750.0, s.idleRpm!!, 1.0)
-        assertEquals(12.0, s.idleSpread!!, 0.5)
+        assertEquals("change between neighbouring readings (±12 alternating)", 24.0, s.idleSpread!!, 0.5)
         assertEquals(10.0, s.warmupMin!!, 0.2)     // 120 readings x 5 s
         assertEquals(91.0, s.cruiseCoolant!!, 0.01)
         assertEquals(8, s.ambient)
@@ -93,17 +93,49 @@ class HealthTrendTest {
     }
 
     @Test fun pendingCodeIsAnEarlyWarningToldOnce() {
+        fun early(l: List<CarAlerts.Alert>) = l.filter { it.kind == CarAlerts.Kind.EARLY_CODE }
         val a = CarAlerts(readySeconds = 0)
-        val first = a.check(CarSnapshot(0, rpm = 800, pendingCodes = listOf("P0301")))
-        val early = first.filter { it.kind == CarAlerts.Kind.EARLY_CODE }
-        assertEquals(listOf("P0301"), early.single().codes)
-        assertTrue(CarAlerts.message(early.single(), false, true).contains("P"))
-        assertTrue(a.check(CarSnapshot(5_000, rpm = 800, pendingCodes = listOf("P0301"))).none { it.kind == CarAlerts.Kind.EARLY_CODE })
+        // First code read: could be one garbled answer - not told yet.
+        assertTrue(early(a.check(CarSnapshot(0, rpm = 800, pendingCodes = listOf("P0301"), codesReadAt = 0))).isEmpty())
+        // Kept in between reads (same read): still not confirmed.
+        assertTrue(early(a.check(CarSnapshot(5_000, rpm = 800, pendingCodes = listOf("P0301"), codesReadAt = 0))).isEmpty())
+        // A second, separate read sees it again: now it's real.
+        val told = early(a.check(CarSnapshot(600_000, rpm = 800, pendingCodes = listOf("P0301"), codesReadAt = 600_000)))
+        assertEquals(listOf("P0301"), told.single().codes)
+        assertTrue(CarAlerts.message(told.single(), false, true).contains("P"))
+        assertTrue(early(a.check(CarSnapshot(1_200_000, rpm = 800, pendingCodes = listOf("P0301"), codesReadAt = 1_200_000))).isEmpty())
         // Once confirmed it's a real check-engine alert (a different, urgent message).
-        val confirmed = a.check(CarSnapshot(10_000, rpm = 800, checkEngine = true, codes = listOf("P0301"), pendingCodes = listOf("P0301")))
-        assertEquals(listOf(CarAlerts.Kind.CHECK_ENGINE), confirmed.map { it.kind }.filter { it == CarAlerts.Kind.CHECK_ENGINE || it == CarAlerts.Kind.EARLY_CODE })
-        // Told on an earlier drive: not again.
-        val next = CarAlerts(0, setOf(CarAlerts.pendingKey("P0301")))
-        assertTrue(next.check(CarSnapshot(0, rpm = 800, pendingCodes = listOf("P0301"))).none { it.kind == CarAlerts.Kind.EARLY_CODE })
+        val confirmed = a.check(CarSnapshot(1_300_000, rpm = 800, checkEngine = true, codes = listOf("P0301"), pendingCodes = listOf("P0301"), codesReadAt = 1_200_000))
+        assertTrue(confirmed.any { it.kind == CarAlerts.Kind.CHECK_ENGINE })
+        // Seen in a read on an earlier drive: this drive's first read confirms it.
+        val next = CarAlerts(0, pendingSeenBefore = setOf("P0171"))
+        assertEquals(listOf("P0171"), early(next.check(CarSnapshot(0, rpm = 800, pendingCodes = listOf("P0171"), codesReadAt = 0))).single().codes)
+        // Already told on an earlier drive: not again.
+        val later = CarAlerts(0, setOf(CarAlerts.pendingKey("P0171")), setOf("P0171"))
+        assertTrue(early(later.check(CarSnapshot(0, rpm = 800, pendingCodes = listOf("P0171"), codesReadAt = 0))).isEmpty())
+    }
+
+    @Test fun badReadingsDontCreateFakeTrends() {
+        // A corrupt low coolant byte on a warm engine must not look like a 0-minute "cold start".
+        val h = HealthStats()
+        h.add(CarSnapshot(0, coolantC = -40, rpm = 800, speedKmh = 0), 0.0)
+        for (i in 1..40) h.add(CarSnapshot(i * 5_000L, coolantC = 88, rpm = 800, speedKmh = 0), 5.0)
+        assertNull(h.sample().warmupMin)
+        // One wild idle reading and an A/C step barely move the idle wobble.
+        val idle = HealthStats()
+        var at = 0L
+        for (i in 0 until 30) {
+            val rpm = when { i == 10 -> 1290; i >= 20 -> 850; else -> 750 + (i % 2) * 10 }
+            idle.add(CarSnapshot(at, coolantC = 88, rpm = rpm, speedKmh = 0), 5.0); at += 5_000
+        }
+        assertTrue("wobble ${idle.sample().idleSpread}", idle.sample().idleSpread!! <= 10.0)
+        // Garbage fuel trim (0xFF = +99%) is ignored; one stale value held between reads counts once.
+        val trim = HealthStats(); at = 0L
+        for (i in 0 until 12) { trim.add(CarSnapshot(at, coolantC = 88, rpm = 2000, speedKmh = 80, extra = mapOf(0x07 to if (i < 6) 99.2 else 3.0)), 5.0); at += 5_000 }
+        assertNull("too few distinct reads", trim.sample().ltft)
+        // A car that simply charges low (its normal) isn't flagged; a drop from its normal is.
+        fun v(x: Double) = HealthSample(chargeV = x)
+        assertTrue(CarTrends.findings(List(10) { v(13.3) } + List(4) { v(13.3) }).isEmpty())
+        assertEquals(listOf(CarTrends.Kind.CHARGING), CarTrends.findings(List(10) { v(14.2) } + List(4) { v(13.6) }).map { it.kind })
     }
 }

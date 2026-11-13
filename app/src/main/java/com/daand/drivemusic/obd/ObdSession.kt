@@ -134,6 +134,7 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
         var codes = previous?.codes ?: emptyList()
         var pending = previous?.pendingCodes ?: emptyList()
         var permanent = previous?.permanentCodes ?: emptyList()
+        var codesReadAt = previous?.codesReadAt
         if (full) {
             if (0x42 !in extra || Elm327.PID_VOLTAGE !in supported) volts = Elm327.atrvVolts(Elm327.lines(link.send("ATRV", 1_500))) ?: volts
             raw(Elm327.PID_STATUS)?.let { d ->
@@ -146,6 +147,7 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
             if (readCodes) {
                 pending = codes("07", 0x47)
                 permanent = codes("0A", 0x4A)
+                codesReadAt = now
             }
         }
         val running = (extra[0x0C] ?: 0.0) > 400
@@ -156,6 +158,7 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
             fuelPct = extra[0x2F]?.let { Math.round(it).toInt() }, volts = volts, ambientC = extra[0x46]?.toInt(),
             checkEngine = status, codes = codes, runtimeS = extra[0x1F]?.toInt(), extra = extra,
             pendingCodes = pending, permanentCodes = permanent, readiness = readiness, litresPerHour = lph,
+            codesReadAt = codesReadAt,
         )
     }
 

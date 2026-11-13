@@ -186,6 +186,12 @@ class Prefs(context: Context) {
             val kv = it.split('='); if (kv.size != 2) null else kv[1].toLongOrNull()?.let { t -> kv[0] to t }
         }.toMap()
         set(v) = sp.edit().putString("trend_told", v.entries.joinToString(",") { "${it.key}=${it.value}" }).apply()
+    /** Pending fault codes seen in a code read (code=time), so the next drive can confirm them. */
+    var pendingSeen: Map<String, Long>
+        get() = (sp.getString("pending_seen", "") ?: "").split(',').mapNotNull {
+            val kv = it.split('='); if (kv.size != 2) null else kv[1].toLongOrNull()?.let { t -> kv[0] to t }
+        }.toMap()
+        set(v) = sp.edit().putString("pending_seen", v.entries.take(50).joinToString(",") { "${it.key}=${it.value}" }).apply()
     var trendToSay: List<String>
         get() = (sp.getString("trend_say", "") ?: "").split(',').filter { it.isNotBlank() }
         set(v) = sp.edit().putString("trend_say", v.joinToString(",")).apply()
@@ -336,7 +342,7 @@ class Prefs(context: Context) {
         "last_car_state", "last_drive", "last_greeting", "last_weather", "last_weather_at",
         "last_update_check", "notified_update", "update_status", "last_seen_music_app", "last_music_change_at",
         "parked_spot", "told_news", "follow_topic", "follow_until", "obd_told",
-        "service_reminded", "battery_log", "battery_warned", "trend_told", "trend_say",
+        "service_reminded", "battery_log", "battery_warned", "trend_told", "trend_say", "pending_seen",
     )
 
     /**

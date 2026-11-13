@@ -199,8 +199,9 @@ class ObdTest {
         assertEquals(CarAlerts.Kind.LOW_BATTERY, a.checkOthers(CarSnapshot(6_000, rpm = 0, volts = 11.6)).single().kind)
         assertTrue(a.checkOthers(CarSnapshot(5_000, rpm = 900, volts = 12.5)).isEmpty())          // low charge: wait a minute
         assertEquals(CarAlerts.Kind.WEAK_CHARGING, a.checkOthers(CarSnapshot(70_000, rpm = 900, volts = 12.5)).single().kind)
-        assertEquals(CarAlerts.Kind.LOW_FUEL, a.checkOthers(CarSnapshot(80_000, rpm = 900, volts = 14.0, fuelPct = 9)).single().kind)
-        assertTrue(a.checkOthers(CarSnapshot(90_000, rpm = 900, volts = 14.0, fuelPct = 8)).isEmpty())
+        assertTrue("one fuel read could be garbled: wait", a.checkOthers(CarSnapshot(80_000, rpm = 900, volts = 14.0, fuelPct = 9)).isEmpty())
+        assertEquals(CarAlerts.Kind.LOW_FUEL, a.checkOthers(CarSnapshot(120_000, rpm = 900, volts = 14.0, fuelPct = 9)).single().kind)
+        assertTrue(a.checkOthers(CarSnapshot(170_000, rpm = 900, volts = 14.0, fuelPct = 8)).isEmpty())
         // A healthy alternator never triggers the charging warning.
         val b = CarAlerts()
         assertTrue((0..20).flatMap { b.checkOthers(CarSnapshot(it * 5_000L, rpm = 2000, volts = 14.1)) }.isEmpty())

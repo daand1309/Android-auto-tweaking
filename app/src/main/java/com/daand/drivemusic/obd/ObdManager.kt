@@ -85,7 +85,8 @@ object ObdManager {
         readySeconds = p.obdReadySeconds
         val now = System.currentTimeMillis()
         val recent = p.obdToldCodes.filter { now - it.value < CarAlerts.REMIND_AFTER_MS }.keys
-        alerts = CarAlerts(readySeconds, recent)
+        val seenBefore = p.pendingSeen.filter { now - it.value < 30 * 86_400_000L }.keys
+        alerts = CarAlerts(readySeconds, recent, seenBefore)
         val remember: (CarAlerts.Alert) -> Unit = { a ->
             if (a.kind == CarAlerts.Kind.CHECK_ENGINE || a.kind == CarAlerts.Kind.EARLY_CODE) {
                 val told = Prefs(app).obdToldCodes.toMutableMap()
@@ -181,7 +182,15 @@ object ObdManager {
             val full = n % FULL_EVERY == 0
             val codesDue = full && System.currentTimeMillis() - lastCodes > CODES_EVERY_MS
             val snap = session.read(latest, full, readCodes = codesDue)
-            if (codesDue) lastCodes = System.currentTimeMillis()
+            if (codesDue) {
+                lastCodes = System.currentTimeMillis()
+                // Remember pending codes seen in this read, so a read on the next drive can confirm them.
+                val c = appCtx
+                if (snap.pendingCodes.isNotEmpty() && c != null) {
+                    val p = Prefs(c)
+                    p.pendingSeen = p.pendingSeen.filter { lastCodes - it.value < 30 * 86_400_000L } + snap.pendingCodes.associateWith { lastCodes }
+                }
+            }
             latest = snap
             if (snap.coolantC != null || snap.rpm != null || snap.speedKmh != null) lastEcuAnswerAt = snap.at
             trip.add(snap)

@@ -21,11 +21,13 @@ data class HealthSample(
     val warmupMin: Double? = null,
     val cruiseCoolant: Double? = null,
     val ambient: Int? = null,
+    /** Coolant at a cold start: close to the outside temperature (for fair warm-up comparisons). */
+    val warmStartC: Int? = null,
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         ltft?.let { put("ltft", it) }; chargeV?.let { put("v", it) }; idleRpm?.let { put("idle", it) }
         idleSpread?.let { put("idleSd", it) }; warmupMin?.let { put("warm", it) }; cruiseCoolant?.let { put("cool", it) }
-        ambient?.let { put("amb", it) }
+        ambient?.let { put("amb", it) }; warmStartC?.let { put("ws", it) }
     }
 
     val isEmpty get() = listOf(ltft, chargeV, idleSpread, warmupMin, cruiseCoolant).all { it == null }
@@ -36,54 +38,83 @@ data class HealthSample(
             fun d(k: String, range: ClosedFloatingPointRange<Double>) =
                 if (o.has(k)) o.optDouble(k).takeIf { it.isFinite() && it in range } else null
             return HealthSample(d("ltft", -50.0..50.0), d("v", 8.0..16.0), d("idle", 300.0..2000.0), d("idleSd", 0.0..500.0),
-                d("warm", 0.0..120.0), d("cool", 40.0..130.0), if (o.has("amb")) o.optInt("amb").takeIf { it in -40..60 } else null)
+                d("warm", 0.0..120.0), d("cool", 40.0..130.0), if (o.has("amb")) o.optInt("amb").takeIf { it in -40..60 } else null,
+                if (o.has("ws")) o.optInt("ws").takeIf { it in -40..60 } else null)
         }
     }
 }
 
-/** Collects the [HealthSample] numbers during a drive. Pure, unit tested. */
+/**
+ * Collects the [HealthSample] numbers during a drive. Built to shrug off bad readings (a corrupt byte,
+ * a mis-split combined answer): medians instead of averages, plausible ranges, confirmation before a
+ * reading counts as a cold start, and steadiness measured so one odd value or a step (A/C kicking in)
+ * barely moves it. Pure, unit tested.
+ */
 class HealthStats {
     private val ltft = ArrayList<Double>()
+    private var lastLtftAt: Long? = null
     private val charge = ArrayList<Double>()
-    private val idle = ArrayList<Double>()
+    private val idleSteps = ArrayList<Double>()
+    private val idleRevs = ArrayList<Double>()
+    private var lastIdle: CarSnapshot? = null
     private val cruise = ArrayList<Double>()
     private var ambient: Int? = null
-    private var firstCoolant: Int? = null
+    private var prevCoolant: Int? = null
+    private var startC: Int? = null          // confirmed by two readings in a row
+    private var startDecided = false
     private var warmRunSeconds = 0.0
     private var warmupMin: Double? = null
     private var warmupDone = false
 
     fun add(s: CarSnapshot, dt: Double) {
         val c = s.coolantC?.takeIf { it in -40..CarAlerts.MAX_PLAUSIBLE_C }
-        if (firstCoolant == null && c != null) firstCoolant = c
+        // Cold start? Only if two readings in a row agree: one corrupt low byte on a warm engine would
+        // otherwise look like a 0-minute warm-up and skew what's "normal" for this car.
+        if (!startDecided && c != null) {
+            val p = prevCoolant
+            if (p != null) { startDecided = true; if (Math.abs(c - p) <= 5) startC = minOf(c, p) }
+        }
+        val jump = prevCoolant?.let { p -> c != null && Math.abs(c - p) > 15 && dt in 0.0..15.0 } ?: false
+        if (c != null) prevCoolant = c
         if (ambient == null) ambient = s.ambientC
-        if (!s.engineRunning) return
-        val warm = c != null && c >= WARM_C
+        if (!s.engineRunning) { lastIdle = null; return }
         val rpm = s.rpm ?: 0
         val speed = s.speedKmh
-        if (warm) s.extra[0x07]?.takeIf { it in -50.0..50.0 }?.let { ltft += it }
-        if (rpm in 1200..3500) s.volts?.takeIf { it in 8.0..16.0 }?.let { charge += it }
-        if (warm && speed == 0 && rpm in 500..1300) idle += rpm.toDouble()
+        val warm = c != null && c >= WARM_C && !jump
+        // Fuel trim is read with the slower full reads and kept in between: count each read once.
+        if (warm && lastLtftAt.let { it == null || s.at - it >= LTFT_GAP_MS }) s.extra[0x07]?.takeIf { it in -40.0..40.0 }?.let { ltft += it; lastLtftAt = s.at }
+        if (rpm in 1200..3500) s.volts?.takeIf { it in 10.0..16.0 }?.let { charge += it }
+        val idling = warm && speed == 0 && rpm in 500..1300
+        if (idling) {
+            idleRevs += rpm.toDouble()
+            // Change between neighbouring readings: a step (A/C on) or one bad value counts once and the
+            // median ignores it; a genuinely shaky idle moves on every reading.
+            lastIdle?.takeIf { s.at - it.at in 1..15_000 }?.rpm?.let { idleSteps += Math.abs(rpm - it).toDouble() }
+            lastIdle = s
+        } else lastIdle = null
         if (warm && speed != null && speed >= 60) cruise += c!!.toDouble()
-        // Warm-up: only from a real cold start, counting engine-running time.
-        if (!warmupDone && (firstCoolant ?: 99) <= COLD_START_C) {
+        val sc = startC
+        if (!warmupDone && sc != null && sc <= COLD_START_C) {
             if (dt in 0.0..15.0) warmRunSeconds += dt
-            if (c != null && c >= WARM_C) { warmupDone = true; warmupMin = warmRunSeconds / 60 }
+            if (c != null && c >= WARM_C && !jump) {
+                warmupDone = true
+                warmupMin = (warmRunSeconds / 60).takeIf { it in 2.0..60.0 }   // outside that: not a believable warm-up
+            }
         }
     }
 
     fun sample(): HealthSample {
         fun med(l: List<Double>, min: Int) = if (l.size >= min) median(l) else null
-        val idleMean = if (idle.size >= MIN_IDLE) idle.average() else null
-        val idleSd = idleMean?.let { m -> sqrt(idle.sumOf { (it - m) * (it - m) } / idle.size) }
-        return HealthSample(med(ltft, 3)?.round1(), med(charge, 5)?.round2(), idleMean?.round1(), idleSd?.round1(),
-            warmupMin?.round1(), med(cruise, 5)?.round1(), ambient)
+        val steps = med(idleSteps, MIN_IDLE)
+        return HealthSample(med(ltft, 3)?.round1(), med(charge, 5)?.round2(), steps?.let { median(idleRevs).round1() }, steps?.round1(),
+            warmupMin?.round1(), med(cruise, 5)?.round1(), ambient, startC?.takeIf { warmupMin != null })
     }
 
     companion object {
         const val WARM_C = 80
         const val COLD_START_C = 35
         const val MIN_IDLE = 12
+        const val LTFT_GAP_MS = 20_000L
     }
 }
 
@@ -146,7 +177,9 @@ object CarTrends {
         val v = split(history) { it.chargeV }
         if (v.ok) {
             val n = v.now; val u = v.usual
-            if (n < 13.4 || (u != null && u - n >= 0.4 && n < 13.9)) out += Finding(Kind.CHARGING, n, u)
+            // Some cars charge lower on purpose; what counts is a drop from THIS car's normal. Without a
+            // normal yet, only a clearly low value.
+            if (if (u != null) u - n >= 0.4 && n < 13.9 else n < 13.2) out += Finding(Kind.CHARGING, n, u)
         }
         // Idle getting shaky: often spark plugs or an ignition coil, before a misfire code appears.
         val idle = split(history) { it.idleSpread }
@@ -158,9 +191,14 @@ object CarTrends {
         val warmSamples = history.filter { it.warmupMin != null }
         val w = split(warmSamples) { it.warmupMin }
         if (w.ok && w.hasBaseline) {
-            val ambRecent = warmSamples.takeLast(w.recent.size).mapNotNull { it.ambient?.toDouble() }
-            val ambBase = warmSamples.dropLast(w.recent.size).takeLast(BASELINE).mapNotNull { it.ambient?.toDouble() }
-            val colderNow = ambRecent.size >= 2 && ambBase.size >= 2 && median(ambRecent) < median(ambBase) - 5
+            // Colder weather makes any engine slower to warm up: compare like with like. The outside
+            // sensor if the car shares it, else the coolant temperature at the cold start.
+            fun colder(pick: (HealthSample) -> Int?): Boolean {
+                val r = warmSamples.takeLast(w.recent.size).mapNotNull { pick(it)?.toDouble() }
+                val b = warmSamples.dropLast(w.recent.size).takeLast(BASELINE).mapNotNull { pick(it)?.toDouble() }
+                return r.size >= 2 && b.size >= 2 && median(r) < median(b) - 5
+            }
+            val colderNow = colder { it.ambient } || colder { it.warmStartC }
             val n = w.now; val u = w.usual!!
             if (!colderNow && n >= 12 && n >= u * 1.6) out += Finding(Kind.SLOW_WARMUP, n, u)
         }
@@ -214,7 +252,7 @@ object CarTrends {
         }
         row("Fuel trim (long-term)", "Brandstofcorrectie (lang)", { it.ltft }, ::pct)
         row("Charging voltage", "Laadspanning", { it.chargeV }) { f1(it) + " V" }
-        row("Idle steadiness", "Rust stationair", { it.idleSpread }) { "±" + f0(it) + " rpm" }
+        row("Idle wobble", "Onrust stationair", { it.idleSpread }) { f0(it) + " rpm" }
         row("Warm-up time", "Opwarmtijd", { it.warmupMin }) { f0(it) + " min" }
         row("Engine temp on the road", "Motortemp. onderweg", { it.cruiseCoolant }) { f0(it) + " °C" }
         return rows
