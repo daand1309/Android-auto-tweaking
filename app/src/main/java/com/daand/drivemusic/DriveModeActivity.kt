@@ -153,6 +153,7 @@ class DriveModeActivity : Activity() {
     // ---------------------------------------------------------------- car tab (live OBD data)
 
     private val carValues = HashMap<String, TextView>()
+    private val carSubs = HashMap<String, TextView>()
     private val carLabels = HashMap<String, TextView>()
     private lateinit var carWarning: TextView
     private lateinit var carStatus: TextView
@@ -167,7 +168,7 @@ class DriveModeActivity : Activity() {
         root.addView(carWarning, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
         val all = listOf(
             "speed" to "Speed", "rpm" to "RPM", "coolant" to "Engine", "fuel" to "Fuel now",
-            "trip" to "Trip · L/100", "battery" to "Battery", "load" to "Throttle · load", "temps" to "Outside · intake",
+            "trip" to "This trip", "battery" to "Battery", "load" to "Throttle · load", "temps" to "Outside · intake",
         )
         // Portrait: 4 rows of 2. Landscape: 2 rows of 4, so every tile stays tall enough to read.
         val tiles = all.chunked(if (wide) 4 else 2)
@@ -197,6 +198,13 @@ class DriveModeActivity : Activity() {
         }
         carValues[key] = value
         addView(value, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        // Optional second, smaller line (e.g. the trip's average consumption under its distance).
+        val sub = TextView(this@DriveModeActivity).apply {
+            setTextColor(Style.TEXT2); textSize = 15f; gravity = Gravity.CENTER; maxLines = 1
+            fontFeatureSettings = Style.TABULAR; visibility = View.GONE
+        }
+        carSubs[key] = sub
+        addView(sub)
     }
 
     private fun updateCarPage() {
@@ -206,6 +214,12 @@ class DriveModeActivity : Activity() {
         val range = if (s != null) obd.rangeKm(s) else null
         val v = CarDash.values(s, obd.trip, p.greetingDutch, range)
         carLabels["load"]?.let { val l = CarDash.loadLabel(range, p.greetingDutch); if (it.text != l) it.text = l }
+        for ((key, sub) in carSubs) {
+            val t = v["${key}_sub"]?.first ?: ""
+            if (sub.text != t) sub.text = t
+            val vis = if (t.isEmpty()) View.GONE else View.VISIBLE
+            if (sub.visibility != vis) sub.visibility = vis
+        }
         for ((key, tv) in carValues) {
             val (text, color) = v[key] ?: ("—" to null)
             if (tv.text != text) tv.text = text

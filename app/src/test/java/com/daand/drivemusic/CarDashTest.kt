@@ -9,6 +9,18 @@ import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class CarDashTest {
+    @Test fun tripTileShowsDistanceBigAndConsumptionUnderneath() {
+        val t = com.daand.drivemusic.obd.Trip()
+        for (i in 0..200) t.add(CarSnapshot(i * 5_000L, rpm = 2200, speedKmh = 90, litresPerHour = 5.4))
+        val v = CarDash.values(CarSnapshot(0, speedKmh = 90), t, dutch = false)
+        assertEquals("25.0 km", v["trip"]!!.first)
+        assertEquals("6.0 L/100", v["trip_sub"]!!.first)
+        // Under 1 km there's no meaningful average yet: no second line.
+        val short = com.daand.drivemusic.obd.Trip()
+        for (i in 0..5) short.add(CarSnapshot(i * 5_000L, rpm = 2200, speedKmh = 50, litresPerHour = 3.0))
+        assertNull(CarDash.values(CarSnapshot(0, speedKmh = 50), short, false)["trip_sub"])
+    }
+
     @Test fun warningColourMatchesHowUrgentItIs() {
         assertFalse("get it checked = amber", CarDash.warningIsSevere(CarSnapshot(0, codes = listOf("P0420"))))
         assertTrue("misfires = red", CarDash.warningIsSevere(CarSnapshot(0, codes = listOf("P0420", "P0300"))))

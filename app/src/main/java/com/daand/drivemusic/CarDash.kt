@@ -28,8 +28,9 @@ object CarDash {
             out["fuel"] = (FuelMath.per100km(lph, s.speedKmh?.toDouble())?.let { "${f1(it)} L/100" } ?: "${f1(lph)} L/h") to null
         }
         trip?.let { t ->
-            val avg = t.avgPer100()?.let { " · ${f1(it)}" } ?: ""
-            if (t.km >= 0.1) out["trip"] = "${f1(t.km)} km$avg" to null
+            // Distance big; the average consumption as a small line underneath ("trip_sub").
+            if (t.km >= 0.1) out["trip"] = "${f1(t.km)} km" to null
+            t.avgPer100()?.let { out["trip_sub"] = "${f1(it)} L/100" to null }
         }
         s.volts?.let { v -> out["battery"] = "${f1(v)} V" to when { s.engineRunning && v < 12.8 -> HOT; !s.engineRunning && v < 12.0 -> HOT; else -> null } }
         val throttle = s.extra[0x11]?.let { Math.round(it) }
