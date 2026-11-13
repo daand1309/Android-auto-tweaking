@@ -23,8 +23,12 @@ data class CarSnapshot(
     val readiness: Pair<Int, Int>? = null,
     /** Fuel use right now, if it can be worked out. */
     val litresPerHour: Double? = null,
-    /** When the fault codes were last actually asked (they're kept in between reads). */
+    /** When the pending codes were last actually read (they're kept in between reads). */
     val codesReadAt: Long? = null,
+    /** When the stored codes were last actually read. */
+    val storedReadAt: Long? = null,
+    /** How many stored codes the car itself says it has (from the status, PID 01). */
+    val codeCount: Int? = null,
 ) {
     val engineRunning get() = (rpm ?: 0) > 400
 }
@@ -258,7 +262,11 @@ class CarAlerts(
     data class Alert(val kind: Kind, val urgent: Boolean, val value: Double? = null, val codes: List<String> = emptyList(),
                      val timely: Boolean = false)
 
-    private val pendingReads = HashMap<String, MutableSet<Long>>()
+    private val pendingStreak = Streak()
+    private val storedStreak = Streak()
+
+    /** Pending codes seen in 2+ reads in a row: worth remembering for the next drive. */
+    fun pendingWorthRemembering(): Set<String> = pendingStreak.atLeast(2)
     // Fuel level and outside temperature come with the slower full reads (every 9-30 s) and are kept in
     // between, so one garbled read would repeat for a while: they must hold for longer than that.
     private val fuelLow = Held(40_000L)
@@ -298,7 +306,11 @@ class CarAlerts(
             }
             if (!warmDone && coldAtStart == true && c >= WARM_C) { warmDone = true; out += Alert(Kind.ENGINE_WARM, false, c.toDouble()) }
         }
-        val newCodes = s.codes.filter { it !in reportedCodes }
+        // Stored codes: trusted straight away when the list agrees with the car's own count (a separate
+        // answer). Otherwise - a garbled or overflowing answer - a code must be in 3 good reads in a row.
+        storedStreak.update(s.storedReadAt, s.codes)
+        val countAgrees = s.codeCount != null && s.codes.size <= s.codeCount
+        val newCodes = s.codes.filter { it !in reportedCodes && (countAgrees || storedStreak[it] >= CONFIRM_READS) }
         val lightJustCameOn = s.checkEngine == true && !lastCheckEngine
         if (newCodes.isNotEmpty()) {
             reportedCodes += newCodes
@@ -312,9 +324,10 @@ class CarAlerts(
         // A pending code isn't corroborated by anything else (unlike confirmed codes, which the status
         // count must agree with), so one garbled answer could invent one: it must show up in two
         // separate code reads - this drive, or once on an earlier drive and again now.
-        s.codesReadAt?.let { readAt -> s.pendingCodes.forEach { pendingReads.getOrPut(it) { HashSet() } += readAt } }
+        pendingStreak.update(s.codesReadAt, s.pendingCodes)
         val newPending = s.pendingCodes.filter {
-            it !in s.codes && pendingKey(it) !in reportedCodes && ((pendingReads[it]?.size ?: 0) >= 2 || it in pendingSeenBefore)
+            it !in s.codes && pendingKey(it) !in reportedCodes &&
+                (pendingStreak[it] >= CONFIRM_READS || (it in pendingSeenBefore && pendingStreak[it] >= 1))
         }
         if (newPending.isNotEmpty()) {
             reportedCodes += newPending.map(::pendingKey)
@@ -426,6 +439,9 @@ class CarAlerts(
         const val LOW_FUEL_PCT = 12
         /** Like the car's own snowflake warning. */
         const val ICY_C = 3.0
+        /** Good reads in a row a code needs when nothing else backs it up. */
+        const val CONFIRM_READS = 3
+
         /** How a pending code is remembered (separately from the same code once confirmed). */
         fun pendingKey(code: String) = "pending:$code"
 
@@ -582,4 +598,21 @@ class Held(private val ms: Long) {
         val start = since ?: at.also { since = it }
         return at - start >= ms
     }
+}
+
+/**
+ * For each code: in how many actual reads in a row it appeared. A read is identified by its time, so
+ * the same answer kept between reads isn't counted twice; a code missing from a read starts over.
+ */
+class Streak {
+    private val count = HashMap<String, Int>()
+    private var lastReadAt: Long? = null
+    fun update(readAt: Long?, codes: List<String>) {
+        if (readAt == null || readAt == lastReadAt) return
+        lastReadAt = readAt
+        val next = codes.toSet().associateWith { (count[it] ?: 0) + 1 }
+        count.clear(); count.putAll(next)
+    }
+    operator fun get(code: String) = count[code] ?: 0
+    fun atLeast(n: Int) = count.filterValues { it >= n }.keys
 }

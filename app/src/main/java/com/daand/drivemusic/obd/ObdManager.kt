@@ -182,15 +182,7 @@ object ObdManager {
             val full = n % FULL_EVERY == 0
             val codesDue = full && System.currentTimeMillis() - lastCodes > CODES_EVERY_MS
             val snap = session.read(latest, full, readCodes = codesDue)
-            if (codesDue) {
-                lastCodes = System.currentTimeMillis()
-                // Remember pending codes seen in this read, so a read on the next drive can confirm them.
-                val c = appCtx
-                if (snap.pendingCodes.isNotEmpty() && c != null) {
-                    val p = Prefs(c)
-                    p.pendingSeen = p.pendingSeen.filter { lastCodes - it.value < 30 * 86_400_000L } + snap.pendingCodes.associateWith { lastCodes }
-                }
-            }
+            if (codesDue) lastCodes = System.currentTimeMillis()
             latest = snap
             if (snap.coolantC != null || snap.rpm != null || snap.speedKmh != null) lastEcuAnswerAt = snap.at
             trip.add(snap)
@@ -201,11 +193,22 @@ object ObdManager {
                 if (a.kind == CarAlerts.Kind.LOW_FUEL) a.copy(codes = listOfNotNull(rangeKm(snap)?.toString())) else a
             }.forEach { a ->
                 DriveLog.log("OBD: alert ${a.kind}" + (a.value?.let { " ($it)" } ?: "") + (if (a.codes.isNotEmpty()) " ${a.codes}" else ""))
+                // A code we can't explain properly yet goes to the log (only codes that passed the checks:
+                // a garbled answer full of nonsense codes mustn't flood the log).
+                a.codes.filter { it.length == 5 && !TroubleCodes.isKnown(it) && unknownLogged.add(it) }.forEach {
+                    DriveLog.log("OBD: code $it isn't in the app's list yet - explained by its area: \"${TroubleCodes.explain(it, false)}\"")
+                }
                 onAlert(a)
             }
-            // Anything we can't explain properly yet goes to the log (with how it was explained instead).
-            (snap.codes + snap.pendingCodes + snap.permanentCodes).filter { !TroubleCodes.isKnown(it) && unknownLogged.add(it) }.forEach {
-                DriveLog.log("OBD: code $it isn't in the app's list yet - explained by its area: \"${TroubleCodes.explain(it, false)}\"")
+            if (codesDue) {
+                // Pending codes seen in 2+ reads in a row are remembered, so the next drive can confirm
+                // them sooner. One garbled answer mustn't plant codes for next time.
+                val keep = alerts.pendingWorthRemembering()
+                val c = appCtx
+                if (keep.isNotEmpty() && c != null) {
+                    val p = Prefs(c)
+                    p.pendingSeen = p.pendingSeen.filter { lastCodes - it.value < 30 * 86_400_000L } + keep.associateWith { lastCodes }
+                }
             }
             n++
             // A steady rhythm: the wait includes the time the reading took.

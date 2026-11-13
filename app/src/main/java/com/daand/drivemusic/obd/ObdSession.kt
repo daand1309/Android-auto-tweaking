@@ -87,9 +87,10 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
         return out
     }
 
-    private fun codes(mode: String, answerByte: Int): List<String> {
+    /** null = the question failed (keep what we knew), empty = really no codes. */
+    private fun codes(mode: String, answerByte: Int): List<String>? {
         val ans = Elm327.lines(link.send(mode, 4_000))
-        if (Elm327.isError(ans)) return emptyList()
+        if (Elm327.isError(ans)) return null
         // Pending (07) and permanent (0A) answers look like stored ones (03), just with 47 / 4A first.
         val asStored = ans.map { line ->
             val b = Elm327.bytes(line)
@@ -135,19 +136,23 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
         var pending = previous?.pendingCodes ?: emptyList()
         var permanent = previous?.permanentCodes ?: emptyList()
         var codesReadAt = previous?.codesReadAt
+        var storedReadAt = previous?.storedReadAt
+        var codeCount = previous?.codeCount
         if (full) {
             if (0x42 !in extra || Elm327.PID_VOLTAGE !in supported) volts = Elm327.atrvVolts(Elm327.lines(link.send("ATRV", 1_500))) ?: volts
             raw(Elm327.PID_STATUS)?.let { d ->
                 val st = Elm327.status(d)
                 status = st?.first
+                codeCount = st?.second
                 readiness = Elm327.readiness(d)
-                if (readCodes || (st != null && st.second > 0 && codes.isEmpty())) codes = codes("03", 0x43)
+                if (readCodes || (st != null && st.second > 0 && codes.isEmpty())) {
+                    codes("03", 0x43)?.let { codes = it; storedReadAt = now }
+                }
                 if (st?.first == false && st.second == 0) codes = emptyList()
             }
             if (readCodes) {
-                pending = codes("07", 0x47)
-                permanent = codes("0A", 0x4A)
-                codesReadAt = now
+                codes("07", 0x47)?.let { pending = it; codesReadAt = now }
+                codes("0A", 0x4A)?.let { permanent = it }
             }
         }
         val running = (extra[0x0C] ?: 0.0) > 400
@@ -158,7 +163,7 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
             fuelPct = extra[0x2F]?.let { Math.round(it).toInt() }, volts = volts, ambientC = extra[0x46]?.toInt(),
             checkEngine = status, codes = codes, runtimeS = extra[0x1F]?.toInt(), extra = extra,
             pendingCodes = pending, permanentCodes = permanent, readiness = readiness, litresPerHour = lph,
-            codesReadAt = codesReadAt,
+            codesReadAt = codesReadAt, storedReadAt = storedReadAt, codeCount = codeCount,
         )
     }
 

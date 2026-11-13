@@ -187,10 +187,10 @@ class ObdTest {
 
     @Test fun checkEngineOnlyForNewCodes() {
         val a = CarAlerts()
-        val first = a.checkOthers(CarSnapshot(0, checkEngine = true, codes = listOf("P0420")))
+        val first = a.checkOthers(CarSnapshot(0, checkEngine = true, codes = listOf("P0420"), codeCount = 1))
         assertEquals(listOf("P0420"), first.single().codes)
-        assertTrue(a.checkOthers(CarSnapshot(5_000, checkEngine = true, codes = listOf("P0420"))).isEmpty())
-        assertEquals(listOf("P0133"), a.checkOthers(CarSnapshot(10_000, checkEngine = true, codes = listOf("P0420", "P0133"))).single().codes)
+        assertTrue(a.checkOthers(CarSnapshot(5_000, checkEngine = true, codes = listOf("P0420"), codeCount = 1)).isEmpty())
+        assertEquals(listOf("P0133"), a.checkOthers(CarSnapshot(10_000, checkEngine = true, codes = listOf("P0420", "P0133"), codeCount = 2)).single().codes)
     }
 
     @Test fun batteryAndChargingAndFuel() {
@@ -285,10 +285,22 @@ class ObdTest {
         assertTrue(a.check(CarSnapshot(13_000, coolantC = 70, rpm = 0, volts = 9.9)).none { it.kind == CarAlerts.Kind.LOW_BATTERY })
     }
 
+    @Test fun codesTheCarsOwnCountDoesntBackNeedThreeGoodReadsInARow() {
+        val a = CarAlerts()
+        fun told(at: Long, read: Long, codes: List<String>, count: Int?) =
+            a.check(CarSnapshot(at, checkEngine = true, codes = codes, codeCount = count, storedReadAt = read))
+                .filter { it.kind == CarAlerts.Kind.CHECK_ENGINE }.flatMap { it.codes }
+        // The car says 1 code but the answer lists 3: garbled - wait for repeats.
+        assertTrue(told(0, 0, listOf("P0420", "U3DCC", "B1328"), 1).isEmpty())
+        assertTrue(told(5_000, 0, listOf("P0420", "U3DCC", "B1328"), 1).isEmpty())          // same read kept: no count
+        assertTrue(told(600_000, 600_000, listOf("P0420", "C26CC"), 1).isEmpty())
+        assertEquals(listOf("P0420"), told(1_200_000, 1_200_000, listOf("P0420", "P16E4"), 1))  // 3 reads in a row
+    }
+
     @Test fun aLightThatsBeenOnForWeeksIsNotNewsAtEveryStart() {
         val known = CarAlerts(toldRecently = setOf("P0420"))
-        assertTrue(known.check(CarSnapshot(0, checkEngine = true, codes = listOf("P0420"))).none { it.kind == CarAlerts.Kind.CHECK_ENGINE })
-        assertEquals(listOf("P0171"), known.check(CarSnapshot(5_000, checkEngine = true, codes = listOf("P0420", "P0171")))
+        assertTrue(known.check(CarSnapshot(0, checkEngine = true, codes = listOf("P0420"), codeCount = 1)).none { it.kind == CarAlerts.Kind.CHECK_ENGINE })
+        assertEquals(listOf("P0171"), known.check(CarSnapshot(5_000, checkEngine = true, codes = listOf("P0420", "P0171"), codeCount = 2))
             .single { it.kind == CarAlerts.Kind.CHECK_ENGINE }.codes)                // a NEW code is still told right away
         val lightOnly = CarAlerts(toldRecently = setOf(CarAlerts.MIL))
         assertTrue(lightOnly.check(CarSnapshot(0, checkEngine = true)).none { it.kind == CarAlerts.Kind.CHECK_ENGINE })
