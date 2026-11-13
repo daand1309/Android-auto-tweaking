@@ -212,6 +212,14 @@ class MainActivity : Activity() {
         lastHomeSignature = homeSignature()
         heroCard()
 
+        // What a new user must do first goes first (found in the new-user walkthrough: lower down,
+        // under the buttons and the update card, it was easy to miss).
+        if (!MusicApps.isInstalled(packageManager, prefs.musicPackage)) {
+            navRow("⚠  Music app not found", "Tap to pick the app that plays your music", warn = true) { pickMusicApp() }
+        }
+        val missing = setupItems().count { !it.ok && !it.label.contains("optional") }
+        if (missing > 0) navRow("⚠  Setup: $missing step(s) left", "Needed for the app to work properly", warn = true) { go(Page.SETUP) }
+
         button("Drive Mode", accent = true) { startActivity(Intent(this, DriveModeActivity::class.java)) }
         row(
             quickBtn("Start music") {
@@ -224,16 +232,12 @@ class MainActivity : Activity() {
             },
         )
 
-        if (!MusicApps.isInstalled(packageManager, prefs.musicPackage)) {
-            navRow("⚠  Music app not found", "Tap to pick the app that plays your music", warn = true) { pickMusicApp() }
-        }
         availableUpdate?.let { upd -> navRow("⬇  Update ${upd.versionName} available", "Tap to install", highlight = true) { go(Page.UPDATES) } }
-        val missing = setupItems().count { !it.ok && !it.label.contains("optional") }
-        if (missing > 0) navRow("⚠  Setup: $missing step(s) left", "Needed for the app to work properly", warn = true) { go(Page.SETUP) }
 
         header("Settings")
         navRow("Music & driving", "Auto-start, auto-resume, volume") { go(Page.MUSIC) }
-        navRow("Welcome greeting", if (prefs.greetingEnabled) "On · ${prefs.greetingName.ifBlank { "no name set" }}" else "Off") { go(Page.GREETING) }
+        navRow("Welcome greeting", if (prefs.greetingEnabled) "On · ${prefs.greetingName.ifBlank { "no name set" }}" +
+            (if (needsTown()) " · set your town for weather" else "") else "Off") { go(Page.GREETING) }
         navRow("Drive Mode", if (prefs.autoOpenDriveMode) "Opens when the car connects" else "Big buttons for your phone holder") { go(Page.DRIVE_MODE) }
         navRow("Sound", "Equalizer and sound settings") { go(Page.SOUND) }
         navRow("Theme", Style.THEMES[prefs.theme] ?: "") { pickTheme() }
@@ -247,7 +251,7 @@ class MainActivity : Activity() {
         navRow("Logs", "What happened on your drives") { startActivity(Intent(this, LogActivity::class.java)) }
         navRow("Backup & restore", "Save your settings to a file") { go(Page.BACKUP) }
         navRow("Help & privacy", "Car screen setup, tips, what data is used") { go(Page.HELP) }
-        if (prefs.lastDrive.isNotEmpty()) text("Last drive: ${prefs.lastDrive}")
+        if (prefs.lastDrive.isNotEmpty()) text("Last drive: ${prefs.lastDrive.replace(" - 0 min,", " - under a minute,")}")
     }
 
     private fun renderSetup() {
@@ -877,7 +881,7 @@ class MainActivity : Activity() {
             "• Wired Android Auto dropping? Try a short, good USB cable.")
         header("Privacy")
         text("• Internet only for update checks (GitHub), weather (Open-Meteo, location rounded to ~10 km) and, if on, " +
-            "drive news (NOS / NL Times; Google News is searched for your town name).\n" +
+            "drive news (NU.nl, NOS, NL Times and regional newsrooms; Google News is searched for your town name).\n" +
             "• Notifications are never read. Logs stay on the phone unless you share them.\n" +
             "• Where's my car (optional): your parked spot is saved on the phone only, never sent anywhere.\n" +
             "• No overlay, accessibility, contacts, SMS or storage access.")
@@ -1063,7 +1067,11 @@ class MainActivity : Activity() {
         val lastMins = Regex("""- (\d+) min""").find(prefs.lastDrive)?.groupValues?.get(1)
         val tiles = listOf(
             Triple("♪", "Now playing", song?.let { if (it.artist.isNotBlank()) "${it.title}\n${it.artist}" else it.title } ?: "Nothing yet"),
-            Triple("☁", "Weather", if (weatherFresh && prefs.lastWeatherSummary.isNotBlank()) prefs.lastWeatherSummary else "After your next drive"),
+            Triple("☁", "Weather", when {
+                weatherFresh && prefs.lastWeatherSummary.isNotBlank() -> prefs.lastWeatherSummary
+                needsTown() -> "Set your town"   // weather is on, but without a place it never comes
+                else -> "After your next drive"
+            }),
             Triple("⏱", "Last drive", when (lastMins) { null -> "None yet"; "0" -> "Under a minute"; else -> "$lastMins min" }),
             Triple("📍", "Your car", Parking.spot(this)?.let { "Parked ${Parking.whenText(it.time)}" } ?: "Tap to find it"),
         )
@@ -1097,9 +1105,12 @@ class MainActivity : Activity() {
         packageManager.getLaunchIntentForPackage(prefs.musicPackage)?.let { startActivity(it) } ?: toast("Music app not installed")
     }
 
+    /** Weather is switched on but has no place to look up: it would silently never be told. */
+    private fun needsTown() = prefs.greetingEnabled && prefs.weatherEnabled && prefs.weatherPlace.isBlank()
+
     private fun lastDriveDetails() {
         AlertDialog.Builder(this).setTitle("Last drive")
-            .setMessage(prefs.lastDrive.ifBlank { "No drives yet - connect to Android Auto and it shows up here." })
+            .setMessage(prefs.lastDrive.replace(" - 0 min,", " - under a minute,").ifBlank { "No drives yet - connect to Android Auto and it shows up here." })
             .setPositiveButton("Open logs") { _, _ -> startActivity(Intent(this, LogActivity::class.java)) }
             .setNegativeButton("Close", null).show()
     }

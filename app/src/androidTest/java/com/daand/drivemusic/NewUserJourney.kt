@@ -209,10 +209,6 @@ class NewUserJourney {
             look("help_page", root)
         }
         instr.runOnMainSync { session.release() }
-        journal.lines().forEach { android.util.Log.i("Journey", it) }   // also in the test's logcat
-        // Written through the shell (the app's own files aren't readable from there): piped into cat.
-        val fds = instr.uiAutomation.executeShellCommandRw("sh -c 'cat > $dir/journey.txt'")
-        android.os.ParcelFileDescriptor.AutoCloseOutputStream(fds[1]).use { it.write(journal.toString().toByteArray()) }
-        android.os.ParcelFileDescriptor.AutoCloseInputStream(fds[0]).use { it.readBytes() }
+        journal.lines().forEach { android.util.Log.i("Journey", it) }   // the journal: in the test's logcat
     }
 }

@@ -50,6 +50,8 @@ settings → *Unknown sources*, then *Customise launcher* → tick Drive Music).
 **Personalising** (all optional), from the home screen:
 
 - *Welcome greeting*: your name, birthday, Dutch or English, weather and roads, announcing the first song.
+  **Set your town (Location)** here – weather is on by default but needs a place; until then the
+  greeting has no weather and the home screen's Weather tile says *Set your town*.
 - *Voice & style*: **Sassy** (cheeky one-liners) or **Butler** (refined, British); pick a voice and hear it.
 - *Music & driving*: which music app, how long to wait before starting/resuming, volume on connect.
 - *Drive Mode*: open it automatically when the car connects.
@@ -61,9 +63,10 @@ settings → *Unknown sources*, then *Customise launcher* → tick Drive Music).
 What happens, in order:
 
 1. **Android Auto connects.** The app notices within a second or two.
-2. **Music starts** after a short wait (default 2 s), unless something else is already playing.
-3. **The greeting** (if on) is spoken first; the music starts when it's done. While speaking, the car
-   screen shows the briefing as a pop-up, which disappears when it's finished.
+2. **The greeting** (on by default) is spoken first, about 2 s after connecting. While it speaks, the
+   car screen shows it as a pop-up, which disappears when it's finished. A greeting takes about 15–20 s.
+3. **Music starts** as soon as the greeting is done – so on a normal start, roughly 20 s after
+   connecting (2 s if the greeting is off). Then the first song is announced ("Now playing: …").
 4. **Drive Mode** opens on the phone if you switched that on.
 5. **During the drive:**
    - a pause is undone after the resume delay (default 8 s) – shown in the log as an auto-resume;
@@ -106,9 +109,10 @@ questions appear there as a pop-up with *Go ahead* / *Not interested*.
 **Styles.** *Sassy* is playful; *Butler* is a refined British gentleman ("Good morning, sir…") who
 uses "sir" two or three times per greeting, not every sentence. English or Dutch.
 
-**The greeting** includes some of: time of day, your name, birthday, the weather for the next hours,
-road conditions (ice, fog, gusts), a service reminder or early warning about the car if there is
-one, and the first song.
+**The greeting** includes some of: time of day, your name, birthday, the weather for the next hours
+(once your town is set), road conditions (ice, fog, gusts), a service reminder or early warning about
+the car if there is one, and a few playful lines. The very first one says "Welcome", after that
+"Welcome back". The first song is announced right after the music starts.
 
 **Updates during the drive** (*Updates* menu):
 
@@ -184,4 +188,37 @@ with your drives, so both remind you together. Or set the last service date and 
 
 ## 9. Theory vs practice
 
-*(Filled in after the new-user walkthrough on the emulator – see below.)*
+The guide above was written first (theory). Then a new user was played on an Android 14 emulator:
+a clean install, following only what the screens say, then a first drive with Android Auto
+simulated and a stand-in for YouTube Music. Every step was photographed and logged
+(`NewUserJourney` in the app's tests; it runs in CI on every change).
+
+**What matched**
+
+| Step | Theory | Practice |
+|---|---|---|
+| First open | Setup checklist with buttons to Android settings | ✓ "Setup: 5 step(s) left"; 7 items, each with an *Open* button |
+| Granting access | App starts working once notification access is on | ✓ monitor running within seconds; checklist ticks update |
+| Defaults | Auto-start, auto-resume (8 s), greeting on, sassy, Drive Mode not automatic, OBD off | ✓ exactly these |
+| Car connects | Greeting, shown on the car screen, then music | ✓ greeting spoken, car-screen pop-up shown and removed, music playing |
+| Pause mid-drive | Back on by itself after ~8 s | ✓ playing again 11 s after the pause (8 s wait + detection) |
+| Home while driving | Status "Driving", Now playing tile | ✓ "Driving · Android Auto connected", "Mr. Brightside – The Killers" |
+| Drive Mode | Song, big buttons, Welcome / Resume / Close; Car tab | ✓ all there; Car tab without adapter shows dashes and "Set up Car data (OBD)…" |
+| Leaving the car | Music pauses, drive written down | ✓ paused immediately; Last drive tile "Under a minute" |
+| Car data page (new) | Switch it on, then choose the adapter | ✓ explanation and the switch |
+
+**What didn't match – and what was done**
+
+| Found | Fix |
+|---|---|
+| The guide said music starts ~2 s after connecting; in practice ~20 s, because the greeting comes first | Guide corrected (section 3). Behaviour is as designed. |
+| Weather is on by default but needs a town; without it the greeting silently had no weather, and the Weather tile kept promising "After your next drive" | App: tile now says *Set your town*, the greeting menu says "set your town for weather". Guide: says so in sections 2 and 5. |
+| A brand-new user's very first greeting said "Welcome back" | App: first greeting says "Welcome" / "Welcome aboard, sir". |
+| The setup reminder sat below the buttons and the update card – easy to miss on first open | App: setup (and "music app not found") now come first on the home screen. |
+| Last-drive pop-up said "0 min" while the tile said "Under a minute" | App: says "under a minute" everywhere. |
+| Help page listed fewer news sources than the app uses | App: now names NU.nl, NOS, NL Times and regional newsrooms. |
+
+**Not tested in practice yet** (needs the real car): the real Senzo head unit and Android Auto, the
+car-screen app list, the OBD adapter with the ASX, stalling and the radio rebooting, phone calls,
+breaking news during a drive. These are covered by automated tests with simulated parts, but a real
+drive is the final check – the first drive log with the iCar will tell.
