@@ -473,7 +473,8 @@ class DriveModeActivity : Activity() {
         // Icon about half the button, whatever its size (portrait, landscape, small phones).
         addOnLayoutChangeListener { v, l, t, r, btm, _, _, _, _ ->
             val pad = (minOf(r - l, btm - t) * 0.27f).toInt()
-            if (v.paddingLeft != pad) v.setPadding(pad, pad, pad, pad)
+            // Applied on the next frame: changing padding in the middle of a layout pass is ignored/warned about.
+            if (v.paddingLeft != pad) v.post { v.setPadding(pad, pad, pad, pad) }
         }
         setOnClickListener { onClick() }
         Feel.press(this)
