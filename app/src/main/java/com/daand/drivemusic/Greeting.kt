@@ -893,6 +893,62 @@ class Greeter(private val context: Context) {
 
     fun speak(text: String, dutch: Boolean, pauseOthers: Boolean = false, onDone: () -> Unit) {
         val prefs = Prefs(context)
+        // The premium (Azure) voice when it's set up and the month's free allowance has room; any
+        // problem at all -> the phone's own voice, so there's never silence.
+        if (prefs.cloudVoiceOn && prefs.azureKey.isNotBlank()) {
+            Thread({
+                val mp3 = try { CloudVoice.synthesize(prefs, text, dutch) } catch (e: Exception) {
+                    DriveLog.log("GREETING: premium voice not used (${e.message}) - phone voice instead"); null
+                }
+                handler.post { if (mp3 != null) playCloud(mp3, dutch, pauseOthers, text, onDone) else speakOnDevice(text, dutch, pauseOthers, onDone) }
+            }, "cloud-voice").start()
+            return
+        }
+        speakOnDevice(text, dutch, pauseOthers, onDone)
+    }
+
+    /** Plays the premium voice's audio through the car (like a nav prompt), then [onDone]. */
+    private fun playCloud(mp3: ByteArray, dutch: Boolean, pauseOthers: Boolean, text: String, onDone: () -> Unit) {
+        val prefs = Prefs(context)
+        val audio = context.getSystemService(AudioManager::class.java)
+        val attrs = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build()
+        val file = java.io.File(context.cacheDir, "voice.mp3")
+        var player: android.media.MediaPlayer? = null
+        var done = false
+        fun end(reason: String, fallBack: Boolean) {
+            if (done) return
+            done = true
+            handler.removeCallbacksAndMessages(null)
+            focus?.let { audio.abandonAudioFocusRequest(it) }; focus = null
+            try { player?.release() } catch (_: Exception) {}
+            file.delete()
+            if (fallBack) { DriveLog.log("GREETING: premium voice $reason - phone voice instead"); speakOnDevice(text, dutch, pauseOthers, onDone) }
+            else { DriveLog.log("GREETING: $reason"); onDone() }
+        }
+        try {
+            file.writeBytes(mp3)
+            focus = AudioFocusRequest.Builder(if (pauseOthers) AudioManager.AUDIOFOCUS_GAIN_TRANSIENT else AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                .setAudioAttributes(attrs).build().also { audio.requestAudioFocus(it) }
+            player = android.media.MediaPlayer().apply {
+                setAudioAttributes(attrs)
+                setDataSource(file.absolutePath)
+                setOnCompletionListener { handler.post { end("spoken", fallBack = false) } }
+                setOnErrorListener { _, what, _ -> handler.post { end("couldn't play ($what)", fallBack = true) }; true }
+                prepare()
+                start()
+            }
+            DriveLog.log("GREETING: voice ${CloudVoice.voiceFor(prefs, dutch)} (premium, ${CloudVoice.usedThisMonth(prefs)} of ${CloudVoice.MONTHLY_CAP} free characters used this month)")
+            handler.postDelayed({ end("timed out - continuing", fallBack = false) }, 60_000)
+        } catch (e: Exception) {
+            end("couldn't play (${e.javaClass.simpleName})", fallBack = true)
+        }
+    }
+
+    private fun speakOnDevice(text: String, dutch: Boolean, pauseOthers: Boolean, onDone: () -> Unit) {
+        val prefs = Prefs(context)
         val audio = context.getSystemService(AudioManager::class.java)
         val attrs = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)  // plays through the car like nav prompts

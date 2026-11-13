@@ -599,7 +599,9 @@ class MainActivity : Activity() {
         )
         button("Hear a full greeting", accent = true) { previewVoice() }
 
-        header("Voice")
+        premiumVoiceSection(dutch)
+
+        header(if (prefs.cloudVoiceOn) "Phone voice (fallback)" else "Voice")
         if (!voiceTtsReady) {
             text("Loading voices…")
         } else if (voiceList.isEmpty()) {
@@ -1426,6 +1428,60 @@ class MainActivity : Activity() {
     }
 
     /** The real greeting (your style, voice, weather) - not counted as "greeted" for the next drive. */
+    /** The optional premium butler voice (Microsoft Azure, free tier). */
+    private fun premiumVoiceSection(dutch: Boolean) {
+        header("Premium voice (free)")
+        switch("Posh premium voice (Microsoft Azure)", prefs.cloudVoiceOn) {
+            prefs.cloudVoiceOn = it
+            DriveLog.log("Setting changed: premium voice = ${if (it) "on" else "off"}")
+            render()
+        }
+        if (!prefs.cloudVoiceOn) {
+            text("Much more natural voices, e.g. a properly posh British butler. Free: uses Microsoft's free " +
+                "allowance (500,000 characters a month; a greeting is ~300). Needs a free Azure account and internet; " +
+                "without signal the phone voice speaks. The spoken text (incl. your name and the weather) goes to Microsoft.")
+            return
+        }
+        val key = prefs.azureKey
+        stepperLike("Azure key: " + (if (key.isBlank()) "not set" else "••••" + key.takeLast(4)), if (key.isBlank()) "Paste" else "Change") {
+            askText("Azure Speech key", "Key 1 from your Speech resource", "") { input ->
+                val k = input.filter { it.isLetterOrDigit() }
+                if (k.length < 20) { toast("That doesn't look like a key"); return@askText }
+                prefs.azureKey = k
+                DriveLog.log("Setting changed: premium voice key set")   // never the key itself
+                render()
+            }
+        }
+        stepperLike("Region: ${prefs.azureRegion}", "Change") {
+            askText("Azure region", "As shown on your Speech resource, e.g. westeurope", prefs.azureRegion) { input ->
+                val r = CloudVoice.region(input)
+                if (r == null) toast("Type the region, e.g. westeurope") else { prefs.azureRegion = r; render() }
+            }
+        }
+        stepperLike("Voice: " + (if (dutch) "Maarten (Dutch)" else CloudVoice.BRITISH_VOICES[CloudVoice.voiceFor(prefs, false)]), if (dutch) "" else "Choose") {
+            if (dutch) return@stepperLike
+            val ids = CloudVoice.BRITISH_VOICES.keys.toList()
+            AlertDialog.Builder(this).setTitle("British voice")
+                .setItems(ids.map { CloudVoice.BRITISH_VOICES[it] }.toTypedArray()) { _, i ->
+                    prefs.azureVoice = ids[i]; render()
+                    Greeter(this).speak(sampleButlerLine(), false) {}
+                }.show()
+        }
+        button("Hear the premium voice") {
+            toast("Speaking... turn up the media volume")
+            Greeter(this).speak(if (dutch) "Goedemiddag, meneer. Alles staat voor u klaar." else sampleButlerLine(), dutch) {}
+        }
+        val used = CloudVoice.usedThisMonth(prefs)
+        text("Free allowance this month: %,d of %,d characters used (about %d greetings left). At the limit the phone voice takes over until next month - it never costs anything."
+            .format(java.util.Locale.ROOT, used, CloudVoice.MONTHLY_CAP, (CloudVoice.MONTHLY_CAP - used) / 400))
+        if (key.isBlank()) text("Set up (5 minutes, free):\n" +
+            "1. portal.azure.com → Create a resource → Speech (Azure AI services).\n" +
+            "2. Pricing tier: Free F0 - the free tier can't be charged. Region: West Europe.\n" +
+            "3. Open it → Keys and Endpoint → copy Key 1 → Paste above.")
+    }
+
+    private fun sampleButlerLine() = "Good afternoon, sir. The car is warm, the music is ready, and the weather is behaving itself. Shall we?"
+
     private fun previewVoice() {
         voiceTts?.stop()
         toast("Speaking... turn up the media volume")

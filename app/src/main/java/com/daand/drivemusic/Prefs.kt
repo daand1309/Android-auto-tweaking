@@ -196,6 +196,26 @@ class Prefs(context: Context) {
     var trendToSay: List<String>
         get() = (sp.getString("trend_say", "") ?: "").split(',').filter { it.isNotBlank() }
         set(v) = sp.edit().putString("trend_say", v.joinToString(",")).apply()
+    /** Premium voice (Microsoft Azure, free tier) - see CloudVoice. The key is never backed up or logged. */
+    var cloudVoiceOn: Boolean
+        get() = sp.getBoolean("cloud_voice_on", false)
+        set(v) = sp.edit().putBoolean("cloud_voice_on", v).apply()
+    var azureKey: String
+        get() = sp.getString("azure_key", "") ?: ""
+        set(v) = sp.edit().putString("azure_key", v.trim()).apply()
+    var azureRegion: String
+        get() = sp.getString("azure_region", CloudVoice.DEFAULT_REGION) ?: CloudVoice.DEFAULT_REGION
+        set(v) = sp.edit().putString("azure_region", v).apply()
+    var azureVoice: String
+        get() = sp.getString("azure_voice", "en-GB-ThomasNeural") ?: "en-GB-ThomasNeural"
+        set(v) = sp.edit().putString("azure_voice", v).apply()
+    /** Characters sent this month (counted against the free allowance) and which month that is. */
+    var cloudVoiceChars: Int
+        get() = sp.getInt("cloud_voice_chars", 0)
+        set(v) = sp.edit().putInt("cloud_voice_chars", v).apply()
+    var cloudVoiceMonth: String
+        get() = sp.getString("cloud_voice_month", "") ?: ""
+        set(v) = sp.edit().putString("cloud_voice_month", v).apply()
     var lastServiceReminder: Long
         get() = sp.getLong("service_reminded", 0L)
         set(v) = sp.edit().putLong("service_reminded", v).apply()
@@ -344,6 +364,8 @@ class Prefs(context: Context) {
         "last_update_check", "notified_update", "update_status", "last_seen_music_app", "last_music_change_at",
         "parked_spot", "told_news", "follow_topic", "follow_until", "obd_told",
         "service_reminded", "battery_log", "battery_warned", "trend_told", "trend_say", "code_log_stored", "code_log_pending",
+        // The Azure key never leaves the phone; the usage count must not be reset by restoring an old backup.
+        "azure_key", "cloud_voice_chars", "cloud_voice_month",
     )
 
     /**
@@ -355,13 +377,13 @@ class Prefs(context: Context) {
         "auto_update" to "bool", "greeting" to "bool", "greeting_dutch" to "bool", "pause_on_disconnect" to "bool",
         "remember_parking" to "bool", "road_conditions" to "bool", "set_volume" to "bool", "show_splash" to "bool",
         "weather" to "bool", "updates_weather" to "bool", "updates_news" to "bool", "ask_before_updates" to "bool",
-        "obd_enabled" to "bool", "service_reminder_on" to "bool", "obd_warmup" to "bool", "obd_fuel" to "bool",
+        "obd_enabled" to "bool", "service_reminder_on" to "bool", "cloud_voice_on" to "bool", "obd_warmup" to "bool", "obd_fuel" to "bool",
         "resume_delay" to "int", "start_delay" to "int", "volume_pct" to "int", "obd_ready_s" to "int", "service_km" to "int", "service_months" to "int", "service_sync_km" to "int", "service_sync_days" to "int",
         "speech_pitch" to "float", "speech_rate" to "float", "obd_engine_l" to "float",
         "tank_l" to "float", "fuel_price" to "float", "service_date" to "long", "service_sync_at" to "long", "weather_lat" to "float", "weather_lon" to "float",
         "birthday" to "string", "car_name" to "string", "greeting_name" to "string", "music_pkg" to "string",
         "name_pronunciation" to "string", "theme" to "string", "tts_engine" to "string", "voice_name" to "string",
-        "weather_place" to "string", "greeting_style" to "string",
+        "weather_place" to "string", "greeting_style" to "string", "azure_region" to "string", "azure_voice" to "string",
         "obd_device" to "string", "obd_device_name" to "string",
     )
 
