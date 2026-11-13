@@ -108,8 +108,7 @@ class DriveModeActivity : Activity() {
         listOf(R.drawable.ic_music to "Music", R.drawable.ic_gauge to "Car").forEachIndexed { i, (icon, label) ->
             val tv = TextView(this).apply {
                 text = label; textSize = 18f; gravity = Gravity.CENTER; setPadding(dp(8), dp(10), dp(8), dp(10))
-                val d = getDrawable(icon)!!.mutate().apply { setBounds(0, 0, dp(22), dp(22)) }
-                setCompoundDrawablesRelative(d, null, null, null); compoundDrawablePadding = dp(8)
+                tag = icon  // the icon goes inline, right next to the word (see highlightTab)
                 setOnClickListener { pager.goTo(i) }
                 Feel.press(this, 0.97f)
             }
@@ -135,7 +134,13 @@ class DriveModeActivity : Activity() {
             val on = idx == i
             // Selected tab: raised card, accent icon (the accent is kept for what matters most).
             tv.setTextColor(if (on) Style.TEXT else Style.TEXT2)
-            tv.compoundDrawableTintList = Style.tint(if (on) Style.PRIMARY else Style.TEXT2)
+            val label = tv.text.toString().trim()
+            val d = getDrawable(tv.tag as Int)!!.mutate().apply {
+                setBounds(0, 0, dp(22), dp(22)); setTint(if (on) Style.PRIMARY else Style.TEXT2)
+            }
+            tv.text = android.text.SpannableString("  $label").apply {
+                setSpan(android.text.style.ImageSpan(d, android.text.style.DynamicDrawableSpan.ALIGN_CENTER), 0, 1, 0)
+            }
             tv.setTypeface(null, if (on) Typeface.BOLD else Typeface.NORMAL)
             tv.background = if (on) Style.rounded(Style.SURFACE2, dp(Style.R_CARD).toFloat()) else null
         }
