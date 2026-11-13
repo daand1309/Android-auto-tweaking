@@ -68,23 +68,63 @@ class ScreenshotTour {
                 0x42 to 14.1, 0x46 to 6.0, 0x31 to 2310.0, 0x21 to 0.0)), trip)
     }
 
-    /** Frames from the middle of the animations: the launch icon and the Drive Mode power-up sweep. */
+    /**
+     * Frames from the middle of the animations. The CI emulator runs with Android's animations
+     * switched off (everything jumps to its end), so they're switched on just for this part.
+     */
     private fun tourAnimations() {
         shell("sh -c 'rm -f /data/local/tmp/screens/[d]_*.png'")
-        // Launch from cold, like tapping the app icon: the animated launch screen.
-        shell("am start -n ${ctx.packageName}/.MainActivity -a android.intent.action.MAIN -c android.intent.category.LAUNCHER")
-        SystemClock.sleep(350); shell("screencap -p /data/local/tmp/screens/d_boot_1.png")
-        SystemClock.sleep(350); shell("screencap -p /data/local/tmp/screens/d_boot_2.png")
-        SystemClock.sleep(1_500); shell("screencap -p /data/local/tmp/screens/d_boot_3_home.png")
-        // Drive Mode with its intro: the rev-counter sweep.
-        Prefs(ctx).showSplash = true
-        ctx.startActivity(Intent(ctx, DriveModeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        SystemClock.sleep(900); shell("screencap -p /data/local/tmp/screens/d_drive_intro_1.png")
-        SystemClock.sleep(400); shell("screencap -p /data/local/tmp/screens/d_drive_intro_2.png")
-        SystemClock.sleep(2_000)
-        driveMode()?.let { dm -> instr.runOnMainSync { dm.finish() } }
-        Prefs(ctx).showSplash = false
-        SystemClock.sleep(800)
+        val scales = listOf("animator_duration_scale", "window_animation_scale", "transition_animation_scale")
+        scales.forEach { shell("settings put global $it 1") }
+        try {
+            fun frame(name: String, atMs: Long, startedAt: Long) {
+                val wait = atMs - (SystemClock.uptimeMillis() - startedAt)
+                if (wait > 0) SystemClock.sleep(wait)
+                shell("screencap -p /data/local/tmp/screens/$name.png")
+            }
+            // 1. The launch icon (normally shown by Android at a cold start): played in a plain window.
+            ActivityScenario.launch(MainActivity::class.java).use { sc ->
+                var dialog: android.app.Dialog? = null
+                var avd: android.graphics.drawable.AnimatedVectorDrawable? = null
+                sc.onActivity { a ->
+                    val d = a.resources.displayMetrics.density
+                    avd = a.getDrawable(R.drawable.splash_icon) as android.graphics.drawable.AnimatedVectorDrawable
+                    val icon = android.widget.ImageView(a).apply {
+                        setImageDrawable(avd)
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(0xFFE60012.toInt())
+                        }
+                    }
+                    val box = android.widget.FrameLayout(a).apply {
+                        setBackgroundColor(0xFF0A0A0B.toInt())
+                        addView(icon, android.widget.FrameLayout.LayoutParams((240 * d).toInt(), (240 * d).toInt(), android.view.Gravity.CENTER))
+                    }
+                    dialog = android.app.Dialog(a, android.R.style.Theme_DeviceDefault_NoActionBar_Fullscreen).apply { setContentView(box); show() }
+                }
+                SystemClock.sleep(600)
+                val t0 = SystemClock.uptimeMillis()
+                instr.runOnMainSync { avd?.start() }
+                frame("d_boot_1", 120, t0); frame("d_boot_2", 330, t0); frame("d_boot_3", 560, t0); frame("d_boot_4_end", 1_100, t0)
+                instr.runOnMainSync { dialog?.dismiss() }
+                // 2. The home screen gliding in (a fresh page open).
+                sc.onActivity { it.openPageForTest("SETUP") }
+                SystemClock.sleep(800)
+                val t1 = SystemClock.uptimeMillis()
+                sc.onActivity { it.openPageForTest("HOME") }
+                frame("d_home_enter_1", 90, t1); frame("d_home_enter_2", 260, t1); frame("d_home_enter_3_end", 900, t1)
+            }
+            // 3. Drive Mode's power-up: the rev-counter sweep.
+            Prefs(ctx).showSplash = true
+            val t2 = SystemClock.uptimeMillis()
+            ctx.startActivity(Intent(ctx, DriveModeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            frame("d_drive_intro_1", 700, t2); frame("d_drive_intro_2", 1_150, t2); frame("d_drive_intro_3", 1_700, t2)
+            frame("d_drive_intro_4_after", 3_300, t2)
+            driveMode()?.let { dm -> instr.runOnMainSync { dm.finish() } }
+            Prefs(ctx).showSplash = false
+            SystemClock.sleep(800)
+        } finally {
+            scales.forEach { shell("settings put global $it 0") }
+        }
     }
 
     private fun tourMainApp(prefix: String) {
