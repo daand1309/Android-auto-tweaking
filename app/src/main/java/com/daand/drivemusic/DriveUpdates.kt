@@ -11,8 +11,8 @@ import android.location.LocationManager
  * Says nothing when nothing changed - silence is the default.
  */
 object DriveUpdates {
-    const val FIRST_CHECK_MS = 12 * 60 * 1000L
-    const val INTERVAL_MS = 15 * 60 * 1000L
+    const val FIRST_CHECK_MS = 8 * 60 * 1000L
+    const val INTERVAL_MS = 10 * 60 * 1000L
     const val MAX_NEWS_PER_DRIVE = 3
     const val MAX_FOLLOW_PER_DRIVE = 6
 
@@ -35,7 +35,7 @@ object DriveUpdates {
     fun changes(old: GreetingText.WeatherNow, new: GreetingText.WeatherNow, dutch: Boolean, butler: Boolean = false): List<String> {
         val out = mutableListOf<String>()
         fun say(nl: String, en: String) { out += if (dutch) nl else en }
-        if (butler) return butlerChanges(old, new, dutch)
+        if (butler) return butlerChanges(old, new, dutch) + forecastLines(old, new, dutch, butler = true)
         when {
             icy(new) && !icy(old) -> say("Er valt nu ijzel. Rij heel voorzichtig, de weg kan spiegelglad zijn.",
                 "Freezing rain has started. Please take great care, the roads may be like glass.")
@@ -58,6 +58,30 @@ object DriveUpdates {
             val g = SpeechText.number(Math.round(new.gustsKmh).toInt(), dutch)
             say("Er staan nu windstoten tot $g kilometer per uur. Houd het stuur stevig vast.",
                 "Gusts are now reaching $g kilometres per hour. A firm grip on the wheel, if you would.")
+        }
+        return out + forecastLines(old, new, dutch, butler = false)
+    }
+
+    /**
+     * What's coming, not just what's happening: rain on its way (once, when it first shows up in the
+     * 15-minute forecast) and rain about to ease off. [old] = null: the first look this drive.
+     */
+    fun forecastLines(old: GreetingText.WeatherNow?, new: GreetingText.WeatherNow, dutch: Boolean, butler: Boolean): List<String> {
+        val out = mutableListOf<String>()
+        fun mins(m: Int) = if (dutch) "${SpeechText.number(m, true)} minuten" else "${SpeechText.number(m, false)} minutes"
+        val rainSoon = new.rainInMin
+        if (rainSoon != null && !raining(new) && old?.rainInMin == null && (old == null || !raining(old))) out += when {
+            dutch && butler -> "Ik hoor dat er regen aankomt, meneer. Over een minuut of ${mins(rainSoon)}."
+            dutch -> "Er komt regen aan, over ongeveer ${mins(rainSoon)}."
+            butler -> "I'm told rain is on its way, sir. In about ${mins(rainSoon)}. The wipers may be called upon."
+            else -> "Heads-up: rain is on its way, in about ${mins(rainSoon)}."
+        }
+        val dryIn = new.dryInMin
+        if (dryIn != null && raining(new) && old?.dryInMin == null) out += when {
+            dutch && butler -> "Goed nieuws, meneer: de regen trekt naar verwachting over ${mins(dryIn)} weg."
+            dutch -> "De regen houdt naar verwachting over ongeveer ${mins(dryIn)} op."
+            butler -> "Good news, sir: the rain should ease off in about ${mins(dryIn)}."
+            else -> "The rain should ease off in about ${mins(dryIn)}."
         }
         return out
     }
@@ -165,7 +189,9 @@ object DriveUpdates {
             if (!lat.isNaN() && !lon.isNaN()) {
                 try {
                     val now = Weather.fetch(Weather.round(lat), Weather.round(lon))
-                    lastWeather?.let { weatherLines = changes(it, now, dutch, p.butler) }
+                    // Compared with the last look (the greeting's, or the previous check). On the very
+                    // first look only what's coming counts (rain on its way).
+                    weatherLines = lastWeather?.let { changes(it, now, dutch, p.butler) } ?: forecastLines(null, now, dutch, p.butler)
                     lastWeather = now
                     p.lastWeatherSummary = GreetingText.tileWeather(now, dutch)
                     p.lastWeatherAt = System.currentTimeMillis()
@@ -223,7 +249,8 @@ object DriveUpdates {
     } catch (e: Exception) { false }
 
     /** Where the car is now (rounded later), if location may be read in the background. */
-    private fun whereAreWe(ctx: Context): Pair<Double, Double>? {
+    /** The phone's last known position (if allowed and recent), for weather where you are. */
+    fun whereAreWe(ctx: Context): Pair<Double, Double>? {
         val coarse = ctx.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val bg = ctx.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (!coarse || !bg) return null

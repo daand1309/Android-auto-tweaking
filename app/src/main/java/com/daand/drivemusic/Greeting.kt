@@ -35,6 +35,9 @@ object GreetingText {
         val isDay: Boolean = true,
         val nowTime: String = "",   // local "HH:mm" at the weather location
         val sunset: String = "",    // local "HH:mm"
+        /** Short-term forecast (next ~75 min, 15-min steps): minutes until rain starts / stops; null = not expected. */
+        val rainInMin: Int? = null,
+        val dryInMin: Int? = null,
     )
 
     /** Song to announce: "Up first: <title> by <artist>". */
@@ -680,6 +683,7 @@ object Weather {
         "https://api.open-meteo.com/v1/forecast?latitude=${round(lat)}&longitude=${round(lon)}" +
             "&current=temperature_2m,weather_code,wind_speed_10m,wind_gusts_10m,precipitation,snowfall,visibility,is_day" +
             "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunset" +
+            "&minutely_15=precipitation&forecast_minutely_15=6" +
             "&forecast_days=1&timezone=auto"
 
     /**
@@ -706,8 +710,28 @@ object Weather {
             isDay = cur.optInt("is_day", 1) == 1,
             nowTime = cur.optString("time").substringAfter('T', ""),
             sunset = daily.optJSONArray("sunset")?.optString(0)?.substringAfter('T', "") ?: "",
-        )
+        ).let { w -> nowcast(o, cur.optString("time"), w.precipMm).let { (rainIn, dryIn) -> w.copy(rainInMin = rainIn, dryInMin = dryIn) } }
     }
+
+    /**
+     * From the 15-minute forecast: (minutes until rain, minutes until dry). Rain = 0.2 mm or more in
+     * a quarter hour. Missing or odd data = (null, null): no forecast, never a guess.
+     */
+    fun nowcast(o: JSONObject, nowIso: String, precipNow: Double): Pair<Int?, Int?> = try {
+        val m = o.optJSONObject("minutely_15") ?: return null to null
+        val times = m.getJSONArray("time"); val mm = m.getJSONArray("precipitation")
+        val now = java.time.LocalDateTime.parse(nowIso)
+        val ahead = (0 until minOf(times.length(), mm.length())).mapNotNull { i ->
+            val t = java.time.LocalDateTime.parse(times.getString(i))
+            val mins = java.time.Duration.between(now, t).toMinutes().toInt()
+            val v = mm.optDouble(i)
+            if (mins in 1..75 && v.isFinite() && v in 0.0..100.0) mins to v else null
+        }
+        val wetNow = precipNow >= 0.1
+        val rainIn = if (wetNow) null else ahead.firstOrNull { it.second >= 0.2 }?.first
+        val dryIn = if (!wetNow) null else ahead.firstOrNull { it.second < 0.1 }?.first
+        rainIn to dryIn
+    } catch (e: Exception) { null to null }
 
     fun fetch(lat: Double, lon: Double): GreetingText.WeatherNow = parse(httpGet(url(lat, lon)))
 
@@ -966,15 +990,19 @@ object WelcomeAnnouncer {
         DriveLog.log("GREETING: preparing")
         Thread {
           try {
-            val lat = p.weatherLat
-            val lon = p.weatherLon
+            // Your town if set; otherwise where the phone is (when location is allowed).
+            val here = if (p.weatherLat.isNaN()) DriveUpdates.whereAreWe(ctx) else null
+            val lat = here?.first ?: p.weatherLat
+            val lon = here?.second ?: p.weatherLon
             val weather = when {
                 !p.weatherEnabled -> null
                 lat.isNaN() || lon.isNaN() -> { DriveLog.log("GREETING: no weather location set"); null }
                 else -> fetchWithDeadline(lat, lon)
             }
             if (weather != null) {
-                DriveUpdates.lastWeather = weather  // baseline for "the weather changed" updates later
+                // Baseline for "the weather changed" updates later. Without its short-term forecast, so
+                // rain coming in the next hour is still told at the first check.
+                DriveUpdates.lastWeather = weather.copy(rainInMin = null, dryInMin = null)
                 p.lastWeatherSummary = GreetingText.tileWeather(weather, p.greetingDutch)
                 p.lastWeatherAt = System.currentTimeMillis()
             }

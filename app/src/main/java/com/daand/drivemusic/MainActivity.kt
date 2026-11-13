@@ -343,8 +343,8 @@ class MainActivity : Activity() {
         } else {
             navRow("Follow a story", "New headlines about it from NU.nl and NOS during your drives (stops after 3 days)") { askFollowTopic() }
         }
-        text("Checks every 15 minutes and stays quiet unless something matters.\n" +
-            "•  Weather: rain or snow starting, ice, fog, strong gusts\n" +
+        text("Checks every 10 minutes (first after ~8) and stays quiet unless something matters.\n" +
+            "•  Weather: rain on its way (minutes ahead) or easing off, snow, ice, fog, strong gusts\n" +
             "•  News: alerts, disasters, closed motorways, big political news\n" +
             "•  Never: animals, sport, celebs - max 3 per drive, never during a call")
         button(if (prefs.followActive) "Check for news now (incl. your story)" else "Check for news now") { testDriveUpdate() }
@@ -1121,7 +1121,8 @@ class MainActivity : Activity() {
     }
 
     /** Weather is switched on but has no place to look up: it would silently never be told. */
-    private fun needsTown() = prefs.greetingEnabled && prefs.weatherEnabled && prefs.weatherPlace.isBlank()
+    private fun needsTown() = prefs.greetingEnabled && prefs.weatherEnabled && prefs.weatherLat.isNaN() &&
+        checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED
 
     private fun lastDriveDetails() {
         AlertDialog.Builder(this).setTitle("Last drive")
