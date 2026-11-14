@@ -63,6 +63,7 @@ class DriveFlowTest {
         com.daand.drivemusic.obd.ObdManager.setLiveForTest(null)
         // Old tests expect "left the car" right away; the stall test sets its own hold.
         DriveHold.holdWithoutObdMs = 0L
+        DriveMonitorService.startBounceMs = 0L   // most tests pause right after starting on purpose
 
         val component = ComponentName(ctx, DriveMonitorService::class.java)
         shell("cmd notification allow_listener ${component.flattenToString()}")
@@ -452,6 +453,22 @@ class DriveFlowTest {
         } finally {
             onMain { browser?.disconnect() }
         }
+    }
+
+    @Test
+    fun musicStoppingRightAfterItStartedIsStartedAgainQuickly() {
+        // As seen on the real ASX: ~1 s after the app starts the music, it stops by itself.
+        DriveMonitorService.startBounceMs = 6_000L
+        prefs.resumeDelaySec = 30   // so a normal auto-resume couldn't be what brings it back in time
+        connectCar()
+        onMain { setState(PlaybackState.STATE_PAUSED) }
+        waitFor("music started again", 9_000) { currentState == PlaybackState.STATE_PLAYING }
+        assertTrue(log().contains("pressing play again"))
+        assertTrue("not counted as a pause", !log().contains("PAUSE #"))
+        // Only once per start: a second stop is a normal pause.
+        SystemClock.sleep(500)
+        onMain { setState(PlaybackState.STATE_PAUSED) }
+        waitFor("the second stop counted as a pause", 8_000) { log().contains("PAUSE #1") }
     }
 
     @Test

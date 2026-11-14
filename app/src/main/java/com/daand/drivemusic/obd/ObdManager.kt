@@ -112,8 +112,11 @@ object ObdManager {
         thread = null
         status = "Off"
         lastSession?.let { ss ->
-            if (ss.questions > 0) DriveLog.log("OBD: ${ss.questions} questions, ${ss.unanswered} unanswered" +
-                if (ss.questions >= 20 && ss.unanswered * 4 > ss.questions) " - a lot: check the adapter is firmly in the port" else "")
+            // Questions after the ignition went off go unanswered by design - they don't count against the adapter.
+            val missed = ss.unansweredWhileOn
+            if (ss.questions > 0) DriveLog.log("OBD: ${ss.questions} questions, $missed unanswered while the car was on" +
+                (if (ss.unanswered > missed) " (+${ss.unanswered - missed} after it switched off)" else "") +
+                if (ss.questions >= 20 && missed * 4 > ss.questions) " - a lot: check the adapter is firmly in the port" else "")
         }
         lastSession = null
         unknownLogged.clear()
@@ -274,7 +277,10 @@ object ObdManager {
         val ctx = appCtx ?: return
         if (!s.engineRunning) { restingMax = RestingBattery.track(restingMax, s); return }
         batteryLogged = true
-        val v = RestingBattery.value(restingMax) ?: return
+        val v = RestingBattery.value(restingMax) ?: run {
+            DriveLog.log("BATTERY: no reading before start this time - the engine was already running when the adapter connected")
+            return
+        }
         val day = System.currentTimeMillis() / 86_400_000L
         val p = Prefs(ctx)
         val log = p.batteryLog.filter { it.first != day } + (day to Math.round(v * 100) / 100.0)

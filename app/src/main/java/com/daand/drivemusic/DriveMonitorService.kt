@@ -42,6 +42,8 @@ class DriveMonitorService : NotificationListenerService() {
     companion object {
         /** After Android Auto comes back, a pause this soon is it settling, not a real pause. */
         private const val SETTLE_MS = 15_000L
+        /** A stop this soon after the app started the music is a start bounce, not a real pause (tests set 0). */
+        @Volatile var startBounceMs = 6_000L
         const val ANDROID_AUTO = "com.google.android.projection.gearhead"
 
         /** Set while the listener is connected, so the UI can trigger a manual test. */
@@ -90,6 +92,9 @@ class DriveMonitorService : NotificationListenerService() {
     private var carConnection: CarConnection? = null
     private var carConnected = false
     private var carConnectedAt = 0L
+    /** When the app last got the music playing, and whether a stop right after was already retried. */
+    private var lastStartedAt = 0L
+    private var bounceRetried = false
     /** When Android Auto came back after a drop (stall/restart); 0 = not recently. */
     private var reconnectedAt = 0L
 
@@ -824,6 +829,7 @@ class DriveMonitorService : NotificationListenerService() {
                 // Finish the start routine the moment music plays, so it can never
                 // "fight" a pause that happens right after (pause handling deals with that).
                 DriveLog.log("START: success - YouTube Music is playing")
+                lastStartedAt = SystemClock.elapsedRealtime(); bounceRetried = false
                 cancelStart()
                 onMusicStarted()
             }
@@ -878,6 +884,14 @@ class DriveMonitorService : NotificationListenerService() {
         if (userPausedViaUi) {
             userPausedViaUi = false
             DriveLog.log("Paused from the car screen - leaving it paused")
+            return
+        }
+        // Seen twice on the ASX: the music stops ~1 s after the app started it (YouTube Music / Android
+        // Auto settling). Press play again quickly, once per start - not a real pause.
+        if (lastStartedAt > 0 && SystemClock.elapsedRealtime() - lastStartedAt < startBounceMs && !bounceRetried) {
+            bounceRetried = true
+            DriveLog.log("Music stopped right after starting - pressing play again in 1.5s (not counted)")
+            scheduleResume(1_500L)
             return
         }
         // Android Auto pauses the music once more while it settles after coming back (seen on the ASX

@@ -90,6 +90,9 @@ class ObdDataTest {
         repeat(3) { s.read(null, full = true, readCodes = false) }
         assertTrue("still asking combined questions", s.batching)
         assertFalse(logs.any { it.contains("asking one at a time") })
+        // Questions after switch-off aren't held against the adapter ("check it's firmly in the port").
+        assertTrue(s.unanswered > 0)
+        assertEquals("nothing missed while the car was on", 0, s.unansweredWhileOn)
     }
 
     @Test fun aCarThatRefusesCombinedQuestionsStillGetsEverything() {

@@ -15,6 +15,10 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
     private var batchFailures = 0
     /** Questions the car didn't answer / garbled answers this session (for the log). */
     var unanswered = 0; private set
+    /** Unanswered since the car last answered anything: the tail after the ignition went off. */
+    private var unansweredSinceAnswer = 0
+    /** Unanswered while the car was otherwise answering - the number that says something about the adapter. */
+    val unansweredWhileOn get() = unanswered - unansweredSinceAnswer
     var questions = 0; private set
     /**
      * When the car's computer last gave a real answer - updated per answer, not per reading: one
@@ -67,7 +71,7 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
         questions++
         val lines = Elm327.lines(link.send("01%02X".format(pid), 1_500))
         val d = if (Elm327.isError(lines)) null else Elm327.pidData(lines, pid)
-        if (d == null) unanswered++ else lastAnswerAt = System.currentTimeMillis()
+        if (d == null) { unanswered++; unansweredSinceAnswer++ } else { lastAnswerAt = System.currentTimeMillis(); unansweredSinceAnswer = 0 }
         return d
     }
 
@@ -81,7 +85,7 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
             val lines = Elm327.lines(link.send("01" + chunk.joinToString("") { "%02X".format(it) }, 2_000))
             val got = if (Elm327.isError(lines)) emptyMap() else Elm327.multiPid(lines) { Pids.lengthOf(it) }.filterKeys { it in chunk }
             out.putAll(got)
-            if (got.isNotEmpty()) lastAnswerAt = System.currentTimeMillis()
+            if (got.isNotEmpty()) { lastAnswerAt = System.currentTimeMillis(); unansweredSinceAnswer = 0 }
             // Anything the combined answer left out: ask on its own.
             var singlesAnswered = 0
             for (p in chunk) if (p !in out) raw(p)?.let { out[p] = it; singlesAnswered++ }
