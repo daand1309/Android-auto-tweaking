@@ -441,7 +441,13 @@ class DriveMonitorService : NotificationListenerService() {
      * (overheating, check-engine light) retry every 15 s, others every 2 min, for a while.
      */
     private fun onCarAlert(alert: com.daand.drivemusic.obd.CarAlerts.Alert, gen: Int, attempt: Int) {
-        if (!carConnected || gen != connectGen) return
+        if (gen != connectGen) return
+        if (!carConnected) {
+            // Android Auto dropped out for a moment (restart / radio reboot): keep it until it's back.
+            if (holdingSince > 0 && attempt < 40) handler.postDelayed({ onCarAlert(alert, gen, attempt + 1) }, 3_000L)
+            else DriveLog.log("OBD: '${alert.kind}' not said - the drive ended")
+            return
+        }
         if (alert.kind == com.daand.drivemusic.obd.CarAlerts.Kind.ENGINE_WARM && !prefs.obdWarmup) return
         if (alert.kind == com.daand.drivemusic.obd.CarAlerts.Kind.LOW_FUEL && !prefs.obdFuel) return
         if (alert.kind == com.daand.drivemusic.obd.CarAlerts.Kind.READY_TO_DRIVE && prefs.obdReadySeconds == 0) return
@@ -449,8 +455,12 @@ class DriveMonitorService : NotificationListenerService() {
         // "Ready to drive" waits for the greeting to finish (a few seconds), then says it - or, if the
         // moment has passed (~45 s of waiting), not at all.
         if (blocker != null) {
+            // "Ready to drive" stays useful until you drive off - even after a long greeting (the butler's
+            // can take ~50 s): say it right after, unless the car is already moving.
+            val moving = (com.daand.drivemusic.obd.ObdManager.live()?.speedKmh ?: 0) > 5
             when {
-                alert.timely && attempt < 15 -> handler.postDelayed({ onCarAlert(alert, gen, attempt + 1) }, 3_000L)
+                alert.timely && moving -> DriveLog.log("OBD: '${alert.kind}' skipped - you're already driving")
+                alert.timely && attempt < 60 -> handler.postDelayed({ onCarAlert(alert, gen, attempt + 1) }, 3_000L)
                 alert.timely -> DriveLog.log("OBD: '${alert.kind}' no longer useful - skipped")
                 attempt < 20 -> handler.postDelayed({ onCarAlert(alert, gen, attempt + 1) }, if (alert.urgent) 15_000L else 120_000L)
             }

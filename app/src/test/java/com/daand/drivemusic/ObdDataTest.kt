@@ -16,6 +16,8 @@ class ObdDataTest {
     /** A CAN car supporting [pids]; answers combined questions unless [combined] is false. */
     class Car(val pids: Set<Int>, val combined: Boolean = true, val value: Int = 0x40, val extra: Map<String, String> = emptyMap()) : ObdLink {
         val sent = mutableListOf<String>()
+        /** Ignition off: the engine computer stops answering everything. */
+        var off = false
         private fun mask(base: Int): String {
             var bits = 0L
             for (i in 1..32) if ((base + i) in pids || (i == 32 && pids.any { it > base + 32 })) bits = bits or (1L shl (32 - i))
@@ -23,6 +25,7 @@ class ObdDataTest {
         }
         override fun send(cmd: String, timeoutMs: Long): String {
             sent += cmd
+            if (off && cmd.startsWith("01")) return "NO DATA\r"
             extra[cmd]?.let { return it }
             if (cmd == "ATDP") return "AUTO, ISO 15765-4 (CAN 11/500)\r"
             if (cmd == "ATI") return "ELM327 v2.3\r"
@@ -75,6 +78,18 @@ class ObdDataTest {
         car.sent.clear()
         s.read(snap, full = true, readCodes = true)
         assertTrue("full read in ${car.sent.size} questions (was 38)", car.sent.size <= 12)
+    }
+
+    @Test fun theIgnitionGoingOffIsNotMistakenForACarThatRefusesCombinedQuestions() {
+        // As in the real log: right before the drive ended, nothing answered for a few reads.
+        val logs = mutableListOf<String>()
+        val car = Car(all)
+        val s = ObdSession(car) { logs += it }
+        assertNull(s.start())
+        car.off = true
+        repeat(3) { s.read(null, full = true, readCodes = false) }
+        assertTrue("still asking combined questions", s.batching)
+        assertFalse(logs.any { it.contains("asking one at a time") })
     }
 
     @Test fun aCarThatRefusesCombinedQuestionsStillGetsEverything() {

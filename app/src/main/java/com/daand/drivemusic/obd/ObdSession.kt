@@ -82,14 +82,17 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
             val got = if (Elm327.isError(lines)) emptyMap() else Elm327.multiPid(lines) { Pids.lengthOf(it) }.filterKeys { it in chunk }
             out.putAll(got)
             if (got.isNotEmpty()) lastAnswerAt = System.currentTimeMillis()
-            if (got.isEmpty() && chunk.size > 1) {
+            // Anything the combined answer left out: ask on its own.
+            var singlesAnswered = 0
+            for (p in chunk) if (p !in out) raw(p)?.let { out[p] = it; singlesAnswered++ }
+            // Combined questions only "don't work" if the car answers the same things asked one by one;
+            // when nothing answers at all, the car simply went quiet (ignition off) - not a reason to switch.
+            if (got.isEmpty() && chunk.size > 1 && singlesAnswered > 0) {
                 if (++batchFailures >= 2 && batching) {
                     batching = false
                     log("OBD: this car/adapter doesn't answer combined questions - asking one at a time")
                 }
             }
-            // Anything the combined answer left out: ask on its own.
-            for (p in chunk) if (p !in out) raw(p)?.let { out[p] = it }
         }
         return out
     }

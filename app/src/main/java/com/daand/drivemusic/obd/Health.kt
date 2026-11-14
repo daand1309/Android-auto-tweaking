@@ -181,7 +181,8 @@ object CarTrends {
             val n = v.now; val u = v.usual
             // Some cars charge lower on purpose; what counts is a drop from THIS car's normal. Without a
             // normal yet, only a clearly low value.
-            if (if (u != null) u - n >= 0.4 && n < 13.9 else n < 13.2) out += Finding(Kind.CHARGING, n, u)
+            // The ASX charges at ~13.3 V while driving (read by the engine computer; varies with load).
+            if (if (u != null) u - n >= 0.4 && n < 13.9 else n < 12.9) out += Finding(Kind.CHARGING, n, u)
         }
         // Idle getting shaky: often spark plugs or an ignition coil, before a misfire code appears.
         val idle = split(history) { it.idleSpread }
