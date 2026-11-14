@@ -477,6 +477,14 @@ class DriveFlowTest {
         assertTrue(!log().contains("drive ended"))
         assertEquals("Android Auto connected", prefs.lastCarState)
 
+        // As seen on the real ASX: Android Auto pauses the music once more while it settles. That's
+        // put back within a few seconds and not counted as a pause.
+        val pausesBefore = Regex("""PAUSE #""").findAll(log()).count()
+        onMain { setState(PlaybackState.STATE_PAUSED) }
+        waitFor("music back after Android Auto settled", 8_000) { currentState == PlaybackState.STATE_PLAYING }
+        assertTrue(log().contains("settles after reconnecting"))
+        assertEquals("not counted as a pause", pausesBefore, Regex("""PAUSE #""").findAll(log()).count())
+
         // Really leaving: the drive ends once the hold runs out.
         DriveHold.holdWithoutObdMs = 0L
         onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_NOT_CONNECTED) }

@@ -82,7 +82,9 @@ class HealthStats {
         val speed = s.speedKmh
         val warm = c != null && c >= WARM_C && !jump
         // Fuel trim is read with the slower full reads and kept in between: count each read once.
-        if (warm && lastLtftAt.let { it == null || s.at - it >= LTFT_GAP_MS }) s.extra[0x07]?.takeIf { it in -40.0..40.0 }?.let { ltft += it; lastLtftAt = s.at }
+        // Fuel trim means something in closed loop (fuel system mode 2); unknown mode: as before.
+        val closedLoop = s.extra[0x03]?.let { it == 2.0 } ?: true
+        if (warm && closedLoop && lastLtftAt.let { it == null || s.at - it >= LTFT_GAP_MS }) s.extra[0x07]?.takeIf { it in -40.0..40.0 }?.let { ltft += it; lastLtftAt = s.at }
         if (rpm in 1200..3500) s.volts?.takeIf { it in 10.0..16.0 }?.let { charge += it }
         val idling = warm && speed == 0 && rpm in 500..1300
         if (idling) {

@@ -135,6 +135,28 @@ object GreetingText {
      * Song titles come from whoever uploaded the track, so treat them as untrusted: no line breaks or
      * control characters (they could forge log lines), no angle brackets (speech markup), sane length.
      */
+    /**
+     * Uploads often put "Artist - Title" in the title and the uploader's channel in the artist field
+     * ("Kendrick Lamar - Prayer" by "icarus's archive"): then say "Prayer by Kendrick Lamar". Pure.
+     */
+    fun songFromMeta(title: String, artist: String): Song {
+        val m = Regex("""^(.{2,60}?)\s+[-–—]\s+(.{2,})$""").find(title)
+        if (m != null) {
+            val (left, right) = m.destructured
+            val a = artist.lowercase()
+            // Only when the channel isn't the artist already named in the title (then the title is "Artist - Song" for sure).
+            // "Song - Remastered 2011", "Song - Live": the part after the dash is a version, not the song.
+            val version = Regex("""(?i)\b(remaster|live|version|edit|mix|remix|acoustic|demo|mono|stereo|radio|extended|instrumental|feat)""")
+            if (!version.containsMatchIn(right) && (a.isBlank() || !(left.lowercase().contains(a) || a.contains(left.lowercase())))) {
+                // Only when the "artist" is clearly an uploader's channel, not a real artist.
+                val channel = a.isBlank() || listOf("archive", "topic", "vevo", "official", "records", "lyrics", "channel", "uploads", " tv", "hd")
+                    .any { it in a }
+                if (channel) return Song(right.trim(), left.trim())
+            }
+        }
+        return Song(title, artist)
+    }
+
     fun cleanMeta(raw: String): String =
         raw.replace(Regex("""[\p{Cntrl}\u2028\u2029<>]"""), " ").replace(Regex("""\s+"""), " ").trim().take(150)
 

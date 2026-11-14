@@ -96,4 +96,15 @@ class VoiceTest {
         org.junit.Assert.assertFalse(g(true, dutch = true).contains("terug"))
         org.junit.Assert.assertTrue(g(false).contains("Welcome back"))
     }
+
+    @Test fun uploadsWithTheArtistInTheTitleAreReadProperly() {
+        // As in the real log: "Now playing: Kendrick Lamar - Prayer by icarus's archive."
+        assertEquals(GreetingText.Song("Prayer", "Kendrick Lamar"), GreetingText.songFromMeta("Kendrick Lamar - Prayer", "icarus's archive"))
+        assertEquals(GreetingText.Song("Freedom", "Rage Against The Machine"), GreetingText.songFromMeta("Rage Against The Machine - Freedom", "RATMVEVO"))
+        // Normal songs, and a version after the dash, stay as they are.
+        assertEquals(GreetingText.Song("Mr. Brightside", "The Killers"), GreetingText.songFromMeta("Mr. Brightside", "The Killers"))
+        assertEquals(GreetingText.Song("Bohemian Rhapsody - Remastered 2011", "Queen"),
+            GreetingText.songFromMeta("Bohemian Rhapsody - Remastered 2011", "Queen"))
+        assertEquals(GreetingText.Song("Kendrick Lamar - Prayer", "Kendrick Lamar"), GreetingText.songFromMeta("Kendrick Lamar - Prayer", "Kendrick Lamar"))
+    }
 }

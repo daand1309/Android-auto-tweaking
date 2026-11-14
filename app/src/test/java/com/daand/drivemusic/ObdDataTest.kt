@@ -90,10 +90,11 @@ class ObdDataTest {
 
     @Test fun unknownValuesTheCarSharesAreLoggedWithRawData() {
         val logs = mutableListOf<String>()
-        val car = Car(setOf(0x05, 0x0C, 0x13, 0x1C, 0x51), extra = mapOf("0113" to "411303\r", "011C" to "411C06\r", "0151" to "415101\r"))
+        // 0x13 / 0x1C are understood (not worth showing); 0x51 (fuel type) and 0x9D are not shown yet.
+        val car = Car(setOf(0x05, 0x0C, 0x13, 0x1C, 0x51, 0x9D), extra = mapOf("0113" to "411303\r", "011C" to "411C06\r", "0151" to "415101\r", "019D" to "419D0102\r"))
         assertNull(ObdSession(car) { logs += it }.start())
         val line = logs.single { it.contains("not shown yet") }
-        assertTrue(line, line.contains("3 values") && line.contains("13=411303") && line.contains("1C=411C06") && line.contains("51=415101"))
+        assertTrue(line, line.contains("2 values") && line.contains("51=415101") && line.contains("9D=419D0102") && !line.contains("13="))
         assertTrue(logs.any { it.contains("adapter 'ELM327 v2.3'") && it.contains("ISO 15765-4") })
     }
 

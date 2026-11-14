@@ -79,11 +79,13 @@ class ObdFeaturesTest {
     }
 
     @Test fun batteryTrend() {
+        // Pre-start readings are taken with the ignition on (the ASX reads ~11.7 V like that).
+        assertFalse("the real ASX reading is fine", CarAlerts.batteryTrendWeak((1L..10L).map { it to 11.7 }))
         val healthy = (1L..10L).map { it to 12.6 }
         assertFalse(CarAlerts.batteryTrendWeak(healthy))
         val declining = (1L..5L).map { it to 12.65 } + (6L..10L).map { it to 12.3 }
         assertTrue("0.35 V lower than before", CarAlerts.batteryTrendWeak(declining))
-        assertTrue("low", CarAlerts.batteryTrendWeak((1L..5L).map { it to 12.1 }))
+        assertTrue("low", CarAlerts.batteryTrendWeak((1L..5L).map { it to 11.3 }))
         assertFalse("not enough days yet", CarAlerts.batteryTrendWeak((1L..3L).map { it to 11.9 }))
     }
 

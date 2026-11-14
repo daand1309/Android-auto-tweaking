@@ -40,6 +40,8 @@ import androidx.lifecycle.Observer
 class DriveMonitorService : NotificationListenerService() {
 
     companion object {
+        /** After Android Auto comes back, a pause this soon is it settling, not a real pause. */
+        private const val SETTLE_MS = 15_000L
         const val ANDROID_AUTO = "com.google.android.projection.gearhead"
 
         /** Set while the listener is connected, so the UI can trigger a manual test. */
@@ -88,6 +90,8 @@ class DriveMonitorService : NotificationListenerService() {
     private var carConnection: CarConnection? = null
     private var carConnected = false
     private var carConnectedAt = 0L
+    /** When Android Auto came back after a drop (stall/restart); 0 = not recently. */
+    private var reconnectedAt = 0L
 
     /** Re-read each time so changing the app in settings takes effect immediately. */
     private var cachedMusicPkg = ""
@@ -262,7 +266,7 @@ class DriveMonitorService : NotificationListenerService() {
             Parking.clear(this)  // you're driving: the old parked spot is no longer where the car is
             DriveUpdates.newDrive()
             driveDataStart = appBytes()
-            com.daand.drivemusic.obd.ObdManager.start(this) { alert -> handler.post { onCarAlert(alert, connectGen, 0) } }
+            startObd()
             handler.removeCallbacks(driveUpdate)
             handler.postDelayed(driveUpdate, DriveUpdates.FIRST_CHECK_MS)
             if (prefs.autoOpenDriveMode) openDriveMode()
@@ -374,6 +378,7 @@ class DriveMonitorService : NotificationListenerService() {
         handler.removeCallbacks(holdCheck)
         prefs.lastCarState = name
         DriveLog.log("=== CAR: Android Auto is back after ${secs}s - same drive continues (no new greeting) ===")
+        reconnectedAt = SystemClock.elapsedRealtime()
         handler.postDelayed(driveUpdate, DriveUpdates.INTERVAL_MS)
         when {
             pausedAtDrop -> {
@@ -381,7 +386,7 @@ class DriveMonitorService : NotificationListenerService() {
                 // Give Android Auto a moment to settle, then put the music back.
                 handler.postDelayed({
                     if (carConnected) { musicController()?.transportControls?.play(); DriveLog.log("Music resumed after Android Auto came back") }
-                }, 3_000)
+                }, 5_000)
             }
             // Stalled before the music had even started (e.g. during the greeting): start it now.
             !musicStartedThisDrive && prefs.autoStart && !userPausedViaUi && otherAppPlaying() == null ->
@@ -391,6 +396,7 @@ class DriveMonitorService : NotificationListenerService() {
 
     /** You really left (ignition off, or Android Auto stayed away): wrap up the drive. */
     private fun endDrive(reason: String) {
+        reconnectedAt = 0L
         holdingSince = 0L
         pausedAtDrop = false
         handler.removeCallbacks(holdCheck)
@@ -636,7 +642,7 @@ class DriveMonitorService : NotificationListenerService() {
     private fun onSessionsChanged(list: List<MediaController>) {
         if (carConnected) {
             // Only note other apps that are actually playing (ignore idle sessions like VLC sitting at NONE).
-            val others = list.filter { it.packageName != musicPkg && it.playbackState?.state == PlaybackState.STATE_PLAYING }
+            val others = list.filter { it.packageName != musicPkg && it.packageName != packageName && it.playbackState?.state == PlaybackState.STATE_PLAYING }
             if (others.isNotEmpty()) DriveLog.log("Other media playing: " + others.joinToString { it.packageName })
         }
         val found = list.firstOrNull { isMusic(it) }
@@ -748,6 +754,16 @@ class DriveMonitorService : NotificationListenerService() {
         }
     }
 
+    /** Connects the OBD adapter for this drive (if set up). Safe to call again: a running one is left alone. */
+    fun startObd() {
+        com.daand.drivemusic.obd.ObdManager.start(this) { alert -> handler.post { onCarAlert(alert, connectGen, 0) } }
+    }
+
+    /** The adapter was chosen / OBD switched on while driving: connect now instead of next drive. */
+    fun startObdIfDriving() {
+        if (carConnected || holdingSince > 0) { DriveLog.log("OBD: set up during a drive - connecting now"); startObd() }
+    }
+
     /** The song YouTube Music has loaded (playing or queued), if it tells us. */
     fun currentSong(): GreetingText.Song? {
         val md = (ytm?.takeIf { isMusic(it) } ?: findYtm())?.metadata ?: return null
@@ -756,7 +772,8 @@ class DriveMonitorService : NotificationListenerService() {
         val artist = md.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST)
             ?: md.getString(android.media.MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE) ?: ""
         val t = GreetingText.cleanMeta(title)
-        return GreetingText.Song(t, GreetingText.cleanMeta(artist)).takeIf { t.isNotBlank() }
+        if (t.isBlank()) return null
+        return GreetingText.songFromMeta(t, GreetingText.cleanMeta(artist).removeSuffix(" - Topic"))
     }
 
     private fun findYtm(): MediaController? = try {
@@ -846,6 +863,13 @@ class DriveMonitorService : NotificationListenerService() {
             DriveLog.log("Paused from the car screen - leaving it paused")
             return
         }
+        // Android Auto pauses the music once more while it settles after coming back (seen on the ASX
+        // after a restart): not a real pause - put it back quickly and don't count it.
+        if (reconnectedAt > 0 && SystemClock.elapsedRealtime() - reconnectedAt < SETTLE_MS) {
+            DriveLog.log("Pause while Android Auto settles after reconnecting - resuming in 2s (not counted)")
+            scheduleResume(2_000L)
+            return
+        }
         pausesThisDrive++
         val clues = diagnose()
         lastPauseClue = clues.joinToString("; ").ifEmpty { "no clues (pause button / steering wheel / Hey Google?)" }
@@ -865,7 +889,7 @@ class DriveMonitorService : NotificationListenerService() {
 
     // ---------------------------------------------------------------- auto resume
 
-    private fun scheduleResume() {
+    private fun scheduleResume(delayOverrideMs: Long? = null) {
         if (!prefs.autoResume) {
             DriveLog.log("Auto-resume is off - leaving it paused")
             return
@@ -875,7 +899,7 @@ class DriveMonitorService : NotificationListenerService() {
             return
         }
         cancelResume()
-        val delay = prefs.resumeDelaySec.coerceIn(2, 120) * 1000L
+        val delay = delayOverrideMs ?: (prefs.resumeDelaySec.coerceIn(2, 120) * 1000L)
         var waits = 0
         val r = object : Runnable {
             override fun run() {

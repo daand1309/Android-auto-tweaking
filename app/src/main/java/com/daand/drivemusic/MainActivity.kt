@@ -439,6 +439,7 @@ class MainActivity : Activity() {
             prefs.obdEnabled = it
             DriveLog.log("Setting changed: OBD = $it")
             if (it && !com.daand.drivemusic.obd.ObdManager.hasPermission(this)) requestBtForObd()
+            else if (it && prefs.obdDevice.isNotBlank()) DriveMonitorService.instance?.startObdIfDriving()
             render()
         }
         if (!prefs.obdEnabled) {
@@ -569,6 +570,8 @@ class MainActivity : Activity() {
                 prefs.obdDevice = d.address
                 prefs.obdDeviceName = (try { d.name } catch (e: SecurityException) { null }) ?: d.address
                 DriveLog.log("Setting changed: OBD adapter = ${prefs.obdDeviceName}")
+                // Chosen while driving (as on the first drive with the adapter): connect now, not next drive.
+                if (prefs.obdEnabled) DriveMonitorService.instance?.startObdIfDriving()
                 render()
             }.setNegativeButton("Cancel", null).show()
     }
@@ -587,6 +590,8 @@ class MainActivity : Activity() {
             DriveLog.log("OBD test: ${result.replace(Regex("VIN: [A-Z0-9]{17}"), "VIN: (hidden)").replace('\n', ' ')}")
             runOnUiThread {
                 obdTestRunning = false
+                // Worked during a drive: keep it connected for the rest of the drive.
+                if (result.startsWith("Adapter ✓  Car ✓")) DriveMonitorService.instance?.startObdIfDriving()
                 if (!isDestroyed && page == Page.OBD) render()
                 if (!isDestroyed) AlertDialog.Builder(this).setTitle("OBD test").setMessage(result).setPositiveButton("OK", null).show()
             }

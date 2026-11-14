@@ -42,8 +42,15 @@ object Pids {
         Info(0x43, len = 2, "Absolute load", "Absolute belasting", "%", 0, Group.ENGINE, plausible = 0.0..400.0) { ab(it)?.let { v -> v * 100 / 255 } },
         Info(0x45, len = 1, "Relative throttle", "Relatieve gasklep", "%", 0, Group.ENGINE, plausible = 0.0..100.0) { pct(it) },
         Info(0x49, len = 1, "Accelerator pedal", "Gaspedaal", "%", 0, Group.ENGINE, plausible = 0.0..100.0) { pct(it) },
+        Info(0x47, len = 1, "Throttle position B", "Gasklepstand B", "%", 0, Group.ENGINE, plausible = 0.0..100.0) { pct(it) },
+        Info(0x4C, len = 1, "Throttle commanded", "Gasklep aangestuurd", "%", 0, Group.ENGINE, plausible = 0.0..100.0) { pct(it) },
+        Info(0x4A, len = 1, "Accelerator pedal (2nd sensor)", "Gaspedaal (2e sensor)", "%", 0, Group.ENGINE, plausible = 0.0..100.0) { pct(it) },
+        Info(0x5A, len = 1, "Relative accelerator pedal", "Relatief gaspedaal", "%", 0, Group.ENGINE, plausible = 0.0..100.0) { pct(it) },
         Info(0x5C, len = 1, "Oil temperature", "Olietemperatuur", "°C", 0, Group.ENGINE, plausible = -40.0..170.0) { a(it)?.minus(40) },
 
+        // 1 = open loop (cold), 2 = closed loop (normal, fuel trims valid), 4 = open loop (full throttle /
+        // decelerating), 8 = open loop (fault), 16 = closed loop with a fault.
+        Info(0x03, len = 2, "Fuel system mode (2 = normal)", "Brandstofsysteem (2 = normaal)", "", 0, Group.AIR_FUEL, plausible = 0.0..16.0) { a(it) },
         Info(0x06, len = 1, "Short-term fuel trim", "Korte brandstofcorrectie", "%", 1, Group.AIR_FUEL, plausible = -100.0..100.0) { trim(it) },
         Info(0x07, len = 1, "Long-term fuel trim", "Lange brandstofcorrectie", "%", 1, Group.AIR_FUEL, plausible = -100.0..100.0) { trim(it) },
         Info(0x0A, len = 1, "Fuel pressure", "Brandstofdruk", "kPa", 0, Group.AIR_FUEL) { a(it)?.times(3) },
@@ -81,7 +88,9 @@ object Pids {
     fun lengthOf(pid: Int): Int? = byPid[pid]?.len ?: when (pid) { 0x01 -> 4; 0x1F -> 2; else -> null }
 
     /** Values the app reads or uses on purpose (others the car supports get logged for later). */
-    val KNOWN: Set<Int> by lazy { ALL.map { it.pid }.toSet() + setOf(0x01, 0x1F) + SUPPORT_BLOCKS_SET }
+    // 0x13 (which O2 sensors exist), 0x1C (which OBD standard), 0x41 (this drive's self-test status):
+    // understood, not worth showing.
+    val KNOWN: Set<Int> by lazy { ALL.map { it.pid }.toSet() + setOf(0x01, 0x1F, 0x13, 0x1C, 0x41) + SUPPORT_BLOCKS_SET }
 
     private val SUPPORT_BLOCKS_SET get() = setOf(0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0)
 

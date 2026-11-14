@@ -429,7 +429,12 @@ class CarAlerts(
 
         const val OVERHEAT_C = 110
         const val WARM_C = 75
-        const val LOW_BATTERY_V = 12.0     // engine off: a healthy battery rests around 12.4-12.7 V
+        /**
+         * Before starting the battery is read with the ignition ON (the only time the car answers):
+         * lights, fan, head unit and fuel pump draw on it, and the engine computer reads it behind the
+         * wiring - the ASX shows ~11.7 V like that. Truly resting it'd be 12.4-12.7 V. So: 11.4 V.
+         */
+        const val LOW_BATTERY_V = 11.4
         const val WEAK_CHARGE_V = 12.8     // engine running: the alternator should give ~13.5-14.7 V
         const val LOW_FUEL_PCT = 12
         /** Like the car's own snowflake warning. */
@@ -441,13 +446,13 @@ class CarAlerts(
         const val THERMOSTAT_C = 70
 
         /**
-         * Battery getting weaker over the days: the last 5 resting readings average below 12.2 V, or
+         * Battery getting weaker over the days: the last 5 pre-start readings average below 11.5 V, or
          * they're 0.3 V lower than two weeks before. Pure, unit tested.
          */
         fun batteryTrendWeak(log: List<Pair<Long, Double>>): Boolean {
             if (log.size < 5) return false
             val recent = log.takeLast(5).map { it.second }.average()
-            if (recent < 12.2) return true
+            if (recent < 11.5) return true   // ignition-on readings (see LOW_BATTERY_V)
             val older = log.dropLast(5).takeLast(5).map { it.second }
             return older.size >= 3 && older.average() - recent >= 0.3
         }

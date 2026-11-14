@@ -195,8 +195,10 @@ class ObdTest {
 
     @Test fun batteryAndChargingAndFuel() {
         val a = CarAlerts()
-        assertTrue(a.checkOthers(CarSnapshot(0, rpm = 0, volts = 11.7)).isEmpty())                        // one reading: wait
-        assertEquals(CarAlerts.Kind.LOW_BATTERY, a.checkOthers(CarSnapshot(6_000, rpm = 0, volts = 11.6)).single().kind)
+        // 11.7 V with the ignition on, before starting: what the real ASX reads - fine, no warning.
+        assertTrue(CarAlerts().checkOthers(CarSnapshot(0, rpm = 0, volts = 11.7)).isEmpty())
+        assertTrue(a.checkOthers(CarSnapshot(0, rpm = 0, volts = 11.2)).isEmpty())                        // one reading: wait
+        assertEquals(CarAlerts.Kind.LOW_BATTERY, a.checkOthers(CarSnapshot(6_000, rpm = 0, volts = 11.1)).single().kind)
         assertTrue(a.checkOthers(CarSnapshot(5_000, rpm = 900, volts = 12.5)).isEmpty())          // low charge: wait a minute
         assertEquals(CarAlerts.Kind.WEAK_CHARGING, a.checkOthers(CarSnapshot(70_000, rpm = 900, volts = 12.5)).single().kind)
         assertTrue("one fuel read could be garbled: wait", a.checkOthers(CarSnapshot(80_000, rpm = 900, volts = 14.0, fuelPct = 9)).isEmpty())
