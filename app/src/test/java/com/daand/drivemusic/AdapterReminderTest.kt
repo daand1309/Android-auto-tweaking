@@ -27,6 +27,8 @@ class AdapterReminderTest {
         DriveLog.init(ctx)
         AdapterReminder.post(ctx)
         val n = nm.activeNotifications.single()
+        assertTrue("pops up, not silently in the shade", nm.getNotificationChannel("adapter_reminder_v2").importance == NotificationManager.IMPORTANCE_HIGH)
+        assertTrue(DriveLog.readAll().contains("adapter reminder shown (pops up)"))
         assertTrue("can't be swiped away by accident", n.notification.flags and android.app.Notification.FLAG_ONGOING_EVENT != 0)
         assertEquals(2, n.notification.actions.size)
         assertTrue(n.notification.actions[0].title.contains("Taken out"))
@@ -44,5 +46,12 @@ class AdapterReminderTest {
         AdapterReminder.post(ctx)
         AdapterReminderReceiver().onReceive(ctx, Intent(AdapterReminder.ACTION_DISMISSED))
         assertEquals(com.daand.drivemusic.obd.BatteryLog.ADAPTER_UNKNOWN, Prefs(ctx).adapterWhileParked)
+    }
+
+    @Test fun saysSoWhenItCanNotBeSeen() {
+        DriveLog.init(ctx)
+        org.robolectric.Shadows.shadowOf(nm).setNotificationsEnabled(false)
+        AdapterReminder.post(ctx)
+        assertTrue(DriveLog.readAll().contains("NOT shown - notifications are off"))
     }
 }

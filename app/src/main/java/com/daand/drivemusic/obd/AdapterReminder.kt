@@ -17,7 +17,10 @@ import com.daand.drivemusic.R
  * you're aware of it (the adapter draws a little power while the car is parked).
  */
 object AdapterReminder {
-    private const val CHANNEL = "adapter_reminder"
+    // v2: the first channel was "default" importance - it landed silently in the shade and wasn't seen.
+    // A channel's importance can't be raised once created, so this is a new one (high: pops up + vibrates).
+    private const val CHANNEL = "adapter_reminder_v2"
+    private const val OLD_CHANNEL = "adapter_reminder"
     private const val ID = 13
     const val ACTION_TAKEN_OUT = "com.daand.drivemusic.ADAPTER_TAKEN_OUT"
     const val ACTION_LEAVE_IN = "com.daand.drivemusic.ADAPTER_LEAVE_IN"
@@ -30,8 +33,12 @@ object AdapterReminder {
         val p = Prefs(ctx)
         val dutch = p.greetingDutch
         val nm = ctx.getSystemService(NotificationManager::class.java)
+        runCatching { nm.deleteNotificationChannel(OLD_CHANNEL) }
         nm.createNotificationChannel(NotificationChannel(CHANNEL, if (dutch) "Herinnering OBD-adapter" else "OBD adapter reminder",
-            NotificationManager.IMPORTANCE_DEFAULT))
+            NotificationManager.IMPORTANCE_HIGH).apply {
+            enableVibration(true); vibrationPattern = longArrayOf(0, 250, 150, 250)
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+        })
         fun action(a: String, code: Int) = PendingIntent.getBroadcast(ctx, code, Intent(ctx, AdapterReminderReceiver::class.java).setAction(a),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = NotificationCompat.Builder(ctx, CHANNEL)
@@ -43,6 +50,8 @@ object AdapterReminder {
                 "De adapter gebruikt een beetje stroom terwijl de auto stilstaat. Haal hem eruit (zeker als de auto langer blijft staan) en tik op een knop."
                 else "The adapter draws a little power while the car is parked. Unplug it (especially if the car will stand for a while), then tap a button."))
             .setOngoing(true).setAutoCancel(false).setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH).setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .addAction(R.drawable.ic_answer_yes, if (dutch) "Eruit gehaald ✓" else "Taken out ✓", action(ACTION_TAKEN_OUT, 31))
             .addAction(R.drawable.ic_answer_no, if (dutch) "Laat zitten" else "Leave it in", action(ACTION_LEAVE_IN, 32))
             // Swiped away anyway (Android 14+ allows it): seen, but in or out is unknown.
@@ -50,13 +59,25 @@ object AdapterReminder {
             .build()
         try {
             NotificationManagerCompat.from(ctx).notify(ID, n)
-            DriveLog.log("OBD: reminder to take the adapter out shown")
-        } catch (_: SecurityException) {
-            DriveLog.log("OBD: can't show the adapter reminder - notifications are off for Drive Music")
-        }
+        } catch (_: SecurityException) {}
+        // Android drops a notification silently when it's not allowed: check it's really there.
+        DriveLog.log("OBD: adapter reminder " + visibility(ctx, nm))
     }
 
     /** [takenOut] null = swiped away without an answer. Remembered for the battery log. */
+    /** "shown (pops up)" or why it isn't visible. */
+    fun visibility(ctx: Context, nm: NotificationManager): String {
+        val there = runCatching { nm.activeNotifications.any { it.id == ID } }.getOrDefault(false)
+        val channel = nm.getNotificationChannel(CHANNEL)
+        return when {
+            !NotificationManagerCompat.from(ctx).areNotificationsEnabled() -> "NOT shown - notifications are off for Drive Music (Settings > Apps > Drive Music > Notifications)"
+            channel != null && channel.importance == NotificationManager.IMPORTANCE_NONE -> "NOT shown - the 'OBD adapter reminder' notifications are switched off"
+            !there -> "NOT shown - Android didn't keep it"
+            channel != null && channel.importance < NotificationManager.IMPORTANCE_HIGH -> "shown, but silently (the reminder's notification category was set to quiet)"
+            else -> "shown (pops up)"
+        }
+    }
+
     fun answered(ctx: Context, takenOut: Boolean?) {
         NotificationManagerCompat.from(ctx).cancel(ID)
         Prefs(ctx).adapterWhileParked = when (takenOut) { true -> BatteryLog.ADAPTER_OUT; false -> BatteryLog.ADAPTER_IN; null -> BatteryLog.ADAPTER_UNKNOWN }
