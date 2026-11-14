@@ -95,6 +95,7 @@ class DriveMonitorService : NotificationListenerService() {
     /** When the app last got the music playing, and whether a stop right after was already retried. */
     private var lastStartedAt = 0L
     private var bounceRetried = false
+    private var bounceRetryPending = false
     /** When Android Auto came back after a drop (stall/restart); 0 = not recently. */
     private var reconnectedAt = 0L
 
@@ -829,7 +830,10 @@ class DriveMonitorService : NotificationListenerService() {
                 // Finish the start routine the moment music plays, so it can never
                 // "fight" a pause that happens right after (pause handling deals with that).
                 DriveLog.log("START: success - YouTube Music is playing")
-                lastStartedAt = SystemClock.elapsedRealtime(); bounceRetried = false
+                // A fresh start gets one quick retry; the retry itself must not hand out another one,
+                // or something that keeps stopping the music (or you) would be fought forever.
+                lastStartedAt = SystemClock.elapsedRealtime()
+                if (bounceRetryPending) bounceRetryPending = false else bounceRetried = false
                 cancelStart()
                 onMusicStarted()
             }
@@ -889,7 +893,7 @@ class DriveMonitorService : NotificationListenerService() {
         // Seen twice on the ASX: the music stops ~1 s after the app started it (YouTube Music / Android
         // Auto settling). Press play again quickly, once per start - not a real pause.
         if (lastStartedAt > 0 && SystemClock.elapsedRealtime() - lastStartedAt < startBounceMs && !bounceRetried) {
-            bounceRetried = true
+            bounceRetried = true; bounceRetryPending = true
             DriveLog.log("Music stopped right after starting - pressing play again in 1.5s (not counted)")
             scheduleResume(1_500L)
             return
@@ -897,6 +901,7 @@ class DriveMonitorService : NotificationListenerService() {
         // Android Auto pauses the music once more while it settles after coming back (seen on the ASX
         // after a restart): not a real pause - put it back quickly and don't count it.
         if (reconnectedAt > 0 && SystemClock.elapsedRealtime() - reconnectedAt < SETTLE_MS) {
+            reconnectedAt = 0L   // once per reconnect: a second stop is a normal pause
             DriveLog.log("Pause while Android Auto settles after reconnecting - resuming in 2s (not counted)")
             scheduleResume(2_000L)
             return
@@ -967,7 +972,7 @@ class DriveMonitorService : NotificationListenerService() {
             }
         }
         resumeRunnable = r
-        DriveLog.log("RESUME: will try to resume in ${delay / 1000}s if still paused")
+        DriveLog.log("RESUME: will try to resume in ${if (delay % 1000 == 0L) "${delay / 1000}" else "%.1f".format(java.util.Locale.ROOT, delay / 1000.0)}s if still paused")
         handler.postDelayed(r, delay)
     }
 
