@@ -266,6 +266,7 @@ class DriveMonitorService : NotificationListenerService() {
             Parking.clear(this)  // you're driving: the old parked spot is no longer where the car is
             DriveUpdates.newDrive()
             driveDataStart = appBytes()
+            com.daand.drivemusic.obd.AdapterReminder.clear(this)   // driving again: last time's reminder is out of date
             startObd()
             handler.removeCallbacks(driveUpdate)
             handler.postDelayed(driveUpdate, DriveUpdates.FIRST_CHECK_MS)
@@ -415,7 +416,10 @@ class DriveMonitorService : NotificationListenerService() {
             driveDataStart = -1
         }
         News.clearCache()  // free the memory until the next drive
+        val adapterUsed = com.daand.drivemusic.obd.ObdManager.connectedThisDrive
         com.daand.drivemusic.obd.ObdManager.stop()
+        if (com.daand.drivemusic.obd.AdapterReminder.shouldRemind(prefs.obdUnplugReminder, adapterUsed))
+            com.daand.drivemusic.obd.AdapterReminder.post(this)
     }
 
     /** Mobile/Wi-Fi bytes this app sent + received (Android's own count), or -1 if unavailable. */

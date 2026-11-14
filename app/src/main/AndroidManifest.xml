@@ -150,6 +150,9 @@
         <receiver
             android:name=".UpdateAnswerReceiver"
             android:exported="false" />
+        <receiver
+            android:name=".obd.AdapterReminderReceiver"
+            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

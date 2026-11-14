@@ -532,6 +532,9 @@ class MainActivity : Activity() {
         }
 
         header("Tell me")
+        switch("Remind me to take the adapter out after each drive", prefs.obdUnplugReminder) {
+            prefs.obdUnplugReminder = it; DriveLog.log("Setting changed: adapter reminder = $it"); render()
+        }
         text("Always: overheating, the check-engine light (with the fault code explained), a weak battery or charging.")
         switch("When the engine is ready to drive (after a cold start)", prefs.obdReadySeconds > 0) {
             prefs.obdReadySeconds = if (it) 30 else 0; render()
