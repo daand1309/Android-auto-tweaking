@@ -21,6 +21,7 @@ object AdapterReminder {
     private const val ID = 13
     const val ACTION_TAKEN_OUT = "com.daand.drivemusic.ADAPTER_TAKEN_OUT"
     const val ACTION_LEAVE_IN = "com.daand.drivemusic.ADAPTER_LEAVE_IN"
+    const val ACTION_DISMISSED = "com.daand.drivemusic.ADAPTER_DISMISSED"
 
     /** Only after drives where the adapter was really connected, and only if the reminder is on. Pure. */
     fun shouldRemind(enabled: Boolean, adapterUsedThisDrive: Boolean) = enabled && adapterUsedThisDrive
@@ -44,8 +45,8 @@ object AdapterReminder {
             .setOngoing(true).setAutoCancel(false).setOnlyAlertOnce(true)
             .addAction(R.drawable.ic_answer_yes, if (dutch) "Eruit gehaald ✓" else "Taken out ✓", action(ACTION_TAKEN_OUT, 31))
             .addAction(R.drawable.ic_answer_no, if (dutch) "Laat zitten" else "Leave it in", action(ACTION_LEAVE_IN, 32))
-            // Swiped away anyway (Android 14+ allows it): counts as seen.
-            .setDeleteIntent(action(ACTION_LEAVE_IN, 33))
+            // Swiped away anyway (Android 14+ allows it): seen, but in or out is unknown.
+            .setDeleteIntent(action(ACTION_DISMISSED, 33))
             .build()
         try {
             NotificationManagerCompat.from(ctx).notify(ID, n)
@@ -55,9 +56,15 @@ object AdapterReminder {
         }
     }
 
-    fun answered(ctx: Context, takenOut: Boolean) {
+    /** [takenOut] null = swiped away without an answer. Remembered for the battery log. */
+    fun answered(ctx: Context, takenOut: Boolean?) {
         NotificationManagerCompat.from(ctx).cancel(ID)
-        DriveLog.log(if (takenOut) "OBD: adapter taken out (you confirmed)" else "OBD: adapter left in (you chose)")
+        Prefs(ctx).adapterWhileParked = when (takenOut) { true -> BatteryLog.ADAPTER_OUT; false -> BatteryLog.ADAPTER_IN; null -> BatteryLog.ADAPTER_UNKNOWN }
+        DriveLog.log(when (takenOut) {
+            true -> "OBD: adapter taken out (you confirmed)"
+            false -> "OBD: adapter left in (you chose)"
+            null -> "OBD: adapter reminder swiped away (in or out unknown)"
+        })
     }
 
     /** A new drive started: an old reminder is out of date. */
@@ -70,6 +77,7 @@ class AdapterReminderReceiver : BroadcastReceiver() {
         when (intent.action) {
             AdapterReminder.ACTION_TAKEN_OUT -> AdapterReminder.answered(context, true)
             AdapterReminder.ACTION_LEAVE_IN -> AdapterReminder.answered(context, false)
+            AdapterReminder.ACTION_DISMISSED -> AdapterReminder.answered(context, null)
         }
     }
 }

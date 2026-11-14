@@ -509,10 +509,7 @@ class MainActivity : Activity() {
                 text("Driven since: %,d km (counted from your drives with the adapter).".format(java.util.Locale.ROOT, Math.round(km)))
             }
         }
-        val battery = prefs.batteryLog.takeLast(7)
-        if (battery.isNotEmpty()) text("Battery before starting (last ${battery.size} days): " +
-            battery.joinToString("  ") { "%.2f".format(java.util.Locale.ROOT, it.second) } + " V" +
-            if (com.daand.drivemusic.obd.CarAlerts.batteryTrendWeak(prefs.batteryLog)) "  ⚠ getting weaker" else "")
+        batterySection()
 
         header("Early warnings")
         run {
@@ -1321,6 +1318,29 @@ class MainActivity : Activity() {
                 setPadding(dp(12), dp(8), dp(4), dp(8))
             })
         })
+    }
+
+    /** Battery before each start: how long the car stood, adapter in or out, and the drain check. */
+    private fun batterySection() {
+        val events = prefs.batteryEvents
+        if (events.isEmpty()) return
+        header("Battery")
+        val dutch = prefs.greetingDutch
+        val fmt = java.text.SimpleDateFormat("EEE d MMM HH:mm", java.util.Locale.getDefault())
+        events.takeLast(8).reversed().forEach { e ->
+            statRow(fmt.format(java.util.Date(e.at)), "%.2f V · %s · %s".format(java.util.Locale.ROOT, e.volts,
+                com.daand.drivemusic.obd.BatteryLog.parkedText(e.parkedMin, dutch), com.daand.drivemusic.obd.BatteryLog.adapterText(e.adapter, dutch)))
+        }
+        val c = com.daand.drivemusic.obd.BatteryLog.compare(events)
+        text(when {
+            c == null -> "Read with the ignition on before starting (lights and radio draw on it, so ~11.5-12.3 V is normal). " +
+                "Answer the 'take the adapter out' reminder and after a few nights parked with it in and out, this shows whether it drains the battery."
+            c.drainSuspected -> "⚠ After 12 h+ parked: %.2f V with the adapter left in vs %.2f V taken out - it looks like the adapter drains the battery. Take it out when parking for longer."
+                .format(java.util.Locale.ROOT, c.leftIn, c.out)
+            else -> "✓ After 12 h+ parked: %.2f V with the adapter left in vs %.2f V taken out - no sign that it drains the battery."
+                .format(java.util.Locale.ROOT, c.leftIn, c.out)
+        })
+        if (com.daand.drivemusic.obd.CarAlerts.batteryTrendWeak(prefs.batteryLog)) warnCard("The battery is getting weaker over the last days.")
     }
 
     /** An amber card for an early warning. */

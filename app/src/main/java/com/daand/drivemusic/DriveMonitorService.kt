@@ -417,6 +417,9 @@ class DriveMonitorService : NotificationListenerService() {
         }
         News.clearCache()  // free the memory until the next drive
         val adapterUsed = com.daand.drivemusic.obd.ObdManager.connectedThisDrive
+        // For the battery log: when the car was parked, and (until you answer) the adapter state is unknown.
+        prefs.lastDriveEndAt = System.currentTimeMillis()
+        prefs.adapterWhileParked = com.daand.drivemusic.obd.BatteryLog.ADAPTER_UNKNOWN
         com.daand.drivemusic.obd.ObdManager.stop()
         if (com.daand.drivemusic.obd.AdapterReminder.shouldRemind(prefs.obdUnplugReminder, adapterUsed))
             com.daand.drivemusic.obd.AdapterReminder.post(this)

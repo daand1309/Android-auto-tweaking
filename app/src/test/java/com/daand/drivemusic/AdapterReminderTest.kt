@@ -33,10 +33,16 @@ class AdapterReminderTest {
         AdapterReminderReceiver().onReceive(ctx, Intent(AdapterReminder.ACTION_TAKEN_OUT))
         assertTrue(nm.activeNotifications.isEmpty())
         assertTrue(DriveLog.readAll().contains("adapter taken out"))
+        assertEquals("remembered for the battery log", com.daand.drivemusic.obd.BatteryLog.ADAPTER_OUT, Prefs(ctx).adapterWhileParked)
         // "Leave it in" also clears it, and is logged as your choice.
         AdapterReminder.post(ctx)
         AdapterReminderReceiver().onReceive(ctx, Intent(AdapterReminder.ACTION_LEAVE_IN))
         assertTrue(nm.activeNotifications.isEmpty())
         assertTrue(DriveLog.readAll().contains("adapter left in"))
+        assertEquals(com.daand.drivemusic.obd.BatteryLog.ADAPTER_IN, Prefs(ctx).adapterWhileParked)
+        // Swiped away: in or out unknown (not guessed).
+        AdapterReminder.post(ctx)
+        AdapterReminderReceiver().onReceive(ctx, Intent(AdapterReminder.ACTION_DISMISSED))
+        assertEquals(com.daand.drivemusic.obd.BatteryLog.ADAPTER_UNKNOWN, Prefs(ctx).adapterWhileParked)
     }
 }

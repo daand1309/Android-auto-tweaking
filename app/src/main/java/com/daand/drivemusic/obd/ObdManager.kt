@@ -117,6 +117,10 @@ object ObdManager {
         }
         lastSession = null
         unknownLogged.clear()
+        latest?.volts?.let { v ->
+            DriveLog.log("BATTERY: last reading this drive %.2f V (%s)".format(java.util.Locale.ROOT, v,
+                if (latest?.engineRunning == true) "engine running - charging" else "engine off"))
+        }
         saveTrip()
         val summary = trip.summary(dutch = false)
         val codes = latest?.codes?.takeIf { it.isNotEmpty() }?.let { " · fault codes ${it.joinToString()}" } ?: ""
@@ -275,7 +279,17 @@ object ObdManager {
         val p = Prefs(ctx)
         val log = p.batteryLog.filter { it.first != day } + (day to Math.round(v * 100) / 100.0)
         p.batteryLog = log
-        DriveLog.log("OBD: resting battery %.2f V".format(java.util.Locale.ROOT, v))
+        // Every start: the reading with how long the car stood and whether the adapter stayed in.
+        val nowMs = System.currentTimeMillis()
+        val parkedMin = p.lastDriveEndAt.takeIf { it > 0 }?.let { ((nowMs - it) / 60_000L).toInt() }?.takeIf { it in 0..(60 * 24 * 60) }
+        val entry = BatteryLog.Entry(nowMs, Math.round(v * 100) / 100.0, parkedMin, p.adapterWhileParked)
+        p.batteryEvents = BatteryLog.add(p.batteryEvents, entry)
+        DriveLog.log("BATTERY: before start %.2f V (ignition on, engine off) · %s · %s".format(java.util.Locale.ROOT, v,
+            BatteryLog.parkedText(parkedMin, false), BatteryLog.adapterText(p.adapterWhileParked, false)))
+        BatteryLog.compare(p.batteryEvents)?.let { c ->
+            DriveLog.log("BATTERY: after 12 h+ parked - adapter left in %.2f V (%d×) vs taken out %.2f V (%d×)%s".format(java.util.Locale.ROOT,
+                c.leftIn, c.leftInCount, c.out, c.outCount, if (c.drainSuspected) " - lower with it in: the adapter may be draining" else " - no sign of drain"))
+        }
         // Weaker over the days: a heads-up (at most weekly) before it leaves you stranded on a cold morning.
         val now = System.currentTimeMillis()
         if (CarAlerts.batteryTrendWeak(log) && now - p.lastBatteryWarning > 7 * 86_400_000L) {

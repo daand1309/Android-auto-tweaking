@@ -224,6 +224,18 @@ class Prefs(context: Context) {
     var obdUnplugReminder: Boolean
         get() = sp.getBoolean("obd_unplug_reminder", true)
         set(v) = sp.edit().putBoolean("obd_unplug_reminder", v).apply()
+    /** Battery readings before each start, with parked time and adapter state (see BatteryLog). */
+    var batteryEvents: List<com.daand.drivemusic.obd.BatteryLog.Entry>
+        get() = com.daand.drivemusic.obd.BatteryLog.decode(sp.getString("battery_events", "") ?: "")
+        set(v) = sp.edit().putString("battery_events", com.daand.drivemusic.obd.BatteryLog.encode(v)).apply()
+    /** When the last drive ended (for "parked 14 h"). */
+    var lastDriveEndAt: Long
+        get() = sp.getLong("last_drive_end", 0L)
+        set(v) = sp.edit().putLong("last_drive_end", v).apply()
+    /** The OBD adapter while parked since the last drive: BatteryLog.ADAPTER_IN / _OUT / _UNKNOWN. */
+    var adapterWhileParked: Int
+        get() = sp.getInt("adapter_parked", -1)
+        set(v) = sp.edit().putInt("adapter_parked", v).apply()
     var lastServiceReminder: Long
         get() = sp.getLong("service_reminded", 0L)
         set(v) = sp.edit().putLong("service_reminded", v).apply()
@@ -371,7 +383,7 @@ class Prefs(context: Context) {
         "last_car_state", "last_drive", "last_greeting", "last_weather", "last_weather_at",
         "last_update_check", "notified_update", "update_status", "last_seen_music_app", "last_music_change_at",
         "parked_spot", "told_news", "follow_topic", "follow_until", "obd_told",
-        "service_reminded", "battery_log", "battery_warned", "trend_told", "trend_say", "code_log_stored", "code_log_pending",
+        "service_reminded", "battery_log", "battery_warned", "trend_told", "trend_say", "code_log_stored", "code_log_pending", "battery_events", "last_drive_end", "adapter_parked",
         // The Azure key never leaves the phone; the usage count must not be reset by restoring an old backup.
         "azure_key", "cloud_voice_chars", "cloud_voice_month",
     )
