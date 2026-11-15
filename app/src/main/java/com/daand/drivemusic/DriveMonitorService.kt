@@ -880,18 +880,17 @@ class DriveMonitorService : NotificationListenerService() {
                 PlaybackState.STATE_NONE -> {
                     if (userPausedViaUi) {
                         // You paused it from the car screen / Drive Mode: not an interruption at all.
+                    } else if (pendingPauseRunnable != null) {
+                        // Already waiting to see whether this stop recovers. An ERROR is the slower
+                        // "Premium" blip, so it gets the full longer grace from here instead of the
+                        // short one that is still running.
+                        if (s == PlaybackState.STATE_ERROR) schedulePendingPause(s)
                     } else if ((prev == PlaybackState.STATE_PLAYING || prev == PlaybackState.STATE_BUFFERING) &&
-                        pendingPauseRunnable == null && resumeRunnable == null &&
+                        resumeRunnable == null &&
                         SystemClock.elapsedRealtime() >= suppressPauseUntil
                     ) {
                         // Wait out a possible self-recovering blip before treating it as a real pause.
-                        val r = Runnable {
-                            pendingPauseRunnable = null
-                            val cur = (ytm?.takeIf { isMusic(it) } ?: findYtm())?.playbackState?.state
-                            if (cur != PlaybackState.STATE_PLAYING) onConfirmedPause()
-                        }
-                        pendingPauseRunnable = r
-                        handler.postDelayed(r, if (s == PlaybackState.STATE_ERROR) ERROR_PAUSE_GRACE_MS else PAUSE_GRACE_MS)
+                        schedulePendingPause(s)
                     }
                 }
             }
@@ -901,6 +900,18 @@ class DriveMonitorService : NotificationListenerService() {
             DriveLog.log("YouTube Music session destroyed (app closed or killed by the system?)")
             detachYtm()
         }
+    }
+
+    /** Waits out the grace for a stop before calling it a real pause (ERROR stops get longer). */
+    private fun schedulePendingPause(stopState: Int) {
+        cancelPendingPause()
+        val r = Runnable {
+            pendingPauseRunnable = null
+            val cur = (ytm?.takeIf { isMusic(it) } ?: findYtm())?.playbackState?.state
+            if (cur != PlaybackState.STATE_PLAYING) onConfirmedPause()
+        }
+        pendingPauseRunnable = r
+        handler.postDelayed(r, if (stopState == PlaybackState.STATE_ERROR) ERROR_PAUSE_GRACE_MS else PAUSE_GRACE_MS)
     }
 
     /** A stop that lasted past the grace period: a genuine pause. */

@@ -170,6 +170,24 @@ class DriveFlowTest {
         assertEquals(PlaybackState.STATE_PLAYING, currentState)
     }
 
+    /** The same blip, but it starts as a plain PAUSED stop and only turns into ERROR a moment later:
+     *  the longer grace must still apply, or it gets counted as a pause on the short one. */
+    @Test
+    fun aStopThatTurnsIntoErrorStillGetsTheLongerGrace() {
+        connectCar()
+        val pausesLogged = { log().split("!!! PAUSE").size - 1 }
+        val before = pausesLogged()
+        onMain { setState(PlaybackState.STATE_PAUSED) }
+        SystemClock.sleep(1_200)   // still inside the short 3 s grace
+        onMain { setState(PlaybackState.STATE_ERROR) }
+        SystemClock.sleep(1_200)
+        onMain { setState(PlaybackState.STATE_PLAYING) }
+        waitFor("blip to be recognised", 4_000) { log().contains("Brief interruption") }
+        SystemClock.sleep(9_000)   // well past the short grace and the recovery
+        assertEquals("a blip that turned into an ERROR must not add a pause", before, pausesLogged())
+        assertEquals(PlaybackState.STATE_PLAYING, currentState)
+    }
+
     @Test
     fun autoResumeOffLeavesMusicPaused() {
         prefs.autoResume = false
