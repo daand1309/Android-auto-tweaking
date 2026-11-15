@@ -285,6 +285,8 @@ class CarAlerts(
     private var lastAt: Long? = null
     private var firstCoolant: Int? = null
     private var lowChargeSince: Long? = null
+    /** First reading with the engine running this drive: charging is only judged after this + a grace. */
+    private var engineStartAt = 0L
     private var lastCheckEngine = false
     private var readyDone = false
     private var engineSeen = false
@@ -339,9 +341,16 @@ class CarAlerts(
             } else if (v >= LOW_BATTERY_V) lowBatterySince = null
             if (!s.engineRunning) lowChargeSince = null
             if (s.engineRunning) {
+                if (engineStartAt == 0L) engineStartAt = s.at
                 if (v < WEAK_CHARGE_V) {
-                    val since = lowChargeSince ?: s.at.also { lowChargeSince = it }
-                    if (!chargingDone && s.at - since >= 60_000L) { chargingDone = true; out += Alert(Kind.WEAK_CHARGING, false, v) }
+                    // Right after a start the battery is still recovering (the ASX reads ~12.3 V then):
+                    // that's normal, not an alternator fault. Only judge charging once the post-start
+                    // grace has passed (longer from a cold start), and require the low voltage to hold.
+                    val grace = if (coldAtStart == true) COLD_POST_START_CHARGING_MS else POST_START_CHARGING_MS
+                    if (s.at - engineStartAt >= grace) {
+                        val since = lowChargeSince ?: s.at.also { lowChargeSince = it }
+                        if (!chargingDone && s.at - since >= CHARGING_HOLD_MS) { chargingDone = true; out += Alert(Kind.WEAK_CHARGING, false, v) }
+                    }
                 } else lowChargeSince = null
             }
         }
@@ -436,6 +445,12 @@ class CarAlerts(
          */
         const val LOW_BATTERY_V = 11.4
         const val WEAK_CHARGE_V = 12.8     // engine running: the alternator should give ~13.5-14.7 V
+        /** The battery recovers after a start (12.3 V then is normal): don't judge charging until this
+         *  long after the engine started running - 5 min from a cold start, when recovery is slowest. */
+        const val POST_START_CHARGING_MS = 3 * 60_000L
+        const val COLD_POST_START_CHARGING_MS = 5 * 60_000L
+        /** After the grace: the low voltage must hold this long before it's blamed on the alternator. */
+        const val CHARGING_HOLD_MS = 90_000L
         const val LOW_FUEL_PCT = 12
         /** Like the car's own snowflake warning. */
         const val ICY_C = 3.0
