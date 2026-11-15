@@ -35,20 +35,27 @@ class LogActivity : Activity() {
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         DriveLog.init(this)
 
+        // Same shape as every page in the app: a title you can tap to go back, then the actions.
+        val title = TextView(this).apply {
+            text = "‹  Drive logs"; textSize = 24f; typeface = Typeface.DEFAULT_BOLD; setTextColor(Style.TEXT)
+            setPadding(dp(14), dp(12), dp(10), dp(6))
+            setOnClickListener { finish() }
+        }
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(10), dp(10), dp(10), dp(6))
+            setPadding(dp(10), 0, dp(10), dp(6))
             addView(btn("Refresh") { load() })
             filterBtn = btn("Problems only") {
                 problemsOnly = !problemsOnly
-                filterBtn.text = if (problemsOnly) "Show all" else "Problems only"
+                filterBtn.text = if (problemsOnly) "Show all lines" else "Problems only"
                 load()
             }
             addView(filterBtn)
             addView(btn("Share") { share() })
-            addView(btn("Clear") {
+            addView(btn("Clear", danger = true) {
                 AlertDialog.Builder(this@LogActivity)
-                    .setMessage("Delete all logs?")
+                    .setTitle("Delete all logs?")
+                    .setMessage("They're only on this phone, so they can't be recovered.")
                     .setPositiveButton("Delete") { _, _ -> DriveLog.clear(); DriveLog.log("Log cleared"); load() }
                     .setNegativeButton("Cancel", null)
                     .show()
@@ -71,6 +78,7 @@ class LogActivity : Activity() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Style.BG)
+            addView(title)
             addView(buttons)
             addView(scroll)
         }
@@ -90,9 +98,10 @@ class LogActivity : Activity() {
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
-    private fun btn(label: String, onClick: () -> Unit) = Button(this).apply {
-        text = label; isAllCaps = false; textSize = 14f; setTextColor(Style.TEXT)
-        background = Style.button(Style.SURFACE2, dp(12).toFloat()); stateListAnimator = null
+    private fun btn(label: String, danger: Boolean = false, onClick: () -> Unit) = Button(this).apply {
+        text = label; isAllCaps = false; textSize = 14f
+        setTextColor(if (danger) Color.WHITE else Style.TEXT)
+        background = Style.button(if (danger) Style.DANGER else Style.SURFACE2, dp(12).toFloat()); stateListAnimator = null
         setPadding(dp(14), dp(10), dp(14), dp(10))
         layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(6) }
         setOnClickListener { onClick() }
