@@ -570,7 +570,10 @@ class MainActivity : Activity() {
 
         header("Tell me")
         switch("Remind me to take the adapter out after each drive", prefs.obdUnplugReminder) {
-            prefs.obdUnplugReminder = it; DriveLog.log("Setting changed: adapter reminder = $it"); render()
+            prefs.obdUnplugReminder = it
+            // Turning the reminder off also drops a question that's still open (it's in the app too).
+            if (!it) com.daand.drivemusic.obd.AdapterReminder.clear(this)
+            DriveLog.log("Setting changed: adapter reminder = $it"); render()
         }
         text("Always: overheating, the check-engine light (with the fault code explained), a weak battery or charging.")
         switch("When the engine is ready to drive (after a cold start)", prefs.obdReadySeconds > 0) {

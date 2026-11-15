@@ -487,6 +487,9 @@ class DriveMonitorService : NotificationListenerService() {
         DriveLog.log("=== CAR: Android Auto is back after ${secs}s - same drive continues (no new greeting) ===")
         reconnectedAt = SystemClock.elapsedRealtime()
         handler.postDelayed(driveUpdate, DriveUpdates.INTERVAL_MS)
+        // The ignition watcher stopped while the drive was on hold: it has to watch again now.
+        handler.removeCallbacks(ignitionCheck)
+        handler.postDelayed(ignitionCheck, IGNITION_CHECK_MS)
         when {
             pausedAtDrop -> {
                 pausedAtDrop = false
