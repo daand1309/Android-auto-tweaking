@@ -239,21 +239,26 @@ class DriveMonitorService : NotificationListenerService() {
         onCarState(type)
     }
 
+    /** Test hook: pretend the monitor just (re)started, so the next car state is its first event. */
+    @androidx.annotation.VisibleForTesting
+    fun simulateMonitorRestartForTest() {
+        firstCarEvent = true
+    }
+
     private fun onCarState(type: Int) {
         val name = when (type) {
             CarConnection.CONNECTION_TYPE_PROJECTION -> "Android Auto connected"
             CarConnection.CONNECTION_TYPE_NATIVE -> "Android Automotive"
             else -> "not connected"
         }
-        // Same connected state as last time means the service restarted while the car was already
-        // connected (Android re-delivers the state on rebind): not a new connection, so Drive Mode
-        // must not pop up over the user again - see the offer check below.
-        val sameConnectionAsBefore = prefs.lastCarState == name
+        // A fresh instance that hears "connected" as its very first event didn't see the car
+        // connect: Android just re-delivered the current state on rebind (mid-drive).
         prefs.lastCarState = name
         val nowConnected = type == CarConnection.CONNECTION_TYPE_PROJECTION ||
             type == CarConnection.CONNECTION_TYPE_NATIVE
         val wasFirstEvent = firstCarEvent
         firstCarEvent = false
+        val startedMidDrive = wasFirstEvent && nowConnected
         if (nowConnected == carConnected) return
         carConnected = nowConnected
         val gen = ++connectGen
@@ -286,10 +291,10 @@ class DriveMonitorService : NotificationListenerService() {
             handler.removeCallbacks(driveUpdate)
             handler.postDelayed(driveUpdate, DriveUpdates.FIRST_CHECK_MS)
             if (prefs.autoOpenDriveMode) {
-                if (sameConnectionAsBefore) {
+                if (startedMidDrive) {
                     // Mid-drive service restart: the connection never ended, so Drive Mode was
                     // already offered when it did. Don't pop it over the user again.
-                    DriveLog.log("Drive Mode: already offered for this connection - not again")
+                    DriveLog.log("Drive Mode: monitor started mid-drive - not opening it again")
                 } else openDriveMode()
             }
             if (wasFirstEvent && findYtm() != null) {
