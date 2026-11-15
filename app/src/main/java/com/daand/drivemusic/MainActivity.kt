@@ -34,6 +34,8 @@ class MainActivity : Activity() {
     private var toFix = 0
     private var availableUpdate: Updater.Release? = null
     private var updateBusy = false
+    /** A fuel-price lookup is running (one at a time). */
+    private var fuelPriceFetching = false
     private var updateMessage = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -101,6 +103,10 @@ class MainActivity : Activity() {
         // Quietly look for an update when the app is opened (at most every 6 hours).
         if (prefs.autoUpdateCheck && System.currentTimeMillis() - prefs.lastUpdateCheck > 6 * 60 * 60 * 1000L) {
             checkForUpdate(silent = true)
+        }
+        // The price you pay for fuel, for the area you're in: refreshed when it's a few hours old.
+        if (prefs.fuelPriceAuto && System.currentTimeMillis() - prefs.fuelPriceQuoteAt > FuelPrices.FRESH_MS) {
+            refreshFuelPrice()
         }
     }
 
@@ -521,9 +527,7 @@ class MainActivity : Activity() {
                 if (it >= 20 && it <= 150) prefs.tankLitres = it else toast("Enter a size between 20 and 150 litres")
             }
         }
-        stepperLike("Fuel price: " + (if (prefs.fuelPrice > 0) "€%.2f per litre".format(java.util.Locale.ROOT, prefs.fuelPrice) else "not set"), "Change") {
-            askNumber("Fuel price per litre (€)", "e.g. 2.05 - leave empty to hide costs", prefs.fuelPrice) { prefs.fuelPrice = it.coerceIn(0.0, 10.0) }
-        }
+        fuelPriceSection()
         header("Service")
         switch("Remind me in the greeting when it's due", prefs.serviceReminderOn) { prefs.serviceReminderOn = it; render() }
         if (prefs.serviceReminderOn) {
@@ -951,7 +955,8 @@ class MainActivity : Activity() {
             "• Logs show GOOGLE ASSISTANT before pauses? Lower 'Hey Google' sensitivity.\n" +
             "• Wired Android Auto dropping? Try a short, good USB cable.")
         header("Privacy")
-        text("• Internet only for update checks (GitHub), weather (Open-Meteo, location rounded to ~10 km) and, if on, " +
+        text("• Internet only for update checks (GitHub), weather (Open-Meteo, location rounded to ~10 km), fuel prices " +
+            "(ANWB's station database: a box of about 15 km around a position rounded to ~1 km) and, if on, " +
             "drive news (NU.nl, NOS, NL Times and regional newsrooms; Google News is searched for your town name).\n" +
             "• Notifications are never read. Logs stay on the phone unless you share them.\n" +
             "• Where's my car (optional): your parked spot is saved on the phone only, never sent anywhere.\n" +
@@ -1432,6 +1437,98 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- trips & costs
 
+    /**
+     * Fuel price for the cost per trip: looked up for the area you're in (ANWB's station database,
+     * every Dutch fuel station, no account), with the price you type in as the fallback.
+     */
+    private fun fuelPriceSection() {
+        val fuel = FuelPrices.Fuel.of(prefs.fuelType)
+        switch("Look up the fuel price for my area", prefs.fuelPriceAuto) { on ->
+            prefs.fuelPriceAuto = on
+            DriveLog.log("Setting changed: automatic fuel price = $on")
+            if (on) refreshFuelPrice()
+            render()
+        }
+        if (prefs.fuelPriceAuto) {
+            val quoted = prefs.fuelPriceQuoted
+            val at = prefs.fuelPriceQuoteAt
+            when {
+                quoted > 0 && System.currentTimeMillis() - at <= FuelPrices.USABLE_MS -> {
+                    stepperLike("${fuel.en}: €%.3f per litre".format(java.util.Locale.ROOT, quoted), "Refresh") { refreshFuelPrice() }
+                    if (prefs.fuelPriceQuoteSource.isNotEmpty()) text(prefs.fuelPriceQuoteSource + " · " + ageText(at))
+                }
+                fuelPriceFetching -> button("Looking up the price around you...") { }
+                quoted > 0 -> {
+                    stepperLike("${fuel.en}: €%.3f (out of date)".format(java.util.Locale.ROOT, quoted), "Refresh") { refreshFuelPrice() }
+                    text("Older than a week: costs use the price you typed in until this is refreshed.")
+                }
+                else -> {
+                    stepperLike("${fuel.en}: not looked up yet", "Look up") { refreshFuelPrice() }
+                    text("Needs your location (approximate is enough) and internet. The position is rounded to about a kilometre before it is sent.")
+                }
+            }
+            stepperLike("Fuel: ${fuel.en}", "Change") {
+                android.app.AlertDialog.Builder(this).setTitle("Which fuel does the car take?")
+                    .setItems(FuelPrices.Fuel.values().map { it.en }.toTypedArray()) { _, i ->
+                        prefs.fuelType = FuelPrices.Fuel.values()[i].code
+                        refreshFuelPrice(); render()
+                    }.show()
+            }
+        }
+        stepperLike(
+            (if (prefs.fuelPriceAuto) "Price if the lookup fails: " else "Fuel price: ") +
+                (if (prefs.fuelPrice > 0) "€%.2f per litre".format(java.util.Locale.ROOT, prefs.fuelPrice) else "not set"),
+            "Change",
+        ) {
+            askNumber("Fuel price per litre (€)", "e.g. 2.05 - leave empty to hide costs", prefs.fuelPrice) {
+                prefs.fuelPrice = it.coerceIn(0.0, 10.0); render()
+            }
+        }
+    }
+
+    private fun ageText(at: Long): String {
+        val mins = ((System.currentTimeMillis() - at) / 60_000L).coerceAtLeast(0)
+        return when {
+            mins < 2 -> if (prefs.greetingDutch) "net opgehaald" else "just fetched"
+            mins < 60 -> if (prefs.greetingDutch) "$mins min geleden" else "$mins min ago"
+            mins < 48 * 60 -> if (prefs.greetingDutch) "${mins / 60} u geleden" else "${mins / 60} h ago"
+            else -> if (prefs.greetingDutch) "${mins / (24 * 60)} dagen geleden" else "${mins / (24 * 60)} days ago"
+        }
+    }
+
+    /**
+     * One request for the stations in a box around you, off the main thread. Called when the app opens
+     * (at most every few hours) and when you tap Look up / Refresh.
+     */
+    private fun refreshFuelPrice() {
+        if (!prefs.fuelPriceAuto || fuelPriceFetching) return
+        val fuel = FuelPrices.Fuel.of(prefs.fuelType)
+        fuelPriceFetching = true
+        Thread({
+            val here = com.daand.drivemusic.DriveUpdates.whereAreWe(this)
+                ?: prefs.weatherLat.takeIf { !it.isNaN() }?.let { lat -> prefs.weatherLon.takeIf { !it.isNaN() }?.let { lon -> lat to lon } }
+            val quote = try {
+                if (here == null) { DriveLog.log("FUEL: no location yet - keeping the manual price"); null }
+                else FuelPrices.fetch(here.first, here.second, fuel)
+            } catch (e: Exception) {
+                DriveLog.log("FUEL: lookup failed (${e.javaClass.simpleName}: ${e.message})"); null
+            }
+            runOnUiThread {
+                fuelPriceFetching = false
+                if (quote != null) {
+                    prefs.fuelPriceQuoted = quote.euro
+                    prefs.fuelPriceQuoteAt = System.currentTimeMillis()
+                    prefs.fuelPriceQuoteSource = listOfNotNull(
+                        listOf(quote.nearestName, quote.nearestPlace).filter { it.isNotBlank() }.joinToString(", ").takeIf { it.isNotEmpty() },
+                        "%.1f km".format(java.util.Locale.ROOT, quote.nearestKm),
+                        if (prefs.greetingDutch) "mediaan van ${quote.stations} stations" else "median of ${quote.stations} stations",
+                    ).joinToString(" · ")
+                }
+                if (!isDestroyed && page == Page.OBD) render()
+            }
+        }, "fuel-price").start()
+    }
+
     private fun renderTrips() {
         pageHeader()
         val trips = com.daand.drivemusic.obd.TripHistory.load(this)
@@ -1439,7 +1536,7 @@ class MainActivity : Activity() {
             text("Your drives appear here once the OBD adapter is connected: distance, fuel, costs and a driving score.")
             return
         }
-        val price = prefs.fuelPrice
+        val price = prefs.fuelPriceForCosts   // fetched for your area while it's fresh, else what you typed
         val now = System.currentTimeMillis()
         val cal = java.util.Calendar.getInstance()
         cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)

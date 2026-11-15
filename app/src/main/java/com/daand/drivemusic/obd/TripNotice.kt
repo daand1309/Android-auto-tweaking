@@ -34,7 +34,7 @@ object TripNotice {
         val n = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_note)
             .setContentTitle(if (p.greetingDutch) "Rit voorbij" else "Trip done")
-            .setContentText(text(t, p.fuelPrice, p.greetingDutch))
+            .setContentText(text(t, p.fuelPriceForCosts, p.greetingDutch))
             .setContentIntent(open).setAutoCancel(true)
             .build()
         try { NotificationManagerCompat.from(ctx).notify(ID, n) } catch (_: SecurityException) {}

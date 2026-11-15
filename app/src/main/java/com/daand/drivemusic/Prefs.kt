@@ -180,10 +180,39 @@ class Prefs(context: Context) {
         get() = sp.getFloat("tank_l", 60f).toDouble().let { if (it.isNaN()) 60.0 else it.coerceIn(20.0, 150.0) }
         set(v) = sp.edit().putFloat("tank_l", v.toFloat()).apply()
 
-    /** Fuel price per litre (0 = not set: costs are hidden). */
+    /** Fuel price per litre (0 = not set: costs are hidden). Used when automatic lookup is off or stale. */
     var fuelPrice: Double
         get() = sp.getFloat("fuel_price", 0f).toDouble().let { if (it.isNaN() || it < 0) 0.0 else it.coerceAtMost(10.0) }
         set(v) = sp.edit().putFloat("fuel_price", v.toFloat()).apply()
+
+    /** Look the fuel price up for the area you're in (ANWB stations), instead of typing it in. */
+    var fuelPriceAuto: Boolean
+        get() = sp.getBoolean("fuel_price_auto", true)
+        set(v) = sp.edit().putBoolean("fuel_price_auto", v).apply()
+
+    /** Which fuel this car takes (see FuelPrices.Fuel: EURO95 / DIESEL / AUTOGAS). */
+    var fuelType: String
+        get() = sp.getString("fuel_type", FuelPrices.Fuel.EURO95.code) ?: FuelPrices.Fuel.EURO95.code
+        set(v) = sp.edit().putString("fuel_type", v).apply()
+
+    /** The price fetched last: € per litre (0 = never), when, and where it came from. */
+    var fuelPriceQuoted: Double
+        get() = sp.getFloat("fuel_quoted", 0f).toDouble().let { if (it.isNaN() || it < 0) 0.0 else it.coerceAtMost(10.0) }
+        set(v) = sp.edit().putFloat("fuel_quoted", v.toFloat()).apply()
+    var fuelPriceQuoteAt: Long
+        get() = sp.getLong("fuel_quoted_at", 0L)
+        set(v) = sp.edit().putLong("fuel_quoted_at", v).apply()
+    /** e.g. "Esso Cartesiusweg, Utrecht · 1,2 km · 14 stations" - shown with the price. */
+    var fuelPriceQuoteSource: String
+        get() = sp.getString("fuel_quoted_src", "") ?: ""
+        set(v) = sp.edit().putString("fuel_quoted_src", v.take(120)).apply()
+
+    /** The price the app actually charges for costs: fetched while fresh, else what you typed in. */
+    val fuelPriceForCosts: Double
+        get() = FuelPrices.effectivePrice(
+            auto = fuelPriceAuto, quoted = fuelPriceQuoted, quotedAt = fuelPriceQuoteAt,
+            manual = fuelPrice, now = System.currentTimeMillis(),
+        )
 
     /** Last service (0 = not set) and the interval. */
     var serviceDate: Long
