@@ -6,6 +6,13 @@ class Prefs(context: Context) {
     private val ctx = context.applicationContext
     private val sp = context.applicationContext.getSharedPreferences("drive_music", Context.MODE_PRIVATE)
 
+    private companion object {
+        /** How long a detected music app is trusted (see [musicPackage]). */
+        const val DETECT_TTL_MS = 60_000L
+        /** package + when it was found, shared across Prefs instances (one is made per call site). */
+        @Volatile var detected: Pair<String, Long>? = null
+    }
+
     /** Start YouTube Music playback automatically when Android Auto connects. */
     var autoStart: Boolean
         get() = sp.getBoolean("auto_start", true)
@@ -23,9 +30,31 @@ class Prefs(context: Context) {
 
     /** Package of the YouTube Music app to control (official or patched e.g. Morphe). Auto-detected if not set. */
     var musicPackage: String
-        get() = sp.getString("music_pkg", null)?.takeIf { MusicApps.isInstalled(ctx.packageManager, it) }
-            ?: MusicApps.autoDetect(ctx).also { sp.edit().putString("music_pkg", it).apply() }
-        set(v) = sp.edit().putString("music_pkg", v).apply()
+        get() {
+            val stored = sp.getString("music_pkg", null)
+            if (stored != null && MusicApps.isInstalled(ctx.packageManager, stored)) return stored
+            // Nothing usable stored (or the app was uninstalled): find it. That asks the package
+            // manager about every launcher app, so the answer is kept for a minute - this getter runs
+            // on every page render and every playback event, and re-scanning (and re-writing the
+            // preference) each time was pure waste. A fresh answer matters only when the installed
+            // apps changed, hence the short lifetime.
+            val now = System.currentTimeMillis()
+            detected?.let { (pkg, at) ->
+                if (now - at < DETECT_TTL_MS && MusicApps.isInstalled(ctx.packageManager, pkg)) return pkg
+            }
+            val found = MusicApps.autoDetect(ctx)
+            detected = found to now
+            if (found != stored) sp.edit().putString("music_pkg", found).apply()  // once, not on every read
+            return found
+        }
+        set(v) {
+            detected = null
+            sp.edit().putString("music_pkg", v).apply()
+        }
+
+        /** Test hook: forget a cached auto-detection (each test starts from a clean set of installed apps). */
+        @androidx.annotation.VisibleForTesting
+        fun clearDetectedForTest() { detected = null }
 
     /** Seconds to wait after Android Auto connects before pressing play (lets the car settle). */
     var startDelaySec: Int

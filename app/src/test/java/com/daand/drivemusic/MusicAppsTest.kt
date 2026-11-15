@@ -24,6 +24,7 @@ class MusicAppsTest {
     @Before fun setUp() {
         ctx = ApplicationProvider.getApplicationContext()
         ctx.getSharedPreferences("drive_music", Context.MODE_PRIVATE).edit().clear().commit()
+        Prefs(ctx).clearDetectedForTest()   // the detection cache lives across instances
     }
 
     private fun install(pkg: String, label: String, launchable: Boolean = true) {
@@ -75,6 +76,17 @@ class MusicAppsTest {
         val prefs = Prefs(ctx)
         prefs.musicPackage = "com.removed.app"
         assertEquals("app.morphe.android.apps.youtube.music", prefs.musicPackage)
+    }
+
+    /** The auto-detect asks the package manager about every launcher app: it must not run per read. */
+    @Test fun detectionIsRememberedSoReadingStaysCheap() {
+        install("app.morphe.android.apps.youtube.music", "YouTube Music")
+        Prefs(ctx).musicPackage = "com.removed.app"
+        assertEquals("app.morphe.android.apps.youtube.music", Prefs(ctx).musicPackage)
+        // Stored now, so even a fresh instance answers straight from the preference.
+        assertEquals("app.morphe.android.apps.youtube.music", Prefs(ctx).musicPackage)
+        assertEquals("app.morphe.android.apps.youtube.music",
+            ctx.getSharedPreferences("drive_music", Context.MODE_PRIVATE).getString("music_pkg", null))
     }
 
     @Test fun prefsKeepUserChoice() {
