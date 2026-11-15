@@ -1066,7 +1066,7 @@ class MainActivity : Activity() {
 
     private fun renderUpdates() {
         pageHeader()
-        val version = packageManager.getPackageInfo(packageName, 0).versionName
+        val version = packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
         val upd = availableUpdate
 
         header("This phone")
