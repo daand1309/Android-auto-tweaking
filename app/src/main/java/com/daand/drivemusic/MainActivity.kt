@@ -1868,14 +1868,16 @@ class MainActivity : Activity() {
             val (release, msg) = try {
                 val r = Updater.checkForUpdate(this)
                 r to (if (r == null) "You have the latest version ✅" else "Version ${r.versionName} is available")
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                // Throwable: an Error here would leave updateBusy set and the button saying "Checking..."
+                // for the rest of the session.
                 null to "Couldn't check for updates (${e.message ?: "no internet?"})"
             }
             runOnUiThread {
                 updateBusy = false
                 availableUpdate = release
                 if (!silent || release != null) updateMessage = msg
-                if (!isFinishing) render()
+                if (!isFinishing && !isDestroyed) render()
             }
         }.start()
     }
