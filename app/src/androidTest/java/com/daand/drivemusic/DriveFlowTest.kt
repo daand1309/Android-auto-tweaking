@@ -154,6 +154,22 @@ class DriveFlowTest {
     }
 
     @Test
+    fun longerErrorBlipIsStillNotAPause() {
+        connectCar()
+        val pausesLogged = { log().split("!!! PAUSE").size - 1 }
+        val before = pausesLogged()
+        // Same "Premium" blip, but recovering after ~5 s: slower than the short 3 s grace, still well
+        // within the longer grace an ERROR stop gets (a user pause shows up as PAUSED, not ERROR).
+        onMain { setState(PlaybackState.STATE_ERROR) }
+        SystemClock.sleep(5_000)
+        onMain { setState(PlaybackState.STATE_PLAYING) }
+        waitFor("blip to be recognised", 4_000) { log().contains("Brief interruption") }
+        SystemClock.sleep(9_000)  // well past the short grace and the recovery
+        assertEquals("a self-recovering ERROR blip must not add a pause", before, pausesLogged())
+        assertEquals(PlaybackState.STATE_PLAYING, currentState)
+    }
+
+    @Test
     fun autoResumeOffLeavesMusicPaused() {
         prefs.autoResume = false
         connectCar()

@@ -61,6 +61,11 @@ class DriveMonitorService : NotificationListenerService() {
          *  (e.g. a "Premium" blip) and recover on their own within about a second. */
         private const val PAUSE_GRACE_MS = 3000L
 
+        /** A stop into ERROR can be the same "Premium" blip recovering slower than a buffer hiccup
+         *  (a few seconds, not one): wait longer before calling an ERROR stop a real pause. A user
+         *  pause shows up as PAUSED, which still uses the short grace. */
+        private const val ERROR_PAUSE_GRACE_MS = 12_000L
+
         /** Audio that never pauses music: the music itself, touch/keyboard clicks, and navigation
          *  voice (it only ducks the music, it never stops it - and it fires constantly). */
         private val NOT_INTERRUPTIONS = setOf(
@@ -871,7 +876,7 @@ class DriveMonitorService : NotificationListenerService() {
                             if (cur != PlaybackState.STATE_PLAYING) onConfirmedPause()
                         }
                         pendingPauseRunnable = r
-                        handler.postDelayed(r, PAUSE_GRACE_MS)
+                        handler.postDelayed(r, if (s == PlaybackState.STATE_ERROR) ERROR_PAUSE_GRACE_MS else PAUSE_GRACE_MS)
                     }
                 }
             }
