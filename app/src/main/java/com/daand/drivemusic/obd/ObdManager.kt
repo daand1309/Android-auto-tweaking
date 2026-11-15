@@ -305,7 +305,15 @@ object ObdManager {
         }
     }
 
-    private fun sleep(ms: Long) { try { Thread.sleep(ms) } catch (e: InterruptedException) { Thread.currentThread().interrupt(); throw e } }
+    /** Sleep that treats interrupt as a clean stop signal (stop() interrupts this thread). */
+    private fun sleep(ms: Long) {
+        try {
+            Thread.sleep(ms)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            // Do not rethrow: the while (alive) checks exit the poll/connect loops cleanly.
+        }
+    }
 
     /**
      * One-off test from the settings page (blocking - call from a background thread): connect, read
