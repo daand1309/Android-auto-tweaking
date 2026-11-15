@@ -5,8 +5,11 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
 /** Fuel prices from the ANWB station database: parsing, choosing a price, and what costs use. */
+@RunWith(RobolectricTestRunner::class)  // for the real org.json implementation
 class FuelPricesTest {
 
     /** A trimmed real answer (Utrecht, August 2026): two stations, one without LPG. */
