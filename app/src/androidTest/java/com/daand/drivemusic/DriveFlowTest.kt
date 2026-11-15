@@ -311,6 +311,38 @@ class DriveFlowTest {
         assertFalse(log().contains("Drive Mode: opening on connect"))
     }
 
+    /**
+     * A new drive gets its own pop-up: the "already opened" mark must reset when the drive ends, or
+     * Drive Mode would only ever work on the first drive after a restart.
+     */
+    @Test
+    fun driveModeOpensAgainOnTheNextDrive() {
+        prefs.autoOpenDriveMode = true
+        prefs.showSplash = false
+        prefs.autoStart = false
+        shell("pm grant ${ctx.packageName} android.permission.POST_NOTIFICATIONS")
+        if (android.os.Build.VERSION.SDK_INT >= 34) shell("appops set ${ctx.packageName} USE_FULL_SCREEN_INTENT allow")
+        try {
+            for (drive in 1..2) {
+                // End whatever the previous iteration left behind (a disconnect ends the drive in these tests).
+                if (drive > 1) {
+                    onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_NOT_CONNECTED) }
+                    SystemClock.sleep(1_000)
+                }
+                closeDriveMode()
+                DriveLog.clear()
+                onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_PROJECTION) }
+                waitFor("Drive Mode to be offered on drive $drive", 20_000) {
+                    log().contains("Drive Mode: opening (")
+                }
+                val offers = log().split("Drive Mode: opening (").size - 1
+                assertEquals("offered exactly once on drive $drive\n${log()}", 1, offers)
+            }
+        } finally {
+            closeDriveMode()
+        }
+    }
+
     private fun driveModeResumed(): Boolean {
         var found = false
         onMain {

@@ -52,6 +52,14 @@ class DriveMonitorService : NotificationListenerService() {
 
         const val DRIVE_MODE_NOTIFICATION = 7
         private const val DRIVE_MODE_CHANNEL = "drive_mode_silent"
+
+        /**
+         * When the car connects while the phone is in use, Android shows a banner instead of letting the
+         * app take the screen. The screen going off lifts that, so Drive Mode gets one more try - but only
+         * shortly after the car connected, so it doesn't leap up mid-drive.
+         */
+        private const val DRIVE_MODE_RETRIES = 1
+        private const val DRIVE_MODE_RETRY_WINDOW_MS = 5 * 60_000L
         private const val START_TICK_MS = 1500L
         private const val START_MAX_TICKS = 15
         private const val RESUME_WINDOW_MS = 10 * 60 * 1000L
@@ -189,6 +197,10 @@ class DriveMonitorService : NotificationListenerService() {
             // Not exported: only the system can deliver these, other apps can't send fake events.
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
+        ContextCompat.registerReceiver(
+            this, screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
 
     override fun onListenerDisconnected() {
@@ -219,6 +231,7 @@ class DriveMonitorService : NotificationListenerService() {
         runCatching { audio.unregisterAudioPlaybackCallback(playbackConfigCallback) }
         runCatching { connectivity.unregisterNetworkCallback(networkCallback) }
         runCatching { unregisterReceiver(btReceiver) }
+        runCatching { unregisterReceiver(screenOffReceiver) }
         detachYtm()
     }
 
@@ -282,6 +295,8 @@ class DriveMonitorService : NotificationListenerService() {
         if (nowConnected) {
             carConnectedAt = SystemClock.elapsedRealtime()
             driveEnded = false
+            driveModeShown = false
+            driveModeRetries = 0
             carOffLogged = false
             pausesThisDrive = 0
             resumesThisDrive = 0
@@ -311,7 +326,8 @@ class DriveMonitorService : NotificationListenerService() {
                     // Mid-drive service restart: the connection never ended, so Drive Mode was
                     // already offered when it did. Don't pop it over the user again.
                     DriveLog.log("Drive Mode: monitor started mid-drive - not opening it again")
-                } else openDriveMode()
+                    driveModeOffered = true
+                } else offerDriveMode("Android Auto connected")
             }
             if (wasFirstEvent && findYtm() != null) {
                 // The monitor was (re)started by Android in the middle of a drive. Don't touch playback.
@@ -415,6 +431,24 @@ class DriveMonitorService : NotificationListenerService() {
     private var driveEnded = false
 
     /**
+     * Drive Mode has been brought up for this drive already. The car reaches us twice - the adapter
+     * powers on with the ignition, Android Auto announces itself a moment later - and it must open
+     * once, not twice.
+     */
+    private var driveModeOffered = false
+    /**
+     * Times we tried to put Drive Mode on screen while the phone was in use (where Android only shows a
+     * banner). Once the screen goes off we get one more try, which is when it really can take over.
+     */
+    private var driveModeRetries = 0
+    private var driveModeOfferedAt = 0L
+    /** Drive Mode has actually been on screen this drive (so it is never forced up twice). */
+    private var driveModeShown = false
+
+    /** Called by [DriveModeActivity] when it comes to the front: you've seen it, so stop pushing it. */
+    fun noteDriveModeOnScreen() { driveModeShown = true }
+
+    /**
      * The car can be switched off while Android Auto stays up (head unit on accessory power, radio
      * still on, door not opened yet). Then nothing else tells us the car is off, so the adapter's view
      * of the ignition is watched: the adapter still answers, its car doesn't.
@@ -513,6 +547,9 @@ class DriveMonitorService : NotificationListenerService() {
     private fun endDrive(reason: String) {
         val alreadyEnded = driveEnded
         driveEnded = true
+        driveModeOffered = false      // a new drive gets its own pop-up
+        driveModeRetries = 0
+        driveModeShown = false
         reconnectedAt = 0L
         holdingSince = 0L
         pausedAtDrop = false
@@ -844,6 +881,22 @@ class DriveMonitorService : NotificationListenerService() {
         }
     }
 
+    /**
+     * Brings Drive Mode up once per drive. Both the adapter and Android Auto announce the car; whichever
+     * comes first opens it and the second one is ignored, so it never pops twice.
+     */
+    private fun offerDriveMode(reason: String) {
+        if (!prefs.autoOpenDriveMode) return
+        if (driveModeOffered) {
+            DriveLog.log("Drive Mode: already opened for this drive ($reason)")
+            return
+        }
+        driveModeOffered = true
+        driveModeOfferedAt = SystemClock.elapsedRealtime()
+        DriveLog.log("Drive Mode: opening ($reason)")
+        openDriveMode()
+    }
+
     /** Fires a full-screen-intent notification that opens Drive Mode on the phone when the car
      *  connects. No overlay permission needed - the system launches it (or shows a heads-up to tap). */
     private fun openDriveMode() {
@@ -889,8 +942,31 @@ class DriveMonitorService : NotificationListenerService() {
         }
     }
 
+    /**
+     * The phone is in your hand or on with the screen lit when the car connects: Android shows a banner
+     * instead of letting the app take the screen. When the screen goes off (phone back in the holder,
+     * which is moments later) that restriction lifts - so try once more then, and then leave it alone.
+     */
+    private val screenOffReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != Intent.ACTION_SCREEN_OFF) return
+            if (!prefs.autoOpenDriveMode || !driveModeOffered || driveEnded) return
+            if (driveModeShown || DriveModeActivity.onScreen) return
+            if (SystemClock.elapsedRealtime() - driveModeOfferedAt > DRIVE_MODE_RETRY_WINDOW_MS) return
+            if (driveModeRetries >= DRIVE_MODE_RETRIES) return
+            driveModeRetries++
+            DriveLog.log("Drive Mode: screen went off with Drive Mode not on screen - opening it now")
+            openDriveMode()
+        }
+    }
+
     /** Connects the OBD adapter for this drive (if set up). Safe to call again: a running one is left alone. */
     fun startObd() {
+        // The adapter powers on with the ignition, usually before Android Auto announces itself. Either
+        // one is enough to bring Drive Mode up - offerDriveMode() makes sure it only happens once.
+        com.daand.drivemusic.obd.ObdManager.onLinked = {
+            handler.post { if (!driveEnded) offerDriveMode("adapter connected") }
+        }
         com.daand.drivemusic.obd.ObdManager.start(this) { alert -> handler.post { onCarAlert(alert, connectGen, 0) } }
     }
 

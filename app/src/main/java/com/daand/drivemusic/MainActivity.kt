@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -239,6 +240,7 @@ class MainActivity : Activity() {
         // The adapter question belongs at the top: it's about the car you just left, and the
         // notification can be missed (or swiped away) while the adapter is still drawing power.
         if (prefs.adapterPromptPending) adapterPromptCard()
+        fullScreenCard()
 
         // What a new user must do first goes first (found in the new-user walkthrough: lower down,
         // under the buttons and the update card, it was easy to miss).
@@ -311,6 +313,36 @@ class MainActivity : Activity() {
                 com.daand.drivemusic.obd.AdapterReminder.answered(this, false); render()
             },
         )
+    }
+
+    /**
+     * Android 14 and later only let an app take the whole screen on connect if its full-screen
+     * notifications are allowed. Without that, Drive Mode arrives as a banner you have to tap - so ask
+     * here, on the screen you land on, instead of burying it in the Drive Mode settings.
+     */
+    private fun fullScreenCard() {
+        if (!fullScreenMissing()) return
+        warnCard("Drive Mode can't take over the screen when the car connects yet - allow full-screen " +
+            "notifications for Drive Music and it opens by itself.")
+        row(
+            quickBtn("Allow") { openFullScreenSetting() },
+            quickBtn("Not now") { prefs.fullScreenNagDismissed = true; render() },
+        )
+    }
+
+    /** May Drive Music take the whole screen when the car connects? (Denied by default on Android 14+.) */
+    private fun fullScreenAllowed(): Boolean {
+        if (Build.VERSION.SDK_INT < 34) return true
+        val nm = getSystemService(NotificationManager::class.java) ?: return true
+        return runCatching { nm.canUseFullScreenIntent() }.getOrDefault(true)
+    }
+
+    private fun fullScreenMissing(): Boolean =
+        prefs.autoOpenDriveMode && !prefs.fullScreenNagDismissed && !fullScreenAllowed()
+
+    private fun openFullScreenSetting() {
+        try { startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:$packageName"))) }
+        catch (e: Exception) { openAppSettings(packageName) }
     }
 
     private fun renderSetup() {
@@ -895,11 +927,11 @@ class MainActivity : Activity() {
         button("Open Drive Mode", accent = true) { startActivity(Intent(this, DriveModeActivity::class.java)) }
         switch("Open automatically when the car connects", prefs.autoOpenDriveMode) { prefs.autoOpenDriveMode = it; render() }
         if (prefs.autoOpenDriveMode) {
-            text("Pops up when the phone is locked; otherwise shows a tap banner.")
-            if (Build.VERSION.SDK_INT >= 34) button("Allow full-screen pop-up") {
-                try { startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:$packageName"))) }
-                catch (e: Exception) { openAppSettings(packageName) }
-            }
+            text("The adapter or Android Auto connecting is enough - whichever comes first opens it once. " +
+                "It takes the whole screen when the phone is locked or the screen is off; if you're using the " +
+                "phone at that moment, Android shows a banner and Drive Mode opens by itself the moment the " +
+                "screen goes off.")
+            if (!fullScreenAllowed()) button("Allow full-screen pop-up") { openFullScreenSetting() }
         }
         switch("Animations (launch, pages, power-up sweep)", prefs.animations) {
             prefs.animations = it; Motion.enabled = it; render()
@@ -1091,6 +1123,7 @@ class MainActivity : Activity() {
             prefs.lastDrive, prefs.parkedSpot, availableUpdate?.versionName,
             // The adapter question and "the car is off": show up (and go away) without a manual refresh.
             prefs.adapterPromptPending, com.daand.drivemusic.obd.ObdManager.carOffForMs() / 60_000L,
+            fullScreenMissing(),
             // Car data: rounded so the screen only redraws when the shown value changes.
             com.daand.drivemusic.obd.ObdManager.live()?.let { "${it.coolantC}|${it.volts?.let { v -> Math.round(v * 10) }}|${it.codes}" }).joinToString("|")
     }

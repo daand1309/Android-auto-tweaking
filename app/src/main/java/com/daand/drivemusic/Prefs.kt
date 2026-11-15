@@ -396,9 +396,14 @@ class Prefs(context: Context) {
         get() = sp.getLong("last_greeting", 0L)
         set(v) = sp.edit().putLong("last_greeting", v).apply()
 
-    /** Auto-open the phone Drive Mode screen when Android Auto connects. */
+    /** The "allow full-screen pop-ups" card on the home page was waved away. */
+    var fullScreenNagDismissed: Boolean
+        get() = sp.getBoolean("fsi_nag_dismissed", false)
+        set(v) = sp.edit().putBoolean("fsi_nag_dismissed", v).apply()
+
+    /** Auto-open the phone Drive Mode screen when the car connects (Android Auto, or the adapter). */
     var autoOpenDriveMode: Boolean
-        get() = sp.getBoolean("auto_open_drive_mode", false)
+        get() = sp.getBoolean("auto_open_drive_mode", true)
         set(v) = sp.edit().putBoolean("auto_open_drive_mode", v).apply()
 
     /** Shown in the Drive Mode intro animation. */

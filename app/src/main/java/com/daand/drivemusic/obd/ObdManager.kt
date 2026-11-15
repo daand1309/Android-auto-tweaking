@@ -31,6 +31,8 @@ object ObdManager {
     @Volatile private var alerts: CarAlerts? = null
     /** The adapter worked at some point this drive (so a missing adapter during a stall is temporary). */
     @Volatile var connectedThisDrive = false; private set
+    /** [onLinked] has fired for this drive (so a reconnect after a stall doesn't repeat it). */
+    @Volatile private var linkedTold = false
     @Volatile private var socket: BluetoothSocket? = null
     @Volatile private var link: ObdLink? = null
     private var thread: Thread? = null
@@ -40,6 +42,12 @@ object ObdManager {
 
     /** The adapter is connected and polling. */
     fun isConnected() = running && status == "Connected"
+
+    /**
+     * Called (on the adapter's own thread) each time the link comes up for a drive. The monitor uses it to
+     * bring Drive Mode up when the ignition comes on, without waiting for Android Auto.
+     */
+    @Volatile var onLinked: (() -> Unit)? = null
 
     /** How long the car's computer has been silent (ignition off), or Long.MAX_VALUE if never heard. */
     fun ecuSilentMs(): Long {
@@ -84,6 +92,7 @@ object ObdManager {
         if (!hasPermission(ctx)) { status = "Needs the 'Nearby devices' permission"; DriveLog.log("OBD: no Bluetooth permission"); return }
         running = true
         val myGen = ++gen
+        linkedTold = false
         latest = null; trip = Trip(); lastEcuAnswerAt = 0L; connectedThisDrive = false
         engineLitres = p.obdEngineLitres
         tankLitres = p.tankLitres
@@ -159,6 +168,8 @@ object ObdManager {
                 tries = 0  // connected: a later drop gets a fresh set of retries
                 status = "Connected"
                 connectedThisDrive = true
+                // Only tell the monitor on the first link of this drive, not on every reconnect after a stall.
+                if (!linkedTold) { linkedTold = true; runCatching { onLinked?.invoke() } }
                 vin = session.vin ?: vin
                 supportedCount = session.supported.size
                 lastEcuAnswerAt = System.currentTimeMillis()  // it just answered "0100"

@@ -361,6 +361,8 @@ class DriveModeActivity : Activity() {
     override fun onResume() {
         super.onResume()
         onScreen = true
+        // You've seen it: the monitor stops pushing Drive Mode up for the rest of this drive.
+        DriveMonitorService.instance?.noteDriveModeOnScreen()
         if (::pager.isInitialized) com.daand.drivemusic.obd.ObdManager.liveView = pager.current == TAB_CAR
         goImmersive()
         handler.post(tick)

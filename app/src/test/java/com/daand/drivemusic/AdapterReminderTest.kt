@@ -17,6 +17,11 @@ class AdapterReminderTest {
     private val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
     private val nm get() = ctx.getSystemService(NotificationManager::class.java)
 
+    /** The car connecting should take over the screen out of the box - it's a driving app. */
+    @Test fun driveModeOpensByItselfOutOfTheBox() {
+        assertTrue("Drive Mode autostart must not need switching on", Prefs(ctx).autoOpenDriveMode)
+    }
+
     @Test fun onlyAfterDrivesThatUsedTheAdapter() {
         assertTrue(AdapterReminder.shouldRemind(enabled = true, adapterUsedThisDrive = true))
         assertFalse("adapter never connected this drive", AdapterReminder.shouldRemind(true, false))
