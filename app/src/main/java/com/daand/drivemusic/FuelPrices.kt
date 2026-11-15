@@ -172,6 +172,14 @@ object FuelPrices {
     // ------------------------------------------------------------------ what the app charges for costs
 
     /**
+     * Is a lookup due? At most one attempt per [FRESH_MS] - counted from the last attempt as well as the
+     * last success, so a lookup that keeps failing (no location, abroad, service down) isn't repeated on
+     * every app open. Pure, unit tested.
+     */
+    fun dueForLookup(auto: Boolean, quotedAt: Long, triedAt: Long, now: Long): Boolean =
+        auto && now - maxOf(quotedAt, triedAt) >= FRESH_MS
+
+    /**
      * The price per litre to use for costs: the fetched one while it is fresh and automatic lookup is
      * on, else the price you typed in. 0 = nothing known (costs are hidden). Pure, unit tested.
      */

@@ -202,6 +202,13 @@ class Prefs(context: Context) {
     var fuelPriceQuoteAt: Long
         get() = sp.getLong("fuel_quoted_at", 0L)
         set(v) = sp.edit().putLong("fuel_quoted_at", v).apply()
+    /**
+     * When a lookup was last *attempted* (0 = never). Without this, a lookup that can never succeed -
+     * no location permission, abroad, the service down - was retried on every single app open.
+     */
+    var fuelPriceTriedAt: Long
+        get() = sp.getLong("fuel_tried_at", 0L)
+        set(v) = sp.edit().putLong("fuel_tried_at", v).apply()
     /** e.g. "Esso Cartesiusweg, Utrecht · 1,2 km · 14 stations" - shown with the price. */
     var fuelPriceQuoteSource: String
         get() = sp.getString("fuel_quoted_src", "") ?: ""

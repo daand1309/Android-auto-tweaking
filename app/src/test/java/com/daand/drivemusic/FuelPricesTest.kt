@@ -101,6 +101,23 @@ class FuelPricesTest {
         assertEquals(0.0, FuelPrices.distanceKm(52.0, 5.0, 52.0, 5.0), 0.0001)
     }
 
+    /**
+     * A lookup that can never succeed (no location permission, abroad, service down) must not be retried
+     * on every app open - it was, because only a *success* was remembered.
+     */
+    @Test fun aLookupThatKeepsFailingIsNotRetriedOnEveryOpen() {
+        val now = 1_000_000_000_000L
+        val hour = 3_600_000L
+        assertTrue("never tried: look it up", FuelPrices.dueForLookup(true, 0, 0, now))
+        assertFalse("tried a minute ago and failed: not again yet", FuelPrices.dueForLookup(true, 0, now - 60_000, now))
+        assertTrue("tried seven hours ago: try again", FuelPrices.dueForLookup(true, 0, now - 7 * hour, now))
+        assertFalse("switched off: never", FuelPrices.dueForLookup(false, 0, 0, now))
+        assertFalse("just fetched: no second lookup straight away",
+            FuelPrices.dueForLookup(true, now - hour, now - hour, now))
+        assertFalse("clock jumped backwards: no storm either",
+            FuelPrices.dueForLookup(true, now + 5 * hour, now + 5 * hour, now))
+    }
+
     @Test fun costsUseTheFetchedPriceOnlyWhileItIsFresh() {
         val now = 1_000_000_000_000L
         // Fresh and automatic: the fetched price wins over the typed-in one.

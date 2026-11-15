@@ -43,6 +43,9 @@ object ObdManager {
     /** The adapter is connected and polling. */
     fun isConnected() = running && status == "Connected"
 
+    /** Where the current poll's alerts go: replaced by [start] when a restarted monitor takes over. */
+    @Volatile private var alertSink: ((CarAlerts.Alert) -> Unit)? = null
+
     /**
      * Called (on the adapter's own thread) each time the link comes up for a drive. The monitor uses it to
      * bring Drive Mode up when the ignition comes on, without waiting for Android Auto.
@@ -88,23 +91,10 @@ object ObdManager {
     @Synchronized
     fun start(ctx: Context, onAlert: (CarAlerts.Alert) -> Unit) {
         val p = Prefs(ctx)
-        if (running || !p.obdEnabled || p.obdDevice.isBlank()) return
+        if (!p.obdEnabled || p.obdDevice.isBlank()) return
         if (!hasPermission(ctx)) { status = "Needs the 'Nearby devices' permission"; DriveLog.log("OBD: no Bluetooth permission"); return }
-        running = true
-        val myGen = ++gen
-        linkedTold = false
-        latest = null; trip = Trip(); lastEcuAnswerAt = 0L; connectedThisDrive = false
-        engineLitres = p.obdEngineLitres
-        tankLitres = p.tankLitres
-        appCtx = ctx.applicationContext
-        batteryLogged = false; restingMax = null
-        typicalPer100 = runCatching { TripHistory.typicalPer100(TripHistory.load(ctx)) }.getOrNull()
         val app = ctx.applicationContext
         val address = p.obdDevice
-        readySeconds = p.obdReadySeconds
-        val now = System.currentTimeMillis()
-        val recent = p.obdToldCodes.filter { now - it.value < CarAlerts.REMIND_AFTER_MS }.keys
-        alerts = CarAlerts(readySeconds, recent, CodeTracker(p.storedCodeLog), CodeTracker(p.pendingCodeLog))
         val remember: (CarAlerts.Alert) -> Unit = { a ->
             if (a.kind == CarAlerts.Kind.CHECK_ENGINE || a.kind == CarAlerts.Kind.EARLY_CODE) {
                 val told = Prefs(app).obdToldCodes.toMutableMap()
@@ -114,13 +104,37 @@ object ObdManager {
             }
             onAlert(a)
         }
-        thread = Thread({ loop(app, address, myGen, remember) }, "obd").apply { isDaemon = true; start() }
+        // Where alerts go. Re-armed below if a monitor that is already polling asks for them again.
+        alertSink = remember
+        if (running) {
+            // Android rebound the notification listener while we were polling: the new instance must take
+            // over the alerts (and Drive Mode's adapter trigger), or every warning keeps going to the
+            // instance that was cleaned up and the car can go quiet for the rest of the drive.
+            DriveLog.log("OBD: monitor restarted - the running adapter now reports to the new instance")
+            return
+        }
+        running = true
+        val myGen = ++gen
+        linkedTold = false
+        latest = null; trip = Trip(); lastEcuAnswerAt = 0L; connectedThisDrive = false
+        engineLitres = p.obdEngineLitres
+        tankLitres = p.tankLitres
+        appCtx = app
+        batteryLogged = false; restingMax = null
+        typicalPer100 = runCatching { TripHistory.typicalPer100(TripHistory.load(ctx)) }.getOrNull()
+        readySeconds = p.obdReadySeconds
+        val now = System.currentTimeMillis()
+        val recent = p.obdToldCodes.filter { now - it.value < CarAlerts.REMIND_AFTER_MS }.keys
+        alerts = CarAlerts(readySeconds, recent, CodeTracker(p.storedCodeLog), CodeTracker(p.pendingCodeLog))
+        // The loop talks to whatever sink is current, so a later start() takes over without a restart.
+        thread = Thread({ loop(app, address, myGen) { a -> alertSink?.invoke(a) } }, "obd").apply { isDaemon = true; start() }
     }
 
     @Synchronized
     fun stop() {
         if (!running) return
         running = false
+        alertSink = null
         // Closing the socket also aborts a connect() that's still waiting.
         runCatching { link?.close() }
         runCatching { socket?.close() }

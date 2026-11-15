@@ -221,6 +221,11 @@ class DriveMonitorService : NotificationListenerService() {
         // keeps saying "reconnecting").
         if (holdingSince > 0) endDrive("monitor stopped")
         instance = null
+        // The adapter belongs to the monitor. A rebind re-arms it with the new instance (ObdManager.start),
+        // but a monitor that is really going away must not leave a polling thread behind - it would keep
+        // waking the adapter with nobody listening.
+        com.daand.drivemusic.obd.ObdManager.onLinked = null
+        com.daand.drivemusic.obd.ObdManager.stop()
         cancelStart()
         cancelResume()
         cancelPendingPause()
