@@ -245,6 +245,10 @@ class DriveMonitorService : NotificationListenerService() {
             CarConnection.CONNECTION_TYPE_NATIVE -> "Android Automotive"
             else -> "not connected"
         }
+        // Same connected state as last time means the service restarted while the car was already
+        // connected (Android re-delivers the state on rebind): not a new connection, so Drive Mode
+        // must not pop up over the user again - see the offer check below.
+        val sameConnectionAsBefore = prefs.lastCarState == name
         prefs.lastCarState = name
         val nowConnected = type == CarConnection.CONNECTION_TYPE_PROJECTION ||
             type == CarConnection.CONNECTION_TYPE_NATIVE
@@ -281,7 +285,13 @@ class DriveMonitorService : NotificationListenerService() {
             startObd()
             handler.removeCallbacks(driveUpdate)
             handler.postDelayed(driveUpdate, DriveUpdates.FIRST_CHECK_MS)
-            if (prefs.autoOpenDriveMode) openDriveMode()
+            if (prefs.autoOpenDriveMode) {
+                if (sameConnectionAsBefore) {
+                    // Mid-drive service restart: the connection never ended, so Drive Mode was
+                    // already offered when it did. Don't pop it over the user again.
+                    DriveLog.log("Drive Mode: already offered for this connection - not again")
+                } else openDriveMode()
+            }
             if (wasFirstEvent && findYtm() != null) {
                 // The monitor was (re)started by Android in the middle of a drive. Don't touch playback.
                 DriveLog.log("Monitor started mid-drive - not changing what's playing")

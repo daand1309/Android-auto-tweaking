@@ -275,6 +275,23 @@ class DriveFlowTest {
         }
     }
 
+    /** Mid-drive service restart: Android re-delivers the same connected state on rebind -
+     *  Drive Mode was already offered when the connection started, so it must not pop again. */
+    @Test
+    fun driveModeDoesNotPopUpAgainWhenTheServiceRestartsMidDrive() {
+        prefs.autoOpenDriveMode = true
+        // Start clean, then pretend the app was killed and rebound while the car stayed connected:
+        // the persisted state still says connected, and the same state arrives again.
+        onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_NOT_CONNECTED) }
+        onMain { prefs.lastCarState = "Android Auto connected" }
+        DriveLog.clear()
+        onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_PROJECTION) }
+        SystemClock.sleep(3_000)
+        assertTrue(log().contains("Drive Mode: already offered for this connection"))
+        assertFalse("Drive Mode must not pop up on a mid-drive rebind", driveModeResumed())
+        assertFalse(log().contains("Drive Mode: opening on connect"))
+    }
+
     private fun driveModeResumed(): Boolean {
         var found = false
         onMain {
