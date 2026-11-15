@@ -242,15 +242,20 @@ class DriveMonitorService : NotificationListenerService() {
     /** Test hook: feeds a car connection state through exactly the same path as Android Auto does. */
     @androidx.annotation.VisibleForTesting
     fun simulateCarStateForTest(type: Int) {
-        firstCarEvent = false
+        // A simulated monitor restart arms the flag; a normal simulated event is never a first event.
+        firstCarEvent = simulatedRestart
+        simulatedRestart = false
         onCarState(type)
     }
 
     /** Test hook: pretend the monitor just (re)started, so the next car state is its first event. */
     @androidx.annotation.VisibleForTesting
     fun simulateMonitorRestartForTest() {
-        firstCarEvent = true
+        simulatedRestart = true
     }
+
+    /** Set by [simulateMonitorRestartForTest], consumed by the next [simulateCarStateForTest]. */
+    private var simulatedRestart = false
 
     private fun onCarState(type: Int) {
         val name = when (type) {
