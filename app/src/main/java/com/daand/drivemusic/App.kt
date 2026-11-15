@@ -11,6 +11,9 @@ class App : Application() {
         Style.apply(Prefs(this).theme)
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            // OBD poller is stopped with Thread.interrupt(); sleep() surfaces that as
+            // InterruptedException. That is normal shutdown, not a crash.
+            if (error is InterruptedException && thread.name == "obd") return@setDefaultUncaughtExceptionHandler
             try {
                 val trace = Log.getStackTraceString(error).lines().take(12).joinToString(" | ") { it.trim() }
                 DriveLog.log("CRASH in ${thread.name}: $trace")
