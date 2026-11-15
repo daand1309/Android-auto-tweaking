@@ -840,12 +840,14 @@ class DriveMonitorService : NotificationListenerService() {
     fun isPlaying(): Boolean = musicController()?.playbackState?.state == PlaybackState.STATE_PLAYING
 
     fun skipNext() {
+        Voice.stop("you pressed next")
         userPausedViaUi = false
         musicController()?.transportControls?.skipToNext()
         DriveLog.log("Car screen: next track")
     }
 
     fun skipPrevious() {
+        Voice.stop("you pressed previous")
         userPausedViaUi = false
         musicController()?.transportControls?.skipToPrevious()
         DriveLog.log("Car screen: previous track")
@@ -854,6 +856,7 @@ class DriveMonitorService : NotificationListenerService() {
     /** Toggle play/pause from the car screen. A pause here won't be auto-resumed. */
     /** Pause pressed on a car screen: you meant it, so auto-resume leaves it alone. */
     fun pauseByUser(where: String) {
+        Voice.stop("you pressed pause")
         userPausedViaUi = true
         musicController()?.transportControls?.pause()
         DriveLog.log("$where: pause (you asked - won't auto-resume)")
@@ -868,6 +871,7 @@ class DriveMonitorService : NotificationListenerService() {
     }
 
     fun playPause() {
+        Voice.stop("you pressed play")
         val c = musicController()
         if (c == null) { startMusic("car screen play", requireCar = false); return }
         if (c.playbackState?.state == PlaybackState.STATE_PLAYING) {

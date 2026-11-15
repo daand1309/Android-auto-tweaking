@@ -31,6 +31,8 @@ class DriveModeActivity : Activity() {
     private lateinit var resumeBtn: Button
     private lateinit var rootFrame: android.widget.FrameLayout
     private var promptView: View? = null
+    /** The bottom-left button: plays the welcome - and cuts it short while it's talking. */
+    private lateinit var welcomeBtn: Button
 
     /** "There is an update" -> big green / red buttons over the whole screen until you answer. */
     private val promptChanged: () -> Unit = {
@@ -410,8 +412,10 @@ class DriveModeActivity : Activity() {
         // Bottom row: icon on top, one short word underneath.
         val bottom = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
         bottom.addView(smallButton(R.drawable.ic_volume, "Welcome") {
-            WelcomeAnnouncer.run(this, svc()?.currentSong(), recordAsGreeted = false)
-        }, hLp(1f))
+            if (Voice.speaking) Voice.stop("skip button in Drive Mode")
+            else WelcomeAnnouncer.run(this, svc()?.currentSong(), recordAsGreeted = false)
+            updateDynamic()
+        }.also { welcomeBtn = it }, hLp(1f))
         resumeBtn = smallButton(R.drawable.ic_repeat, "") {
             val p = Prefs(this)
             p.autoResume = !p.autoResume
@@ -469,9 +473,18 @@ class DriveModeActivity : Activity() {
         val statusText = if (s == null) "Open the app and grant Notification access" else prefs.lastCarState
         val playing = s?.isPlaying() == true
         val resumeOn = prefs.autoResume
-        val key = "$songText|$statusText|$playing|$resumeOn"
+        val speaking = Voice.speaking
+        val key = "$songText|$statusText|$playing|$resumeOn|$speaking"
         if (key == lastShown) return
         lastShown = key
+        // While something is being said, this button cuts it short rather than starting another one.
+        if (::welcomeBtn.isInitialized) {
+            welcomeBtn.text = if (speaking) "Skip" else "Welcome"
+            val d = getDrawable(if (speaking) R.drawable.ic_answer_no else R.drawable.ic_volume)!!.mutate()
+                .apply { setBounds(0, 0, dp(26), dp(26)) }
+            welcomeBtn.setCompoundDrawablesRelative(null, d, null, null)
+            welcomeBtn.contentDescription = if (speaking) "Skip the voice" else "Play the welcome"
+        }
         Motion.swapText(nowPlaying, songText)
         status.text = statusText
         val icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play

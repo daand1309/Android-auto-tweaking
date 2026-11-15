@@ -906,15 +906,42 @@ object VoicePicker {
     }
 }
 
+/**
+ * The voice that is talking right now, so any screen or button can cut it short - the wheel's
+ * next/pause, the Welcome button in Drive Mode, or a Stop next to a voice sample.
+ */
+object Voice {
+    @Volatile private var current: Greeter? = null
+
+    /** Something is being said (so the screens can offer a Skip instead of a Play). */
+    val speaking: Boolean get() = current != null
+
+    internal fun attach(g: Greeter) { current = g }
+    internal fun detach(g: Greeter) { if (current === g) current = null }
+
+    /** Cut it short: it stops, and whatever was waiting for it (usually the music) continues at once. */
+    fun stop(reason: String = "you skipped it") { current?.stop(reason) }
+}
+
 /** Speaks text through the car speakers, then calls [onDone] (always, even if speech fails). */
 class Greeter(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
     private var tts: TextToSpeech? = null
-    private var finished = false
+    private var player: android.media.MediaPlayer? = null
+    /** Set once the speech has finished, failed, timed out or been cut short - whichever is first. */
+    private var done = false
+    /** [stop] was called while the voice was still being prepared: don't start talking at all. */
+    @Volatile private var stopped = false
     private var focus: AudioFocusRequest? = null
+    private var onDone: () -> Unit = {}
+    // Kept for the premium-voice fallback (when its audio can't be played, the phone speaks instead).
+    private var fallback: (() -> Unit)? = null
 
     fun speak(text: String, dutch: Boolean, pauseOthers: Boolean = false, onDone: () -> Unit) {
+        this.onDone = onDone
+        Voice.attach(this)
         val prefs = Prefs(context)
+        fallback = { speakOnDevice(text, dutch, pauseOthers) }
         // The premium (Azure) voice when it's set up and the month's free allowance has room; any
         // problem at all -> the phone's own voice, so there's never silence.
         if (prefs.cloudVoiceOn && prefs.azureKey.isNotBlank()) {
@@ -922,15 +949,45 @@ class Greeter(private val context: Context) {
                 val mp3 = try { CloudVoice.synthesize(prefs, text, dutch) } catch (e: Exception) {
                     DriveLog.log("GREETING: premium voice not used (${e.message}) - phone voice instead"); null
                 }
-                handler.post { if (mp3 != null) playCloud(mp3, dutch, pauseOthers, text, onDone) else speakOnDevice(text, dutch, pauseOthers, onDone) }
+                handler.post {
+                    if (stopped) { end("cut short (before it started)") ; return@post }
+                    if (mp3 != null) playCloud(mp3, dutch, pauseOthers) else speakOnDevice(text, dutch, pauseOthers)
+                }
             }, "cloud-voice").start()
             return
         }
-        speakOnDevice(text, dutch, pauseOthers, onDone)
+        speakOnDevice(text, dutch, pauseOthers)
+    }
+
+    /** Cut it short. Called from any thread; the audio stops and the music is let through at once. */
+    fun stop(reason: String = "you skipped it") {
+        if (stopped || done) return
+        stopped = true
+        handler.post {
+            tts?.let { runCatching { it.stop() } }
+            player?.let { runCatching { it.stop() } }
+            end("cut short ($reason)")
+        }
+    }
+
+    /** One way out: release everything, log one line, and continue exactly once. */
+    private fun end(reason: String) {
+        if (done) return
+        done = true
+        handler.removeCallbacksAndMessages(null)
+        focus?.let { f -> runCatching { context.getSystemService(AudioManager::class.java).abandonAudioFocusRequest(f) } }
+        focus = null
+        player?.let { runCatching { it.release() } }
+        player = null
+        tts?.let { runCatching { it.shutdown() } }
+        tts = null
+        Voice.detach(this)
+        DriveLog.log("GREETING: $reason")
+        onDone()
     }
 
     /** Plays the premium voice's audio through the car (like a nav prompt), then [onDone]. */
-    private fun playCloud(mp3: ByteArray, dutch: Boolean, pauseOthers: Boolean, text: String, onDone: () -> Unit) {
+    private fun playCloud(mp3: ByteArray, dutch: Boolean, pauseOthers: Boolean) {
         val prefs = Prefs(context)
         val audio = context.getSystemService(AudioManager::class.java)
         val attrs = AudioAttributes.Builder()
@@ -938,17 +995,10 @@ class Greeter(private val context: Context) {
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
             .build()
         val file = java.io.File(context.cacheDir, "voice.mp3")
-        var player: android.media.MediaPlayer? = null
-        var done = false
-        fun end(reason: String, fallBack: Boolean) {
-            if (done) return
-            done = true
-            handler.removeCallbacksAndMessages(null)
-            focus?.let { audio.abandonAudioFocusRequest(it) }; focus = null
-            try { player?.release() } catch (_: Exception) {}
-            file.delete()
-            if (fallBack) { DriveLog.log("GREETING: premium voice $reason - phone voice instead"); speakOnDevice(text, dutch, pauseOthers, onDone) }
-            else { DriveLog.log("GREETING: $reason"); onDone() }
+        // Can't play it -> the phone's voice instead (unless we were cut short; then nothing).
+        val fallBack: (String) -> Unit = { why ->
+            if (stopped || done) end("cut short (before it started)")
+            else { DriveLog.log("GREETING: premium voice $why - phone voice instead"); fallback?.invoke() }
         }
         try {
             file.writeBytes(mp3)
@@ -957,19 +1007,20 @@ class Greeter(private val context: Context) {
             player = android.media.MediaPlayer().apply {
                 setAudioAttributes(attrs)
                 setDataSource(file.absolutePath)
-                setOnCompletionListener { handler.post { end("spoken", fallBack = false) } }
-                setOnErrorListener { _, what, _ -> handler.post { end("couldn't play ($what)", fallBack = true) }; true }
+                setOnCompletionListener { handler.post { file.delete(); end("spoken") } }
+                setOnErrorListener { _, what, _ -> handler.post { file.delete(); fallBack("couldn't play ($what)") }; true }
                 prepare()
                 start()
             }
             DriveLog.log("GREETING: voice ${CloudVoice.voiceFor(prefs, dutch)} (premium, ${CloudVoice.usedThisMonth(prefs)} of ${CloudVoice.MONTHLY_CAP} free characters used this month)")
-            handler.postDelayed({ end("timed out - continuing", fallBack = false) }, 60_000)
+            handler.postDelayed({ end("timed out - continuing") }, 60_000)
         } catch (e: Exception) {
-            end("couldn't play (${e.javaClass.simpleName})", fallBack = true)
+            file.delete()
+            fallBack("couldn't play (${e.javaClass.simpleName})")
         }
     }
 
-    private fun speakOnDevice(text: String, dutch: Boolean, pauseOthers: Boolean, onDone: () -> Unit) {
+    private fun speakOnDevice(text: String, dutch: Boolean, pauseOthers: Boolean) {
         val prefs = Prefs(context)
         val audio = context.getSystemService(AudioManager::class.java)
         val attrs = AudioAttributes.Builder()
@@ -977,25 +1028,15 @@ class Greeter(private val context: Context) {
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
             .build()
 
-        fun finish(reason: String) {
-            if (finished) return
-            finished = true
-            handler.removeCallbacksAndMessages(null)
-            DriveLog.log("GREETING: $reason")
-            focus?.let { audio.abandonAudioFocusRequest(it) }
-            try { tts?.shutdown() } catch (_: Exception) {}
-            tts = null
-            onDone()
-        }
-
         // Never let the greeting block the music for long.
-        handler.postDelayed({ finish("timed out - continuing") }, 60_000)
+        handler.postDelayed({ end("timed out - continuing") }, 60_000)
 
         val engineName = VoicePicker.preferredEngine(context, prefs.ttsEngine)
         val listener = TextToSpeech.OnInitListener { status ->
             handler.post {
+                if (stopped || done) return@post      // cut short while the engine was starting
                 val engine = tts ?: return@post
-                if (status != TextToSpeech.SUCCESS) { finish("no text-to-speech engine available"); return@post }
+                if (status != TextToSpeech.SUCCESS) { end("no text-to-speech engine available"); return@post }
                 val locale = VoicePicker.localeFor(dutch)
                 val voice = try {
                     val all = engine.voices.orEmpty()
@@ -1020,10 +1061,10 @@ class Greeter(private val context: Context) {
                 val lastId = "s${parts.size - 1}"
                 engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(id: String?) {}
-                    override fun onDone(id: String?) { if (id == lastId) handler.post { finish("spoken") } }
+                    override fun onDone(id: String?) { if (id == lastId) handler.post { end("spoken") } }
                     @Deprecated("Deprecated in Java")
-                    override fun onError(id: String?) { handler.post { finish("speech failed") } }
-                    override fun onError(id: String?, code: Int) { handler.post { finish("speech failed ($code)") } }
+                    override fun onError(id: String?) { handler.post { end("speech failed") } }
+                    override fun onError(id: String?, code: Int) { handler.post { end("speech failed ($code)") } }
                 })
                 val gain = if (pauseOthers) AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
                     else AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
@@ -1036,7 +1077,7 @@ class Greeter(private val context: Context) {
                     if (i > 0) engine.playSilentUtterance(250, TextToSpeech.QUEUE_ADD, "p$i")
                     if (engine.speak(sentence, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "s$i") != TextToSpeech.SUCCESS) ok = false
                 }
-                if (!ok || parts.isEmpty()) finish("speech could not start")
+                if (!ok || parts.isEmpty()) end("speech could not start")
             }
         }
         tts = if (engineName != null) TextToSpeech(context.applicationContext, listener, engineName)

@@ -309,8 +309,6 @@ object News {
     /** After a drive: nothing needs the feeds any more. */
     fun clearCache() = cache.clear()
 
-    fun cachedFeedCount() = cache.size
-
     fun reuseFor(url: String): Long =
         if (url.contains("feeds.nos.nl") || url.contains("news.google.com")) 30 * 60 * 1000L else 2 * 60 * 1000L
 

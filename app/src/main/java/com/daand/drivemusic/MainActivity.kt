@@ -256,9 +256,15 @@ class MainActivity : Activity() {
                 val svc = DriveMonitorService.instance
                 if (svc == null) toast("Finish setup first") else { svc.startMusic("manual test button", requireCar = false); toast("Starting...") }
             },
-            quickBtn("Greeting") {
-                toast("Speaking...")
-                WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false)
+            quickBtn(if (Voice.speaking) "\u23F9 Stop" else "Greeting") {
+                if (Voice.speaking) Voice.stop("stop button on the home screen")
+                else {
+                    toast("Speaking...")
+                    WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false) {
+                        refreshIfOn(Page.HOME)
+                    }
+                }
+                refreshIfOn(Page.HOME)
             },
         )
 
@@ -383,9 +389,15 @@ class MainActivity : Activity() {
         pageHeader()
         switch("Welcome me when the car connects", prefs.greetingEnabled) { prefs.greetingEnabled = it; render() }
         if (!prefs.greetingEnabled) return
-        button("Test greeting", accent = true) {
-            toast("Speaking...")
-            WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false)
+        button(if (Voice.speaking) "\u23F9  Stop" else "Test greeting", accent = true) {
+            if (Voice.speaking) Voice.stop("you pressed stop")
+            else {
+                toast("Speaking...")
+                WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false) {
+                    refreshIfOn(Page.GREETING)
+                }
+            }
+            refreshIfOn(Page.GREETING)
         }
         stepperLike("Name: ${prefs.greetingName.ifBlank { "not set" }}", "Change") { askName() }
         stepperLike("Birthday: ${prefs.birthday.ifBlank { "none" }}", "Set") { askBirthday() }
@@ -687,7 +699,7 @@ class MainActivity : Activity() {
             styleCard("😏  Sassy", "Cheeky one-liners", !prefs.butler) { setStyle(butler = false) },
             styleCard("🎩  Butler", if (dutch) "Refined, polite (u)" else "Refined, British", prefs.butler) { setStyle(butler = true) },
         )
-        button("Hear a full greeting", accent = true) { previewVoice() }
+        button(if (Voice.speaking) "⏹  Stop" else "Hear a full greeting", accent = true) { previewVoice() }
 
         premiumVoiceSection(dutch)
 
@@ -701,7 +713,8 @@ class MainActivity : Activity() {
             if (accents.size > 1) accentChips(listOf("") + accents)
             val names = VoicePicker.friendlyNames(voiceList)
             voiceRow("Automatic", if (prefs.butler && !dutch) "Best British voice for the butler" else "Best voice on this phone",
-                prefs.voiceName.isBlank(), onPlay = { playSample(null, automatic = true) }) {
+                prefs.voiceName.isBlank(), playing = samplePlaying == AUTO_SAMPLE,
+                onPlay = { playSample(null, automatic = true) }) {
                 prefs.voiceName = ""
                 DriveLog.log("Setting changed: voice = automatic")
                 render(); playSample(null, automatic = true)
@@ -711,7 +724,8 @@ class MainActivity : Activity() {
                     .thenByDescending { it.quality }.thenBy { names[it.name]?.first })
                 .forEach { v ->
                     val (title, details) = names[v.name] ?: (v.name to "")
-                    voiceRow(title, details, prefs.voiceName == v.name, onPlay = { playSample(v) }) {
+                    voiceRow(title, details, prefs.voiceName == v.name, playing = samplePlaying == v.name,
+                        onPlay = { playSample(v) }) {
                         prefs.voiceName = v.name
                         DriveLog.log("Setting changed: voice = ${v.name}")
                         render(); playSample(v)
@@ -755,6 +769,8 @@ class MainActivity : Activity() {
     private var voiceList: List<android.speech.tts.Voice> = emptyList()
     private var voiceEngines: List<android.speech.tts.TextToSpeech.EngineInfo> = emptyList()
     private var accentFilter = ""
+    /** Which voice's sample is playing right now ("automatic" for the automatic row), so ▶ can become ⏹. */
+    private var samplePlaying: String? = null
     private val sampleRunnable = Runnable { playSample(null, automatic = prefs.voiceName.isBlank()) }
 
     private fun ensureVoiceEngine() {
@@ -772,6 +788,13 @@ class MainActivity : Activity() {
                 e.setAudioAttributes(android.media.AudioAttributes.Builder()
                     .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
                     .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                e.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                    override fun onStart(id: String?) {}
+                    override fun onDone(id: String?) { if (id == SAMPLE_ID) runOnUiThread { samplePlaying = null; refreshIfOn(Page.VOICE) } }
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(id: String?) { if (id == SAMPLE_ID) runOnUiThread { samplePlaying = null; refreshIfOn(Page.VOICE) } }
+                    override fun onError(id: String?, code: Int) { if (id == SAMPLE_ID) runOnUiThread { samplePlaying = null; refreshIfOn(Page.VOICE) } }
+                })
                 voiceTtsReady = true
                 if (page == Page.VOICE) render()
             }
@@ -788,9 +811,13 @@ class MainActivity : Activity() {
         voiceTts?.let { runCatching { it.stop(); it.shutdown() } }
         voiceTts = null
         voiceTtsReady = false
+        samplePlaying = null
     }
 
-    /** A short line in [voice] (or the automatic choice) with the current speed and pitch. */
+    /**
+     * A short line in [voice] (or the automatic choice) with the current speed and pitch. Tapping the
+     * one that's already playing stops it, so you're never stuck waiting for a sample to finish.
+     */
     private fun playSample(voice: android.speech.tts.Voice?, automatic: Boolean = false) {
         val e = voiceTts ?: return
         if (!voiceTtsReady) return
@@ -799,12 +826,25 @@ class MainActivity : Activity() {
             ?: (if (!automatic) voiceList.firstOrNull { it.name == prefs.voiceName } else null)
             ?: (if (prefs.butler && !dutch) VoicePicker.butlerVoice(voiceList) else null)
             ?: VoicePicker.best(voiceList, dutch)
+        val id = if (automatic || v == null) AUTO_SAMPLE else v.name
+        if (samplePlaying == id) {          // same one again: that's a stop
+            runCatching { e.stop() }
+            samplePlaying = null
+            refreshIfOn(Page.VOICE)
+            return
+        }
         try {
             if (v != null) e.voice = v else e.language = VoicePicker.localeFor(dutch)
             e.setSpeechRate(prefs.speechRate)
             e.setPitch(prefs.speechPitch)
-            e.speak(shortSample(), android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "sample")
+            samplePlaying = id
+            if (page == Page.VOICE) render()
+            if (e.speak(shortSample(), android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, SAMPLE_ID) != android.speech.tts.TextToSpeech.SUCCESS) {
+                samplePlaying = null
+                refreshIfOn(Page.VOICE)
+            }
         } catch (ex: Exception) {
+            samplePlaying = null
             toast("Couldn't play that voice: ${ex.message}")
         }
     }
@@ -890,7 +930,7 @@ class MainActivity : Activity() {
     }
 
     /** A voice: tap the row to choose it, ▶ to just listen. */
-    private fun voiceRow(title: String, details: String, selected: Boolean, onPlay: () -> Unit, onSelect: () -> Unit) =
+    private fun voiceRow(title: String, details: String, selected: Boolean, playing: Boolean, onPlay: () -> Unit, onSelect: () -> Unit) =
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
@@ -913,8 +953,8 @@ class MainActivity : Activity() {
             // Play icon (not the ▶ character, which some phones draw as a coloured emoji). Its corners
             // follow the card's: inner radius = outer radius - padding.
             addView(android.widget.ImageButton(this@MainActivity).apply {
-                setImageResource(R.drawable.ic_play); imageTintList = Style.tint(Style.TEXT)
-                contentDescription = "Listen"
+                setImageResource(if (playing) R.drawable.ic_answer_no else R.drawable.ic_play); imageTintList = Style.tint(Style.TEXT)
+                contentDescription = if (playing) "Stop" else "Listen"
                 background = Style.button(Style.SURFACE2, dp(Style.R_CARD - 10).toFloat())
                 layoutParams = LinearLayout.LayoutParams(dp(64), dp(48))
                 setOnClickListener { onPlay() }
@@ -1123,7 +1163,7 @@ class MainActivity : Activity() {
             prefs.lastDrive, prefs.parkedSpot, availableUpdate?.versionName,
             // The adapter question and "the car is off": show up (and go away) without a manual refresh.
             prefs.adapterPromptPending, com.daand.drivemusic.obd.ObdManager.carOffForMs() / 60_000L,
-            fullScreenMissing(),
+            fullScreenMissing(), Voice.speaking,
             // Car data: rounded so the screen only redraws when the shown value changes.
             com.daand.drivemusic.obd.ObdManager.live()?.let { "${it.coolantC}|${it.volts?.let { v -> Math.round(v * 10) }}|${it.codes}" }).joinToString("|")
     }
@@ -1707,9 +1747,18 @@ class MainActivity : Activity() {
     private fun sampleButlerLine() = "Good afternoon, sir. The car is warm, the music is ready, and the weather is behaving itself. Shall we?"
 
     private fun previewVoice() {
+        if (Voice.speaking) { Voice.stop("you pressed stop"); refreshIfOn(Page.VOICE); return }
         voiceTts?.stop()
+        samplePlaying = null
         toast("Speaking... turn up the media volume")
-        WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false)
+        WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false) {
+            refreshIfOn(Page.VOICE)
+        }
+    }
+
+    /** Re-draw one page if that's the one on screen (used by callbacks that arrive later). */
+    private fun refreshIfOn(which: Page) {
+        if (!isDestroyed && page == which) render()
     }
 
     private fun pickEngine(engines: List<android.speech.tts.TextToSpeech.EngineInfo>) {
@@ -1936,13 +1985,6 @@ class MainActivity : Activity() {
         views.forEach { addView(it) }
     })
 
-    private fun smallBtn(label: String, onClick: () -> Unit) = Button(this).apply {
-        text = label; isAllCaps = false; textSize = 16f; setTextColor(Style.TEXT)
-        background = Style.button(Style.SURFACE2, dp(12).toFloat()); stateListAnimator = null
-        minimumWidth = dp(52); setPadding(dp(14), dp(10), dp(14), dp(10))
-        setOnClickListener { onClick() }
-    }
-
     /** A value you nudge up/down: card with the name on the left and compact round − value + on the right. */
     private fun stepper(label: String, value: String, minus: () -> Unit, plus: () -> Unit) {
         fun round(sign: String, desc: String, act: () -> Unit) = TextView(this).apply {
@@ -2043,6 +2085,10 @@ class MainActivity : Activity() {
         private const val REQ_IMPORT = 11
         private const val REQ_INTRO_IMAGE = 12
         private const val REQ_CAR_PHOTO = 13
+        /** Utterance id for a voice sample on the Voice page. */
+        private const val SAMPLE_ID = "sample"
+        /** Key for the "Automatic" row (it has no voice name of its own). */
+        private const val AUTO_SAMPLE = "auto"
     }
 
     private fun openEqualizer() {

@@ -1,7 +1,10 @@
 package com.daand.drivemusic
 
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
+import androidx.test.core.app.ApplicationProvider
+import org.robolectric.Shadows.shadowOf
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -26,6 +29,23 @@ class VoiceTest {
         v("en-gb-x-gbd-network", "en", "GB", network = true), v("en-gb-x-rjs-local", "en", "GB", notInstalled = true),
         v("en-au-x-aub-local", "en", "AU"), v("nl-nl-x-dma-local", "nl", "NL"),
     )
+
+    /**
+     * Skipping: the voice stops and whatever was waiting for it continues - once, however many times
+     * you press it. (A double "start the music" is the bug that would come out of getting this wrong.)
+     */
+    @Test fun stoppingTheVoiceContinuesExactlyOnce() {
+        val app = ApplicationProvider.getApplicationContext<android.content.Context>()
+        DriveLog.init(app)
+        var done = 0
+        val g = Greeter(app)
+        g.speak("Hallo, meneer.", dutch = true) { done++ }
+        g.stop("test")
+        g.stop("test again")
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("the music must be started once, not twice", 1, done)
+        assertFalse("nothing is being said any more", Voice.speaking)
+    }
 
     @Test fun butlerPicksAnInstalledOfflineBritishMaleVoice() {
         // rjs would be first choice but isn't downloaded; gbd needs internet -> gbb (offline, male, British).
