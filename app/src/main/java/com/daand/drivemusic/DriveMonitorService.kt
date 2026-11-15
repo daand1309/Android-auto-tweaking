@@ -422,14 +422,19 @@ class DriveMonitorService : NotificationListenerService() {
             val off = obd.carOffForMs()
             if (off == 0L) {
                 // Back on (or never off): the drive simply continues.
-                carOffLogged = false
+                if (carOffLogged) {
+                    // A spot remembered while it stood still is not where the car is now: otherwise a
+                    // short stop would be saved as the parking place at the end of the drive.
+                    carOffLogged = false
+                    Parking.forgetDropSpot()
+                }
             } else {
                 if (!carOffLogged) {
                     carOffLogged = true
                     DriveLog.log("=== CAR: switched off (the car's computer has been quiet for ${off / 1000}s) ===")
                     // Save where the car is standing now: by the time the drive is wrapped up you may
                     // have walked off, and a fresh fix then would be the wrong spot.
-                    Parking.rememberDropSpot(this)
+                    Parking.rememberDropSpot(this@DriveMonitorService)
                 }
                 if (off >= IGNITION_END_DRIVE_MS) { ignitionOff(off); return }
             }

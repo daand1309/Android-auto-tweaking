@@ -69,6 +69,9 @@ object Parking {
         } catch (e: Exception) { dropSpot = null }
     }
 
+    /** The car is driving again: a spot remembered when it stood still is no longer where it is. */
+    fun forgetDropSpot() { dropSpot = null }
+
     /** End of the drive: the spot from the moment Android Auto dropped, or a fresh look if there was none. */
     fun captureAtDrop(ctx: Context) {
         val spot = dropSpot

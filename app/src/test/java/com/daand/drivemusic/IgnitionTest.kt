@@ -30,5 +30,7 @@ class IgnitionTest {
         assertEquals("Auto uit · al 3 min", Ignition.text(3 * 60_000L, dutch = true))
         // Just under the threshold still reads as a minute, never as "0 min".
         assertEquals("Car switched off · 1 min", Ignition.text(61_000L, dutch = false))
+        // The "never heard from the car" sentinel must not print a 15-digit number of minutes.
+        assertEquals("Car switched off · 1440 min", Ignition.text(Long.MAX_VALUE, dutch = false))
     }
 }

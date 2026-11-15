@@ -22,7 +22,9 @@ object Ignition {
 
     /** "Car switched off (3 min)" / "Auto uit (3 min)" - for the status lines. */
     fun text(silentMs: Long, dutch: Boolean): String {
-        val mins = (silentMs / 60_000L).coerceAtLeast(1)
+        // Clamped: "never heard from the car" is a Long.MAX_VALUE sentinel, and a status line reading
+        // "switched off 2562047788015215 min" would be worse than saying nothing.
+        val mins = (silentMs / 60_000L).coerceIn(1L, 24L * 60)
         return if (dutch) "Auto uit · al $mins min" else "Car switched off · $mins min"
     }
 }
