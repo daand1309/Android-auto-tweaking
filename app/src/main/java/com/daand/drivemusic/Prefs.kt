@@ -253,6 +253,10 @@ class Prefs(context: Context) {
     var obdUnplugReminder: Boolean
         get() = sp.getBoolean("obd_unplug_reminder", true)
         set(v) = sp.edit().putBoolean("obd_unplug_reminder", v).apply()
+    /** "Take the adapter out?" was asked after the last drive and not answered yet (shown in the app too). */
+    var adapterPromptPending: Boolean
+        get() = sp.getBoolean("adapter_prompt_pending", false)
+        set(v) = sp.edit().putBoolean("adapter_prompt_pending", v).apply()
     /** Battery readings before each start, with parked time and adapter state (see BatteryLog). */
     var batteryEvents: List<com.daand.drivemusic.obd.BatteryLog.Entry>
         get() = com.daand.drivemusic.obd.BatteryLog.decode(sp.getString("battery_events", "") ?: "")

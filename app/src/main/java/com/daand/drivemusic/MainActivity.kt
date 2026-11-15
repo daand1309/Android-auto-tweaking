@@ -230,6 +230,10 @@ class MainActivity : Activity() {
         lastHomeSignature = homeSignature()
         heroCard()
 
+        // The adapter question belongs at the top: it's about the car you just left, and the
+        // notification can be missed (or swiped away) while the adapter is still drawing power.
+        if (prefs.adapterPromptPending) adapterPromptCard()
+
         // What a new user must do first goes first (found in the new-user walkthrough: lower down,
         // under the buttons and the update card, it was easy to miss).
         if (!MusicApps.isInstalled(packageManager, prefs.musicPackage)) {
@@ -270,6 +274,37 @@ class MainActivity : Activity() {
         navRow("Backup & restore", "Save your settings to a file") { go(Page.BACKUP) }
         navRow("Help & privacy", "Car screen setup, tips, what data is used") { go(Page.HELP) }
         if (prefs.lastDrive.isNotEmpty()) text("Last drive: ${prefs.lastDrive.replace(" - 0 min,", " - under a minute,")}")
+        carOffLine()
+    }
+
+    /** "The app knows the car is off": said quietly at the bottom of the home screen. */
+    private fun carOffLine() {
+        val offMs = com.daand.drivemusic.obd.ObdManager.carOffForMs()
+        if (offMs <= 0) return
+        text(com.daand.drivemusic.obd.Ignition.text(offMs, prefs.greetingDutch) +
+            if (prefs.greetingDutch) " · adapter zit er nog in" else " · adapter still plugged in")
+    }
+
+    /**
+     * The same question the notification asks ("take the adapter out?"), so it can also be answered
+     * when you open the app later - e.g. the notification was swiped away in the car.
+     */
+    private fun adapterPromptCard() {
+        val mins = ((System.currentTimeMillis() - prefs.lastDriveEndAt) / 60_000L).toInt()
+        val parked = if (prefs.lastDriveEndAt > 0 && mins in 0..(7 * 24 * 60))
+            com.daand.drivemusic.obd.BatteryLog.parkedText(mins, prefs.greetingDutch) else null
+        warnCard(if (prefs.greetingDutch)
+            "OBD-adapter zit er nog in" + (parked?.let { " ($it)" } ?: "") + ". Haal hem eruit zodat hij geen stroom gebruikt."
+        else
+            "OBD adapter is still in the car" + (parked?.let { " ($it)" } ?: "") + ". Unplug it so it doesn't draw power while parked.")
+        row(
+            quickBtn(if (prefs.greetingDutch) "✓ Eruit gehaald" else "✓ Taken out") {
+                com.daand.drivemusic.obd.AdapterReminder.answered(this, true); render()
+            },
+            quickBtn(if (prefs.greetingDutch) "Laat zitten" else "Leave it in") {
+                com.daand.drivemusic.obd.AdapterReminder.answered(this, false); render()
+            },
+        )
     }
 
     private fun renderSetup() {
@@ -435,6 +470,11 @@ class MainActivity : Activity() {
 
     private fun renderObd() {
         pageHeader()
+        // Asked by the notification after a drive with the adapter: answerable here too.
+        if (prefs.adapterPromptPending) adapterPromptCard()
+        val carOffMs = com.daand.drivemusic.obd.ObdManager.carOffForMs()
+        if (carOffMs > 0) text(com.daand.drivemusic.obd.Ignition.text(carOffMs, prefs.greetingDutch) +
+            if (prefs.greetingDutch) " · de auto antwoordt niet meer (contact uit)" else " · the car's computer has stopped answering (ignition off)")
         switch("Read the car through an OBD adapter", prefs.obdEnabled) {
             prefs.obdEnabled = it
             DriveLog.log("Setting changed: OBD = $it")
@@ -1041,6 +1081,8 @@ class MainActivity : Activity() {
         val weatherFresh = System.currentTimeMillis() - prefs.lastWeatherAt < 3 * 60 * 60 * 1000L
         return listOf(svc != null, prefs.lastCarState, svc?.currentSong(), prefs.lastWeatherSummary, weatherFresh,
             prefs.lastDrive, prefs.parkedSpot, availableUpdate?.versionName,
+            // The adapter question and "the car is off": show up (and go away) without a manual refresh.
+            prefs.adapterPromptPending, com.daand.drivemusic.obd.ObdManager.carOffForMs() / 60_000L,
             // Car data: rounded so the screen only redraws when the shown value changes.
             com.daand.drivemusic.obd.ObdManager.live()?.let { "${it.coolantC}|${it.volts?.let { v -> Math.round(v * 10) }}|${it.codes}" }).joinToString("|")
     }

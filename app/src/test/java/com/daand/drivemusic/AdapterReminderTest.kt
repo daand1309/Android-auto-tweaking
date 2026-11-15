@@ -48,6 +48,20 @@ class AdapterReminderTest {
         assertEquals(com.daand.drivemusic.obd.BatteryLog.ADAPTER_UNKNOWN, Prefs(ctx).adapterWhileParked)
     }
 
+    /** The same question is shown inside the app (home screen / Car data), so it can be answered later. */
+    @Test fun alsoPendingInTheAppUntilAnswered() {
+        DriveLog.init(ctx)
+        AdapterReminder.post(ctx)
+        assertTrue("the app should offer the same question", Prefs(ctx).adapterPromptPending)
+        AdapterReminderReceiver().onReceive(ctx, Intent(AdapterReminder.ACTION_TAKEN_OUT))
+        assertFalse("answered: no card in the app either", Prefs(ctx).adapterPromptPending)
+        // Driving again makes an old question pointless.
+        AdapterReminder.post(ctx)
+        AdapterReminder.clear(ctx)
+        assertFalse(Prefs(ctx).adapterPromptPending)
+        assertTrue(nm.activeNotifications.isEmpty())
+    }
+
     @Test fun saysSoWhenItCanNotBeSeen() {
         DriveLog.init(ctx)
         org.robolectric.Shadows.shadowOf(nm).setNotificationsEnabled(false)

@@ -61,6 +61,13 @@ class DriveMonitorService : NotificationListenerService() {
          *  (e.g. a "Premium" blip) and recover on their own within about a second. */
         private const val PAUSE_GRACE_MS = 3000L
 
+        /** How often the ignition is checked while driving (the car's computer going quiet = switched off). */
+        private const val IGNITION_CHECK_MS = 15_000L
+
+        /** Switched off this long with Android Auto still up: the drive is over. Short stops (a queue,
+         *  a level crossing, waiting to pick someone up) stay one drive. */
+        private const val IGNITION_END_DRIVE_MS = 10 * 60_000L
+
         /** A stop into ERROR can be the same "Premium" blip recovering slower than a buffer hiccup
          *  (a few seconds, not one): wait longer before calling an ERROR stop a real pause. A user
          *  pause shows up as PAUSED, which still uses the short grace. */
@@ -269,6 +276,8 @@ class DriveMonitorService : NotificationListenerService() {
         }
         if (nowConnected) {
             carConnectedAt = SystemClock.elapsedRealtime()
+            driveEnded = false
+            carOffLogged = false
             pausesThisDrive = 0
             resumesThisDrive = 0
             briefInterruptions = 0
@@ -290,6 +299,8 @@ class DriveMonitorService : NotificationListenerService() {
             startObd()
             handler.removeCallbacks(driveUpdate)
             handler.postDelayed(driveUpdate, DriveUpdates.FIRST_CHECK_MS)
+            handler.removeCallbacks(ignitionCheck)
+            handler.postDelayed(ignitionCheck, IGNITION_CHECK_MS)
             if (prefs.autoOpenDriveMode) {
                 if (startedMidDrive) {
                     // Mid-drive service restart: the connection never ended, so Drive Mode was
@@ -352,6 +363,7 @@ class DriveMonitorService : NotificationListenerService() {
             Briefing.endNow(this)
             UpdatePrompt.cancel(this)
             handler.removeCallbacks(driveUpdate)
+            handler.removeCallbacks(ignitionCheck)
             cancelStart()
             cancelResume()
             cancelPendingPause()
@@ -366,6 +378,15 @@ class DriveMonitorService : NotificationListenerService() {
                     pausedAtDrop = true
                     DriveLog.log("Paused music because you left the car (or Android Auto dropped)")
                 }
+            }
+            if (driveEnded) {
+                // Already wrapped up (the car was switched off while Android Auto stayed up): there is
+                // no drive left to hold, so don't start a reconnect watch that would only end it again.
+                holdingSince = 0L
+                prefs.lastCarState = "not connected"
+                handler.removeCallbacks(holdCheck)
+                DriveLog.log("CAR: Android Auto dropped after the drive had already ended")
+                return
             }
             holdingSince = SystemClock.elapsedRealtime()
             Parking.rememberDropSpot(this)  // where the car is NOW (by the time the hold ends you may have walked off)
@@ -385,6 +406,60 @@ class DriveMonitorService : NotificationListenerService() {
     private var pausedAtDrop = false
     /** The music has played at some point this drive. */
     private var musicStartedThisDrive = false
+    /** The drive is wrapped up (so a late drop / cleanup doesn't wrap it up a second time). */
+    private var driveEnded = false
+
+    /**
+     * The car can be switched off while Android Auto stays up (head unit on accessory power, radio
+     * still on, door not opened yet). Then nothing else tells us the car is off, so the adapter's view
+     * of the ignition is watched: the adapter still answers, its car doesn't.
+     */
+    private var carOffLogged = false
+    private val ignitionCheck = object : Runnable {
+        override fun run() {
+            if (!carConnected || holdingSince > 0 || driveEnded) return
+            val obd = com.daand.drivemusic.obd.ObdManager
+            val off = obd.carOffForMs()
+            if (off == 0L) {
+                // Back on (or never off): the drive simply continues.
+                carOffLogged = false
+            } else {
+                if (!carOffLogged) {
+                    carOffLogged = true
+                    DriveLog.log("=== CAR: switched off (the car's computer has been quiet for ${off / 1000}s) ===")
+                    // Save where the car is standing now: by the time the drive is wrapped up you may
+                    // have walked off, and a fresh fix then would be the wrong spot.
+                    Parking.rememberDropSpot(this)
+                }
+                if (off >= IGNITION_END_DRIVE_MS) { ignitionOff(off); return }
+            }
+            handler.postDelayed(this, IGNITION_CHECK_MS)
+        }
+    }
+
+    /** Switched off long enough that the drive is over, even though Android Auto never dropped. */
+    private fun ignitionOff(silentMs: Long) {
+        DriveLog.log("=== CAR: quiet for ${silentMs / 60_000} min - wrapping up the drive (Android Auto stayed connected) ===")
+        if (prefs.pauseOnDisconnect) {
+            val c = findYtm()
+            if (c?.playbackState?.state == PlaybackState.STATE_PLAYING) {
+                c.transportControls.pause()
+                DriveLog.log("Paused music because the car was switched off")
+            }
+        }
+        Briefing.endNow(this)
+        UpdatePrompt.cancel(this)
+        handler.removeCallbacks(driveUpdate)
+        cancelStart()
+        cancelResume()
+        cancelPendingPause()
+        announceSongAfterStart = false
+        suppressPauseUntil = 0L
+        getSystemService(NotificationManager::class.java).cancel(DRIVE_MODE_NOTIFICATION)
+        carConnected = false   // out of the car: a new drive starts when Android Auto says so again
+        connectGen++
+        endDrive("ignition is off")
+    }
 
     private val holdCheck = object : Runnable {
         override fun run() {
@@ -423,11 +498,15 @@ class DriveMonitorService : NotificationListenerService() {
 
     /** You really left (ignition off, or Android Auto stayed away): wrap up the drive. */
     private fun endDrive(reason: String) {
+        val alreadyEnded = driveEnded
+        driveEnded = true
         reconnectedAt = 0L
         holdingSince = 0L
         pausedAtDrop = false
         handler.removeCallbacks(holdCheck)
+        handler.removeCallbacks(ignitionCheck)
         prefs.lastCarState = "not connected"
+        if (alreadyEnded) return   // wrapped up already: only the state above still needs fixing
         val mins = (SystemClock.elapsedRealtime() - carConnectedAt) / 60000
         val brief = if (briefInterruptions > 0) ", $briefInterruptions brief blip(s) ignored" else ""
         DriveLog.log("=== CAR: drive ended ($reason) after ${mins} min. Pauses: $pausesThisDrive, auto-resumes: $resumesThisDrive$brief ===")

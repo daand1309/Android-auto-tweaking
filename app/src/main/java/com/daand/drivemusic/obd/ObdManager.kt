@@ -47,6 +47,13 @@ object ObdManager {
         return if (last == 0L) Long.MAX_VALUE else System.currentTimeMillis() - last
     }
 
+    /** How long the car has been switched off: its computer is quiet while we still have the adapter.
+     *  0 = the car is on (or we can't tell). */
+    fun carOffForMs(): Long {
+        val silent = ecuSilentMs()
+        return if (Ignition.off(isConnected(), silent)) silent else 0L
+    }
+
     /** This drive's trip numbers (distance, fuel, idle...). */
     @Volatile var trip: Trip = Trip(); private set
     /** Chassis number, once read. */

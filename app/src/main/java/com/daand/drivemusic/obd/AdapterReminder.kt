@@ -32,6 +32,9 @@ object AdapterReminder {
     fun post(ctx: Context) {
         val p = Prefs(ctx)
         val dutch = p.greetingDutch
+        // Also shown inside the app (home screen / Car data page): a notification can be swiped away
+        // or arrive while the phone is in a pocket, and the adapter is still drawing power then.
+        p.adapterPromptPending = true
         val nm = ctx.getSystemService(NotificationManager::class.java)
         runCatching { nm.deleteNotificationChannel(OLD_CHANNEL) }
         nm.createNotificationChannel(NotificationChannel(CHANNEL, if (dutch) "Herinnering OBD-adapter" else "OBD adapter reminder",
@@ -80,7 +83,9 @@ object AdapterReminder {
 
     fun answered(ctx: Context, takenOut: Boolean?) {
         NotificationManagerCompat.from(ctx).cancel(ID)
-        Prefs(ctx).adapterWhileParked = when (takenOut) { true -> BatteryLog.ADAPTER_OUT; false -> BatteryLog.ADAPTER_IN; null -> BatteryLog.ADAPTER_UNKNOWN }
+        val p = Prefs(ctx)
+        p.adapterPromptPending = false
+        p.adapterWhileParked = when (takenOut) { true -> BatteryLog.ADAPTER_OUT; false -> BatteryLog.ADAPTER_IN; null -> BatteryLog.ADAPTER_UNKNOWN }
         DriveLog.log(when (takenOut) {
             true -> "OBD: adapter taken out (you confirmed)"
             false -> "OBD: adapter left in (you chose)"
@@ -89,7 +94,10 @@ object AdapterReminder {
     }
 
     /** A new drive started: an old reminder is out of date. */
-    fun clear(ctx: Context) = NotificationManagerCompat.from(ctx).cancel(ID)
+    fun clear(ctx: Context) {
+        NotificationManagerCompat.from(ctx).cancel(ID)
+        Prefs(ctx).adapterPromptPending = false
+    }
 }
 
 class AdapterReminderReceiver : BroadcastReceiver() {
