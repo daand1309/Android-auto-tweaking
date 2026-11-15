@@ -44,7 +44,8 @@ class VoiceTest {
         g.stop("test again")
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals("the music must be started once, not twice", 1, done)
-        assertFalse("nothing is being said any more", Voice.speaking)
+        // Fully qualified: this file imports android.speech.tts.Voice, the app's Voice is another thing.
+        assertFalse("nothing is being said any more", com.daand.drivemusic.Voice.speaking)
     }
 
     @Test fun butlerPicksAnInstalledOfflineBritishMaleVoice() {
