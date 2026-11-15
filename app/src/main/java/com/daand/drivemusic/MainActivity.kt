@@ -1556,7 +1556,10 @@ class MainActivity : Activity() {
             "Change",
         ) {
             askNumber("Fuel price per litre (€)", "e.g. 2.05 - leave empty to hide costs", prefs.fuelPrice) {
-                prefs.fuelPrice = it.coerceIn(0.0, 10.0); render()
+                // Say so when the number is out of range instead of quietly storing something else (tank
+                // size already works that way) - a typo like "20" used to become €10 without a word.
+                if (it < 0.0 || it > 10.0) toast("Enter a price between €0 and €10 per litre")
+                else { prefs.fuelPrice = it; render() }
             }
         }
     }
