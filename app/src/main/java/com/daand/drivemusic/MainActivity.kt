@@ -91,7 +91,10 @@ class MainActivity : Activity() {
             val bars = insets.getInsets(
                 androidx.core.view.WindowInsetsCompat.Type.systemBars() or androidx.core.view.WindowInsetsCompat.Type.displayCutout()
             )
-            root.setPadding(dp(16) + bars.left, dp(16) + bars.top, dp(16) + bars.right, dp(40) + bars.bottom)
+            // The keyboard too: without its height at the bottom the page can't scroll what's under it
+            // into view (home search results sat hidden behind the keyboard).
+            val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime()).bottom
+            root.setPadding(dp(16) + bars.left, dp(16) + bars.top, dp(16) + bars.right, dp(40) + maxOf(bars.bottom, ime))
             insets
         }
     }
@@ -380,12 +383,17 @@ class MainActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 .apply { topMargin = dp(12) }
             setText(homeQuery)
+            // Typing a search: put the box at the top of the screen, so the results show under it and
+            // above the keyboard.
+            val toTop = { scroll.postDelayed({ scroll.smoothScrollTo(0, (top - dp(8)).coerceAtLeast(0)) }, 250) }
+            setOnFocusChangeListener { _, has -> if (has) toTop() }
             addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                 override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                 override fun afterTextChanged(e: android.text.Editable?) {
                     homeQuery = e?.toString() ?: ""
                     showSearch(grid, results)
+                    toTop()
                 }
             })
         })
@@ -1594,7 +1602,7 @@ class MainActivity : Activity() {
         column.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; setPadding(dp(10), 0, dp(4), dp(10))
             addView(quickBtn("▶  Music") {
-                if (svc == null) toast("Finish setup first")
+                if (svc == null) toast("Allow notification access first (Setup)")
                 else { svc.startMusic("manual test button", requireCar = false); toast("Starting...") }
             })
             addView(quickBtn(if (Voice.speaking) "\u23F9  Stop" else "🎙  Greeting") {
