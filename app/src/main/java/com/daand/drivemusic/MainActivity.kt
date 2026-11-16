@@ -108,7 +108,7 @@ class MainActivity : Activity() {
         // (Counted from the last attempt too - a lookup that can't succeed must not retry on every open.)
         if (FuelPrices.dueForLookup(prefs.fuelPriceAuto, prefs.fuelPriceQuoteAt, prefs.fuelPriceTriedAt,
                 System.currentTimeMillis())) {
-            refreshFuelPrice()
+            refreshFuelPrice("the app was opened")
         }
     }
 
@@ -1650,7 +1650,7 @@ class MainActivity : Activity() {
         switch("Look up the fuel price for my area", prefs.fuelPriceAuto) { on ->
             prefs.fuelPriceAuto = on
             DriveLog.log("Setting changed: automatic fuel price = $on")
-            if (on) refreshFuelPrice()
+            if (on) refreshFuelPrice("you turned automatic lookup on")
             render()
         }
         if (prefs.fuelPriceAuto) {
@@ -1658,16 +1658,20 @@ class MainActivity : Activity() {
             val at = prefs.fuelPriceQuoteAt
             when {
                 quoted > 0 && System.currentTimeMillis() - at <= FuelPrices.USABLE_MS -> {
-                    stepperLike("${fuel.en}: €%.3f per litre".format(java.util.Locale.ROOT, quoted), "Refresh") { refreshFuelPrice() }
+                    stepperLike("${fuel.en}: €%.3f per litre".format(java.util.Locale.ROOT, quoted), "Refresh") {
+                        refreshFuelPrice("you tapped refresh")
+                    }
                     if (prefs.fuelPriceQuoteSource.isNotEmpty()) text(prefs.fuelPriceQuoteSource + " · " + ageText(at))
                 }
                 fuelPriceFetching -> button("Looking up the price around you...", enabled = false) { }
                 quoted > 0 -> {
-                    stepperLike("${fuel.en}: €%.3f (out of date)".format(java.util.Locale.ROOT, quoted), "Refresh") { refreshFuelPrice() }
+                    stepperLike("${fuel.en}: €%.3f (out of date)".format(java.util.Locale.ROOT, quoted), "Refresh") {
+                        refreshFuelPrice("you tapped refresh")
+                    }
                     text("Older than a week: costs use the price you typed in until this is refreshed.")
                 }
                 else -> {
-                    stepperLike("${fuel.en}: not looked up yet", "Look up") { refreshFuelPrice() }
+                    stepperLike("${fuel.en}: not looked up yet", "Look up") { refreshFuelPrice("you tapped look up") }
                     text("Needs your location (approximate is enough) and internet. The position is rounded to about a kilometre before it is sent.")
                 }
             }
@@ -1675,7 +1679,7 @@ class MainActivity : Activity() {
                 android.app.AlertDialog.Builder(this).setTitle("Which fuel does the car take?")
                     .setItems(FuelPrices.Fuel.values().map { it.en }.toTypedArray()) { _, i ->
                         prefs.fuelType = FuelPrices.Fuel.values()[i].code
-                        refreshFuelPrice(); render()
+                        refreshFuelPrice("you changed the fuel type"); render()
                     }.show()
             }
         }
@@ -1707,10 +1711,13 @@ class MainActivity : Activity() {
      * One request for the stations in a box around you, off the main thread. Called when the app opens
      * (at most every few hours) and when you tap Look up / Refresh.
      */
-    private fun refreshFuelPrice() {
+    private fun refreshFuelPrice(reason: String) {
         if (!prefs.fuelPriceAuto || fuelPriceFetching) return
         val fuel = FuelPrices.Fuel.of(prefs.fuelType)
         fuelPriceFetching = true
+        // Why it happened: three lookups in half a minute in your log looked like a bug until the cause
+        // (you tapping "refresh") was in the line as well.
+        DriveLog.log("FUEL: looking up the price ($reason)")
         Thread({
             val here = com.daand.drivemusic.DriveUpdates.whereAreWe(this)
                 ?: prefs.weatherLat.takeIf { !it.isNaN() }?.let { lat -> prefs.weatherLon.takeIf { !it.isNaN() }?.let { lon -> lat to lon } }
