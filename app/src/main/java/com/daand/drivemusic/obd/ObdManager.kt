@@ -117,6 +117,9 @@ object ObdManager {
         val myGen = ++gen
         linkedTold = false
         latest = null; trip = Trip(); lastEcuAnswerAt = 0L; connectedThisDrive = false
+        // A new drive starts with a clean slate: the same fault happening again next drive is news,
+        // and the log is what you read afterwards to see how often something goes wrong.
+        lastProblem = null
         engineLitres = p.obdEngineLitres
         tankLitres = p.tankLitres
         appCtx = app
@@ -218,8 +221,8 @@ object ObdManager {
     /** Codes already logged as "not in the app's list" this drive. */
     private val unknownLogged = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     @Volatile private var lastSession: ObdSession? = null
-    /** The last "can't talk to the car" reason, so retries don't repeat it in the log. */
-    private var lastProblem: String? = null
+    /** The last "can't talk to the car" reason, so retries don't repeat it in the log (per drive). */
+    @Volatile private var lastProblem: String? = null
 
     private fun poll(session: ObdSession, myGen: Int, onAlert: (CarAlerts.Alert) -> Unit) {
         val alerts = this.alerts ?: CarAlerts(readySeconds).also { this.alerts = it }
