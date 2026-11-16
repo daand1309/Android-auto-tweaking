@@ -15,9 +15,19 @@ class TextFoldTest {
         assertEquals("Checks every 10 minutes and stays quiet.", TextFold.short(s))
     }
 
+    @Test fun aQuestionKeepsItsAnswer() {
+        val s = "Music too quiet? Set the media volume above. " + "Quiet calls? Turn on VoLTE and raise the volume. ".repeat(4)
+        assertEquals("Music too quiet? Set the media volume above.", TextFold.short(s))
+    }
+
     @Test fun abbreviationsAreNotSentenceEnds() {
         val s = "Much more natural voices, e.g. a properly posh British butler. " + "Filler text here. ".repeat(10)
         assertEquals("Much more natural voices, e.g. a properly posh British butler.", TextFold.short(s))
+    }
+
+    @Test fun inclIsNotASentenceEnd() {
+        val s = "A voice from Microsoft - the text (incl. your name) goes to Microsoft. " + "Filler text here. ".repeat(10)
+        assertEquals("A voice from Microsoft - the text (incl. your name) goes to Microsoft.", TextFold.short(s))
     }
 
     @Test fun noSentenceBreakCutsAtASpace() {

@@ -2210,9 +2210,10 @@ class MainActivity : Activity() {
             render()
         }
         if (!prefs.cloudVoiceOn) {
-            text("Much more natural voices, e.g. a properly posh British butler. Free: uses Microsoft's free " +
-                "allowance (500,000 characters a month; a greeting is ~300). Needs a free Azure account and internet; " +
-                "without signal the phone voice speaks. The spoken text (incl. your name and the weather) goes to Microsoft.")
+            // The privacy point comes first: long texts fold to their first sentence.
+            text("A much more natural voice from Microsoft - the spoken text (incl. your name and the weather) goes to " +
+                "Microsoft. Free: Microsoft's free allowance is 500,000 characters a month; a greeting is ~300. Needs a " +
+                "free Azure account and internet; without signal the phone voice speaks.")
             return
         }
         val key = prefs.azureKey
@@ -2523,7 +2524,8 @@ class MainActivity : Activity() {
      */
     private fun text(s: String) {
         val inCard = openGroup() != null
-        val short = TextFold.short(s)
+        // The Help page is there to be read: nothing folds there.
+        val short = if (page == Page.HELP) null else TextFold.short(s)
         fun shown(folded: Boolean): CharSequence {
             if (short == null) return s
             val tail = if (folded) "  More ›" else "  Less ‹"
