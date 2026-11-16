@@ -32,7 +32,6 @@ class MainActivity : Activity() {
     private lateinit var prefs: Prefs
     private lateinit var root: LinearLayout
     private lateinit var scroll: ScrollView
-    private var toFix = 0
     private var availableUpdate: Updater.Release? = null
     private var updateBusy = false
     /** A fuel-price lookup is running (one at a time). */
@@ -214,7 +213,6 @@ class MainActivity : Activity() {
         if (page != Page.VOICE) releaseVoiceEngine()
         val y = scroll.scrollY  // keep scroll position when re-drawing after a button tap
         root.removeAllViews()
-        toFix = 0
         when (page) {
             Page.HOME -> renderHome()
             Page.SETUP -> renderSetup()
@@ -1702,18 +1700,26 @@ class MainActivity : Activity() {
         if (!prefs.fuelPriceAuto || fuelPriceFetching) return
         val fuel = FuelPrices.Fuel.of(prefs.fuelType)
         fuelPriceFetching = true
-        // Remembered even when it fails, so opening the app again a minute later doesn't try again.
-        prefs.fuelPriceTriedAt = System.currentTimeMillis()
         Thread({
             val here = com.daand.drivemusic.DriveUpdates.whereAreWe(this)
                 ?: prefs.weatherLat.takeIf { !it.isNaN() }?.let { lat -> prefs.weatherLon.takeIf { !it.isNaN() }?.let { lon -> lat to lon } }
-            val quote = try {
-                if (here == null) { DriveLog.log("FUEL: no location yet - keeping the manual price"); null }
-                else FuelPrices.fetch(here.first, here.second, fuel)
-            } catch (e: Throwable) {
-                // Throwable, not Exception: a huge answer can fail with an Error, and then the flag below
-                // would stay set and the page would say "looking up..." for the rest of the session.
-                DriveLog.log("FUEL: lookup failed (${e.javaClass.simpleName}: ${e.message})"); null
+            val quote: FuelPrices.Quote? = if (here == null) {
+                // Nothing was asked of the network, so this must not start the "don't try again" timer:
+                // granting location (or one drive, which sets weatherLat) has to be enough on its own.
+                DriveLog.log("FUEL: no position yet - keeping the manual price")
+                null
+            } else {
+                // A real attempt: remembered even when it fails, so opening the app a minute later
+                // doesn't hammer a server that just said no.
+                prefs.fuelPriceTriedAt = System.currentTimeMillis()
+                try {
+                    FuelPrices.fetch(here.first, here.second, fuel)
+                } catch (e: Throwable) {
+                    // Throwable, not Exception: a huge answer can fail with an Error, and then the flag
+                    // below would stay set and the page would say "looking up..." for the whole session.
+                    DriveLog.log("FUEL: lookup failed (${e.javaClass.simpleName}: ${e.message})")
+                    null
+                }
             }
             runOnUiThread {
                 fuelPriceFetching = false
@@ -2162,7 +2168,6 @@ class MainActivity : Activity() {
     }
 
     private fun check(label: String, help: String, ok: Boolean, action: String, onClick: () -> Unit) {
-        if (!ok) toFix++
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.TOP
