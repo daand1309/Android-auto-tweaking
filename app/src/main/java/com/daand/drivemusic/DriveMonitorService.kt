@@ -558,6 +558,7 @@ class DriveMonitorService : NotificationListenerService() {
         val alreadyEnded = driveEnded
         driveEnded = true
         runCatching { musicBrowser?.disconnect() }; musicBrowser = null
+        handler.removeCallbacks(ownSpeechCheck)   // nothing from this drive may fire into the next one
         driveModeOffered = false      // a new drive gets its own pop-up
         // The gap guard is about one drive's burst of requests, not about the clock: drive and park
         // again within three seconds and the next car would have been told "already on its way".
@@ -716,8 +717,22 @@ class DriveMonitorService : NotificationListenerService() {
      */
     private fun ownSpeechDone(what: String) {
         suppressPauseUntil = 0L
-        val gen = connectGen
-        handler.postDelayed({ checkAfterOwnSpeech(what, gen) }, 1_500L)
+        postOwnSpeechCheck(what, 1_500L)
+    }
+
+    /**
+     * One pending check at a time, and it can be cancelled: three speeches in a drive used to leave
+     * three timers behind, and nothing could take them away when the drive ended.
+     */
+    @Volatile private var ownSpeechWhat = ""
+    @Volatile private var ownSpeechGen = 0
+    private val ownSpeechCheck = Runnable { checkAfterOwnSpeech(ownSpeechWhat, ownSpeechGen) }
+
+    private fun postOwnSpeechCheck(what: String, delayMs: Long) {
+        ownSpeechWhat = what
+        ownSpeechGen = connectGen
+        handler.removeCallbacks(ownSpeechCheck)
+        handler.postDelayed(ownSpeechCheck, delayMs)
     }
 
     private fun checkAfterOwnSpeech(what: String, gen: Int) {
@@ -813,7 +828,7 @@ class DriveMonitorService : NotificationListenerService() {
             if (song != null && carConnected && gen == connectGen) {
                 suppressPauseUntil = SystemClock.elapsedRealtime() + 15_000
                 SongAnnouncer.announce(this@DriveMonitorService, song, prefs.greetingDutch)
-                handler.postDelayed({ checkAfterOwnSpeech("song announcement", gen) }, 16_000L)
+                postOwnSpeechCheck("song announcement", 16_000L)
             }
         }, 2_500)
     }
