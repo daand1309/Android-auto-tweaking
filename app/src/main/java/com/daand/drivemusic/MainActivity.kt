@@ -1469,7 +1469,14 @@ class MainActivity : Activity() {
         }, REQ_CAR_PHOTO)
     }
 
-    /** Home tile: caption on top, the value underneath (up to two lines, never cut mid-word). */
+    /**
+     * How many lines a tile value may use. Two is enough at the phone's normal text size; with a big
+     * system font the weather summary needs more, and cutting it to "6° · light ra…" is worse than a
+     * taller tile (the row grows to its tallest tile, so they stay even).
+     */
+    private fun tileLines() = if (resources.configuration.fontScale > 1.15f) 4 else 2
+
+    /** Home tile: caption on top, the value underneath (never cut mid-word). */
     private fun statusTile(@Suppress("UNUSED_PARAMETER") icon: String, label: String, value: String) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         background = Style.rounded(Style.SURFACE, dp(Style.R_CARD).toFloat())
@@ -1486,7 +1493,7 @@ class MainActivity : Activity() {
         addView(TextView(this@MainActivity).apply {
             text = value; textSize = 15f; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD)
             fontFeatureSettings = Style.TABULAR
-            maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
+            maxLines = tileLines(); ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(0, dp(4), 0, 0)
         })
     }
