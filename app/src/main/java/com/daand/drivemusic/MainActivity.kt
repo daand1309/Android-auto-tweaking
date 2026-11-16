@@ -1783,16 +1783,18 @@ class MainActivity : Activity() {
         fun line(label: String, since: Long) {
             val t = com.daand.drivemusic.obd.TripHistory.totals(trips, since)
             if (t.trips == 0) return
-            val parts = listOfNotNull(
+            // Two deliberate lines: a narrow card can't fit five values, and wrapped at the separators
+            // the break lands on a "·", which then dangles at the start of the next line.
+            val distance = listOfNotNull(
                 "%.0f km".format(java.util.Locale.ROOT, t.km),
                 t.per100?.let { "%.1f L/100".format(java.util.Locale.ROOT, it) },
+            ).joinToString(" · ")
+            val fuel = listOfNotNull(
                 if (t.litres > 0) "%.1f L".format(java.util.Locale.ROOT, t.litres) else null,
                 if (price > 0 && t.litres > 0) "€%.2f".format(java.util.Locale.ROOT, t.litres * price) else null,
-                "${t.trips} trips",
-            )
-            // A plain " · " can break after the dot, leaving a line that starts with "· 2 trips".
-            // A no-break space in front keeps the dot with the number it belongs to.
-            statRow(label, parts.joinToString("\u00A0·  "))
+                if (t.trips == 1) "1 trip" else "${t.trips} trips",
+            ).joinToString(" · ")
+            statRow(label, if (fuel.isEmpty()) distance else "$distance\n$fuel")
         }
         header("Totals")
         line("This week", weekStart)
@@ -1802,7 +1804,7 @@ class MainActivity : Activity() {
         header("Recent drives")
         val fmt = java.text.SimpleDateFormat("EEE d MMM, HH:mm", java.util.Locale.getDefault())
         for (t in trips.sortedBy { it.at }.takeLast(30).reversed()) {  // newest first
-            statRow(fmt.format(java.util.Date(t.at)), com.daand.drivemusic.obd.TripNotice.text(t, price, prefs.greetingDutch) +
+            statRow(fmt.format(java.util.Date(t.at)), com.daand.drivemusic.obd.TripNotice.text(t, price, prefs.greetingDutch, multiline = true) +
                 if (t.codes.isNotEmpty()) "\n⚠ ${t.codes.joinToString()}" else "")
         }
         button("Clear trip history", danger = true) {

@@ -18,13 +18,18 @@ object TripNotice {
     private const val ID = 11
 
     /** The summary line. Pure, unit tested. */
-    fun text(t: TripRecord, price: Double, dutch: Boolean): String = listOfNotNull(
-        "%.1f km".format(Locale.ROOT, t.km),
-        t.per100?.let { "%.1f L/100".format(Locale.ROOT, it) },
-        if (price > 0 && t.litres > 0) "€%.2f".format(Locale.ROOT, t.litres * price) else null,
-        "${t.minutes} min",
-        t.score?.let { "${Trip.scoreWord(it, dutch)} $it/100" },
-    ).joinToString(" · ")
+    /** [multiline] puts the driving score on its own line: the Trips screen has a narrow column, and
+     *  wrapped there the row began with "· smooth 86/100", which reads like a bullet. */
+    fun text(t: TripRecord, price: Double, dutch: Boolean, multiline: Boolean = false): String {
+        val head = listOfNotNull(
+            "%.1f km".format(Locale.ROOT, t.km),
+            t.per100?.let { "%.1f L/100".format(Locale.ROOT, it) },
+            if (price > 0 && t.litres > 0) "€%.2f".format(Locale.ROOT, t.litres * price) else null,
+            "${t.minutes} min",
+        ).joinToString(" · ")
+        val score = t.score?.let { "${Trip.scoreWord(it, dutch)} $it/100" } ?: return head
+        return if (multiline) "$head\n$score" else "$head · $score"
+    }
 
     fun post(ctx: Context, t: TripRecord, p: Prefs) {
         val nm = ctx.getSystemService(NotificationManager::class.java)

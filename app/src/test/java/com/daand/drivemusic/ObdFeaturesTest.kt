@@ -134,5 +134,8 @@ class ObdFeaturesTest {
         assertEquals("18.4 km · 6.3 L/100 · €2.38 · 20 min · smooth 86/100",
             TripNotice.text(TripRecord(0, 20, 18.4, 1.16, 86, 92), 2.05, dutch = false))
         assertEquals("0.8 km · 3 min", TripNotice.text(TripRecord(0, 3, 0.8, 0.0, null, null), 0.0, dutch = false))
+        // The Trips screen needs the score on its own line; the notification needs it inline.
+        assertEquals("18.4 km · 6.3 L/100 · €2.38 · 20 min\nsmooth 86/100",
+            TripNotice.text(TripRecord(0, 20, 18.4, 1.16, 86, 92), 2.05, dutch = false, multiline = true))
     }
 }
