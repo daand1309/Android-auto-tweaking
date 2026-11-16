@@ -26,7 +26,7 @@ object HomeFeatures {
             "toonhoogte", "snelheid", "uitspraak")),
         Feature("drive_mode", FeatureGroup.MUSIC, "Drive Mode", "▣", listOf(
             "big buttons", "holder", "full-screen", "full screen", "opens by itself", "grote knoppen", "houder")),
-        Feature("car_data", FeatureGroup.CAR, "Car data", "◔", listOf(
+        Feature("car_data", FeatureGroup.CAR, "Car data", "📊", listOf(
             "obd", "adapter", "bluetooth", "battery", "accu", "fuel price", "brandstof", "brandstofprijs", "tank",
             "engine size", "fault", "code", "early warnings", "storing", "motor", "temperature", "vgate")),
         Feature("trips", FeatureGroup.CAR, "Trips & costs", "⛽", listOf(

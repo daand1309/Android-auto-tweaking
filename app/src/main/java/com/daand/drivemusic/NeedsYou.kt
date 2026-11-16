@@ -23,7 +23,7 @@ object NeedsYou {
     fun items(s: State): List<Item> = buildList {
         if (s.musicAppMissing) add(Item(Kind.MUSIC_APP, "Music app not found - pick one", "music"))
         if (s.adapterQuestion) add(Item(Kind.ADAPTER, "OBD adapter still in the car?", "car_data"))
-        s.faultCode?.let { add(Item(Kind.FAULT, "Fault code $it - see what it means", "car_data")) }
+        s.faultCode?.let { add(Item(Kind.FAULT, "Fault code $it - what it means", "car_data")) }
         if (s.setupStepsLeft > 0) add(Item(Kind.SETUP,
             "Setup: ${s.setupStepsLeft} ${if (s.setupStepsLeft == 1) "step" else "steps"} left", "setup"))
         if (s.fullScreenMissing) add(Item(Kind.FULL_SCREEN, "Let Drive Mode open by itself", "drive_mode"))

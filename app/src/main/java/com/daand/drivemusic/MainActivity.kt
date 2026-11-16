@@ -1607,6 +1607,8 @@ class MainActivity : Activity() {
                 refreshIfOn(Page.HOME)
             })
             addView(quickBtn("📍  Car") { whereIsMyCar() })
+            // Same height for all three, even when one label wraps at a big font.
+            for (i in 0 until childCount) getChildAt(i).layoutParams.height = LinearLayout.LayoutParams.MATCH_PARENT
         })
         card.addView(column)
 
