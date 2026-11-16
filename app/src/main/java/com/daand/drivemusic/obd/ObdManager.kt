@@ -175,10 +175,12 @@ object ObdManager {
                 val problem = session.start()
                 if (problem != null) {
                     status = "Adapter found, but $problem"
-                    DriveLog.log("OBD: $problem")
+                    // Each retry gives the same sentence: say it once per episode, not three times a drive.
+                    if (problem != lastProblem) { DriveLog.log("OBD: $problem"); lastProblem = problem }
                     session.close()
                     sleep(RETRY_MS); continue
                 }
+                lastProblem = null
                 tries = 0  // connected: a later drop gets a fresh set of retries
                 status = "Connected"
                 connectedThisDrive = true
@@ -210,15 +212,22 @@ object ObdManager {
     @Volatile var liveView = false
     const val LIVE_POLL_MS = 1_500L
 
+    /** Engine off / ignition off: the ECU is silent, so stop burning questions on it. */
+    const val QUIET_POLL_MS = 15_000L
+
     /** Codes already logged as "not in the app's list" this drive. */
     private val unknownLogged = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     @Volatile private var lastSession: ObdSession? = null
+    /** The last "can't talk to the car" reason, so retries don't repeat it in the log. */
+    private var lastProblem: String? = null
 
     private fun poll(session: ObdSession, myGen: Int, onAlert: (CarAlerts.Alert) -> Unit) {
         val alerts = this.alerts ?: CarAlerts(readySeconds).also { this.alerts = it }
         lastSession = session
         var n = 0
         var lastCodes = 0L
+        var silent = 0          // rounds in a row with no answer at all
+        var toldQuiet = false
         while (alive(myGen)) {
             val roundStart = System.currentTimeMillis()
             val full = n % FULL_EVERY == 0
@@ -226,7 +235,19 @@ object ObdManager {
             val snap = session.read(latest, full, readCodes = codesDue)
             if (codesDue) lastCodes = System.currentTimeMillis()
             latest = snap
-            if (snap.coolantC != null || snap.rpm != null || snap.speedKmh != null) lastEcuAnswerAt = snap.at
+            val answered = snap.coolantC != null || snap.rpm != null || snap.speedKmh != null
+            if (answered) {
+                lastEcuAnswerAt = snap.at
+                silent = 0
+                toldQuiet = false
+            } else {
+                silent++
+                // One line per quiet episode instead of twenty a minute: the car is off, not broken.
+                if (silent == 3 && !toldQuiet) {
+                    toldQuiet = true
+                    DriveLog.log("OBD: the car has gone quiet - asking every 15 s until it answers again")
+                }
+            }
             trip.add(snap)
             if (!alive(myGen)) break
             recordRestingBattery(snap, onAlert)
@@ -251,7 +272,12 @@ object ObdManager {
             }
             n++
             // A steady rhythm: the wait includes the time the reading took.
-            val interval = when { liveView -> LIVE_POLL_MS; alerts.countingDown() -> FAST_POLL_MS; else -> POLL_MS }
+            val interval = when {
+                liveView -> LIVE_POLL_MS
+                alerts.countingDown() -> FAST_POLL_MS
+                silent >= 3 -> QUIET_POLL_MS      // ignition off: don't hammer a car that isn't listening
+                else -> POLL_MS
+            }
             sleep((interval - (System.currentTimeMillis() - roundStart)).coerceAtLeast(200L))
         }
     }

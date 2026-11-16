@@ -145,6 +145,7 @@ class LogActivity : Activity() {
         fun ver(pkg: String) = try { packageManager.getPackageInfo(pkg, 0).versionName } catch (e: Exception) { "not installed" }
         val header = buildString {
             appendLine("Drive Music log")
+            appendLine("Drive Music: ${ver(packageName)}")
             appendLine("Phone: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
             val music = Prefs(this@LogActivity).musicPackage
             val microG = MusicApps.findMicroG(this@LogActivity)

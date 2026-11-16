@@ -9,6 +9,11 @@ class App : Application() {
         super.onCreate()
         DriveLog.init(this)
         Style.apply(Prefs(this).theme)
+        // One line per process start: a shared log then says which build wrote the lines around it
+        // (reading a log without that means guessing the version from timestamps).
+        runCatching {
+            DriveLog.log("Drive Music ${packageManager.getPackageInfo(packageName, 0).versionName} started")
+        }
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             // OBD poller is stopped with Thread.interrupt(); sleep() surfaces that as
