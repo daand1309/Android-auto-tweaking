@@ -294,10 +294,7 @@ class MainActivity : Activity() {
 
         header("App")
         if (missing == 0) navRow("Setup", "All done ✓") { go(Page.SETUP) }
-        navRow("Updates", "Version ${packageManager.getPackageInfo(packageName, 0).versionName}") { go(Page.UPDATES) }
-        if (prefs.lastDrive.isNotEmpty()) navRow("Last drive", prefs.lastDrive.replace(" - 0 min,", " - under a minute,").replace("\n", " · ")) {
-            showLastDrive()
-        }
+        navRow("Updates", "Version ${packageManager.getPackageInfo(packageName, 0).versionName ?: "?"}") { go(Page.UPDATES) }
         navRow("Logs", "What happened on your drives") { startActivity(Intent(this, LogActivity::class.java)) }
         navRow("Backup & restore", "Save your settings to a file") { go(Page.BACKUP) }
         navRow("Help & privacy", "Car screen setup, tips, what data is used") { go(Page.HELP) }
@@ -342,11 +339,9 @@ class MainActivity : Activity() {
     private fun fullScreenCard() {
         if (!fullScreenMissing()) return
         warnCard("Drive Mode can't take over the screen when the car connects yet - allow full-screen " +
-            "notifications for Drive Music and it opens by itself.")
-        row(
-            quickBtn("Allow") { openFullScreenSetting() },
-            quickBtn("Not now") { prefs.fullScreenNagDismissed = true; render() },
-        )
+            "notifications for Drive Music and it opens by itself.",
+            action = "Allow it") { openFullScreenSetting() }
+        row(quickBtn("Not now") { prefs.fullScreenNagDismissed = true; render() })
     }
 
     /** May Drive Music take the whole screen when the car connects? (Denied by default on Android 14+.) */
@@ -598,7 +593,7 @@ class MainActivity : Activity() {
             try { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) } catch (e: Exception) { toast("Settings → Connections → Bluetooth") }
         }
         if (prefs.obdDevice.isNotBlank()) {
-            if (obdTestRunning) button("Connecting to the adapter…") { }
+            if (obdTestRunning) button("Connecting to the adapter…", enabled = false) { }
             else button("Test connection (ignition on)", accent = true) { testObd() }
         }
 
@@ -611,7 +606,6 @@ class MainActivity : Activity() {
         }
 
         header("Right now")
-        if (prefs.obdEnabled) navRow("Trips & costs", "Distance, fuel, costs and your driving score") { go(Page.TRIPS) }
         val obd = com.daand.drivemusic.obd.ObdManager
         val live = obd.live()
         text(if (live != null) com.daand.drivemusic.obd.CarStatusText.report(live, prefs.greetingDutch, obd.trip) +
@@ -786,7 +780,9 @@ class MainActivity : Activity() {
                     }
                 }
             if (!dutch && voiceList.none { VoicePicker.accent(it) == "GB" }) {
-                navRow("🇬🇧  Get British voices", "Tap → Google speech engine → Install voice data → English (United Kingdom)", highlight = true) { openTtsSettings() }
+                // No second button here: "Download more voices" below opens the very same screen.
+                text("No British voice on this phone yet. \"Download more voices\" below opens the screen where " +
+                    "you add one (Google speech engine → Install voice data → English (United Kingdom)).")
             }
         }
 
@@ -1060,7 +1056,7 @@ class MainActivity : Activity() {
                     askText("Text shown in the intro", "e.g. ASX", prefs.carName) { prefs.carName = it.take(12); render() }
                 }
             }
-            button("Preview the intro") { startActivity(Intent(this, DriveModeActivity::class.java)) }
+            text("The intro plays every time Drive Mode opens - the button at the top of this page shows it now.")
         }
     }
 
@@ -1113,11 +1109,9 @@ class MainActivity : Activity() {
             "• The premium voice (if you set it up) sends the spoken text to Microsoft, and nothing else.\n" +
             "• No overlay, accessibility, contacts, SMS or storage access.")
 
-        header("Shortcuts")
-        button("Open my music app") {
-            packageManager.getLaunchIntentForPackage(prefs.musicPackage)?.let { startActivity(it) } ?: toast("Music app not installed")
-        }
-        button("Show the setup checklist") { go(Page.SETUP) }
+        header("Still stuck?")
+        text("Home → Music & driving picks the app that plays; Home → Setup runs the checklist again. That's also " +
+            "where the settings for everything above live.")
     }
 
     private fun renderCar() {
@@ -1355,9 +1349,6 @@ class MainActivity : Activity() {
     /** Weather is switched on but has no place to look up: it would silently never be told. */
     private fun needsTown() = prefs.greetingEnabled && prefs.weatherEnabled && prefs.weatherLat.isNaN() &&
         checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED
-
-    /** The home row for the last drive opens the same summary the hero card used to. */
-    private fun showLastDrive() = lastDriveDetails()
 
     private fun lastDriveDetails() {
         AlertDialog.Builder(this).setTitle("Last drive")
@@ -1661,7 +1652,7 @@ class MainActivity : Activity() {
                     stepperLike("${fuel.en}: €%.3f per litre".format(java.util.Locale.ROOT, quoted), "Refresh") { refreshFuelPrice() }
                     if (prefs.fuelPriceQuoteSource.isNotEmpty()) text(prefs.fuelPriceQuoteSource + " · " + ageText(at))
                 }
-                fuelPriceFetching -> button("Looking up the price around you...") { }
+                fuelPriceFetching -> button("Looking up the price around you...", enabled = false) { }
                 quoted > 0 -> {
                     stepperLike("${fuel.en}: €%.3f (out of date)".format(java.util.Locale.ROOT, quoted), "Refresh") { refreshFuelPrice() }
                     text("Older than a week: costs use the price you typed in until this is refreshed.")
@@ -1777,7 +1768,7 @@ class MainActivity : Activity() {
         line("This week", weekStart)
         line("This month", monthStart)
         line("All time", 0)
-        if (price <= 0) text("Set the fuel price on the Car data page to see costs.")
+        if (price <= 0) text("Set the fuel price under Car data (OBD) → Your car to see costs.")
         header("Recent drives")
         val fmt = java.text.SimpleDateFormat("EEE d MMM, HH:mm", java.util.Locale.getDefault())
         for (t in trips.sortedBy { it.at }.takeLast(30).reversed()) {  // newest first
@@ -2015,7 +2006,7 @@ class MainActivity : Activity() {
             runOnUiThread {
                 updateBusy = false
                 availableUpdate = release
-                if (!silent || release != null) updateMessage = msg
+                updateMessage = if (!silent || release != null) msg else ""
                 if (!isFinishing && !isDestroyed) render()
             }
         }.start()
@@ -2112,9 +2103,11 @@ class MainActivity : Activity() {
         setPadding(dp(4), dp(2), dp(4), dp(8))
     })
 
-    private fun button(label: String, accent: Boolean = false, danger: Boolean = false, onClick: () -> Unit) =
+    private fun button(label: String, accent: Boolean = false, danger: Boolean = false, enabled: Boolean = true,
+                       onClick: () -> Unit) =
         root.addView(Button(this).apply {
         text = label; isAllCaps = false; textSize = 15f
+        isEnabled = enabled; if (!enabled) alpha = 0.55f
         setTextColor(if (accent || danger) Color.WHITE else Style.TEXT)
         background = Style.button(
             when { danger -> Style.DANGER; accent -> Style.PRIMARY; else -> Style.SURFACE2 }, dp(Style.R_CARD).toFloat()
