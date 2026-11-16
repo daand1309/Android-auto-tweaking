@@ -152,7 +152,7 @@ class FuelPricesTest {
         val url = FuelPrices.cbsUrl(FuelPrices.Fuel.DIESEL, "2026MM10")
         assertTrue(url, url.contains("A047219"))
         assertTrue(url, url.contains("2026MM10"))
-        assertTrue("no interpolation left over", url, !url.contains("$"))
+        assertTrue("no interpolation left over: $url", !url.contains("$"))
         assertEquals("2026MM10", FuelPrices.periodOf(0, monthStart(2026, 10)))
         assertEquals("2026MM09", FuelPrices.periodOf(1, monthStart(2026, 10)))
         assertEquals("2025MM12", FuelPrices.periodOf(1, monthStart(2026, 1)))
