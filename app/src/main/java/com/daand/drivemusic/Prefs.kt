@@ -104,7 +104,10 @@ class Prefs(context: Context) {
     /** How the voice addresses you, e.g. "Mr. Smith". Stored only on the phone. */
     var greetingName: String
         get() = sp.getString("greeting_name", "") ?: ""
-        set(v) = sp.edit().putString("greeting_name", v).apply()
+        set(v) {
+            sp.edit().putString("greeting_name", v).apply()
+            DriveLog.setPrivateNames(v, namePronunciation)   // the greeting is logged, so keep it out
+        }
 
     /** During a drive: speak up when weather / road conditions change. */
     var updatesWeather: Boolean
@@ -383,7 +386,10 @@ class Prefs(context: Context) {
     /** Optional phonetic spelling of the name, e.g. "Mister Dik-hof". Overrides the name when speaking. */
     var namePronunciation: String
         get() = sp.getString("name_pronunciation", "") ?: ""
-        set(v) = sp.edit().putString("name_pronunciation", v).apply()
+        set(v) {
+            sp.edit().putString("name_pronunciation", v).apply()
+            DriveLog.setPrivateNames(greetingName, v)        // the spoken text is logged in full
+        }
 
     /** Optional birthday as "MM-DD" for a birthday greeting. */
     var birthday: String

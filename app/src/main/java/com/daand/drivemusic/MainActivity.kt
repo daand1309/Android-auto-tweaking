@@ -766,7 +766,8 @@ class MainActivity : Activity() {
         Thread {
             val result = com.daand.drivemusic.obd.ObdManager.testOnce(this, address, dutch)
             // The VIN stays on screen but out of the log (logs get shared).
-            DriveLog.log("OBD test: ${result.replace(Regex("VIN: [A-Z0-9]{17}"), "VIN: (hidden)").replace('\n', ' ')}")
+            // DriveLog takes the VIN out of every line (LogPrivacy), so this can pass it straight on.
+            DriveLog.log("OBD test: ${result.replace('\n', ' ')}")
             runOnUiThread {
                 obdTestRunning = false
                 // Worked during a drive: keep it connected for the rest of the drive.

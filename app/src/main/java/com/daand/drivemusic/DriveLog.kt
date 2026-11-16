@@ -16,6 +16,14 @@ object DriveLog {
     /** How much history is kept: this file plus two older ones. A slow problem needs weeks of log. */
     private const val KEEP = 2
     private lateinit var dir: File
+    /**
+     * The name(s) the user configured for the greeting, removed from every line (see [LogPrivacy]).
+     * Set at start-up and whenever the setting changes, because the greeting is logged in full and the
+     * log is shared.
+     */
+    @Volatile private var privateNames: List<String> = emptyList()
+
+    fun setPrivateNames(vararg names: String) { privateNames = names.filter { it.isNotBlank() } }
     private val current get() = File(dir, "drive.log")
     private fun older(n: Int) = File(dir, "drive.log.$n")
 
@@ -28,7 +36,10 @@ object DriveLog {
     @Synchronized
     fun log(raw: String) {
         // One entry = one line: text from outside (song titles, Bluetooth names) can't forge extra entries.
-        val msg = raw.replace('\r', ' ').replace('\n', ' ').replace('\u2028', ' ').replace('\u2029', ' ')
+        val msg = LogPrivacy.redact(
+            raw.replace('\r', ' ').replace('\n', ' ').replace('\u2028', ' ').replace('\u2029', ' '),
+            privateNames,
+        )
         Log.i(TAG, msg)
         if (!::dir.isInitialized) return
         try {

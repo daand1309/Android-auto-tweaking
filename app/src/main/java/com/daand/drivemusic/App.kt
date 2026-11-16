@@ -8,7 +8,9 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         DriveLog.init(this)
-        Style.apply(Prefs(this).theme)
+        val startPrefs = Prefs(this)
+        DriveLog.setPrivateNames(startPrefs.greetingName, startPrefs.namePronunciation)
+        Style.apply(startPrefs.theme)
         // One line per process start: a shared log then says which build wrote the lines around it
         // (reading a log without that means guessing the version from timestamps).
         runCatching {
