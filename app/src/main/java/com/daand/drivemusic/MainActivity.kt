@@ -1084,13 +1084,14 @@ class MainActivity : Activity() {
         } else {
             statRow("Available", "${upd.versionName} - ready to install")
             if (upd.notes.isNotBlank()) text(upd.notes.take(400))
-            button(if (updateBusy) "Downloading..." else "⬇  Install ${upd.versionName}", accent = true) {
-                if (!updateBusy) installUpdate(upd)
-            }
+            button(if (updateBusy) "Downloading..." else "⬇  Install ${upd.versionName}", accent = true,
+                enabled = !updateBusy) { if (!updateBusy) installUpdate(upd) }
             text("Drive Music checks the file's checksum and signature before handing it to Android, " +
                 "and Android always asks you to confirm.")
         }
-        button(if (updateBusy) "Working..." else "Check for updates now") { if (!updateBusy) checkForUpdate(silent = false) }
+        button(if (updateBusy) "Working..." else "Check for updates now", enabled = !updateBusy) {
+            if (!updateBusy) checkForUpdate(silent = false)
+        }
         switch("Check automatically (daily)", prefs.autoUpdateCheck) { prefs.autoUpdateCheck = it }
     }
 
@@ -2048,10 +2049,18 @@ class MainActivity : Activity() {
                 }
                 DriveLog.log("UPDATE: download verified (checksum + signature OK)")
                 Updater.install(this, apk)
-                runOnUiThread { updateBusy = false; updateMessage = "Verified ✅ - confirm the update on the next screen"; render() }
-            } catch (e: Exception) {
-                DriveLog.log("UPDATE: failed - ${e.message}")
-                runOnUiThread { updateBusy = false; updateMessage = "❌ ${e.message}"; render() }
+                runOnUiThread {
+                    updateBusy = false; updateMessage = "Verified ✅ - confirm the update on the next screen"
+                    if (!isFinishing && !isDestroyed) render()
+                }
+            } catch (e: Throwable) {
+                // Throwable, not Exception: an Error while unpacking a big file would leave updateBusy
+                // set, and the Updates page would say "Downloading..." until the app was restarted.
+                DriveLog.log("UPDATE: failed - ${e.javaClass.simpleName}: ${e.message}")
+                runOnUiThread {
+                    updateBusy = false; updateMessage = "❌ ${e.message ?: "something went wrong"}"
+                    if (!isFinishing && !isDestroyed) render()
+                }
             }
         }.start()
     }
