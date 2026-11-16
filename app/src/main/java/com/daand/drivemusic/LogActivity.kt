@@ -109,7 +109,7 @@ class LogActivity : Activity() {
 
     private fun load() {
         var lines = DriveLog.readAll().lines().filter { it.isNotBlank() }
-        if (problemsOnly) lines = lines.filter { l -> PROBLEM_MARKERS.any { l.contains(it) } || l.contains("=== CAR") }
+        lines = lines.filter { LogFilter.keep(it, problemsOnly) }
         lines = lines.takeLast(600)
         if (lines.isEmpty()) {
             logView.text = if (problemsOnly) "No problems logged 🎉" else "No logs yet. Go for a drive!"
@@ -121,9 +121,9 @@ class LogActivity : Activity() {
             val start = sb.length
             sb.append(line).append('\n')
             val color = when {
-                PROBLEM_MARKERS.any { line.contains(it) } -> Color.rgb(0xE5, 0x39, 0x35)
+                LogFilter.isProblem(line) -> Color.rgb(0xE5, 0x39, 0x35)
                 line.contains("success") || line.contains("RESUME: auto-resuming") -> Color.rgb(0x2E, 0x9D, 0x4F)
-                line.contains("=== CAR") -> Color.rgb(0x1E, 0x88, 0xE5)
+                LogFilter.isDriveMark(line) -> Color.rgb(0x1E, 0x88, 0xE5)
                 else -> null
             }
             if (color != null) {
@@ -133,11 +133,6 @@ class LogActivity : Activity() {
         }
         logView.text = sb
         scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
-    }
-
-    companion object {
-        private val PROBLEM_MARKERS = listOf("CRASH", "!!!", "FAILED", "ERROR", "LOST", "destroyed", "stopped by the system",
-            "not installed", "gave up", "disconnected from", "looks deliberate")
     }
 
     private fun share() {
