@@ -59,6 +59,8 @@ class DriveMonitorService : NotificationListenerService() {
          * shortly after the car connected, so it doesn't leap up mid-drive.
          */
         private const val DRIVE_MODE_RETRIES = 1
+        /** Two full-screen requests closer together than this are one intent, not two. */
+        private const val DRIVE_MODE_MIN_GAP_MS = 3_000L
         private const val DRIVE_MODE_RETRY_WINDOW_MS = 5 * 60_000L
         private const val START_TICK_MS = 1500L
         private const val START_MAX_TICKS = 15
@@ -441,6 +443,8 @@ class DriveMonitorService : NotificationListenerService() {
      * once, not twice.
      */
     private var driveModeOffered = false
+    /** When the last full-screen request was posted (see [DRIVE_MODE_MIN_GAP_MS]). */
+    private var lastDriveModePostAt = 0L
     /**
      * Times we tried to put Drive Mode on screen while the phone was in use (where Android only shows a
      * banner). Once the screen goes off we get one more try, which is when it really can take over.
@@ -909,6 +913,13 @@ class DriveMonitorService : NotificationListenerService() {
     /** Fires a full-screen-intent notification that opens Drive Mode on the phone when the car
      *  connects. No overlay permission needed - the system launches it (or shows a heads-up to tap). */
     private fun openDriveMode() {
+        // The screen going off right after a connect used to fire a second full-screen request while the
+        // first was still being delivered, so Drive Mode started twice (two activities, two ticks).
+        if (SystemClock.elapsedRealtime() - lastDriveModePostAt < DRIVE_MODE_MIN_GAP_MS) {
+            DriveLog.log("Drive Mode: request already on its way - not asking again")
+            return
+        }
+        lastDriveModePostAt = SystemClock.elapsedRealtime()
         try {
             val nm = getSystemService(NotificationManager::class.java)
             // Silent: it still pops up (high importance is what allows that), but no ding in the car -
