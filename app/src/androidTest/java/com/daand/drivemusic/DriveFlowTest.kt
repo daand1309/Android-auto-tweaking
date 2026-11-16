@@ -230,22 +230,26 @@ class DriveFlowTest {
         prefs.greetingName = "Mr. Test"
         prefs.announceSong = true
         prefs.lastGreetingAt = 0L
+        // The song is named so it cannot collide with the greeting name: the log has to keep the song
+        // and must not keep the name, so the two must be distinguishable.
         onMain {
             session.setMetadata(
                 android.media.MediaMetadata.Builder()
-                    .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, "Test Song")
-                    .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, "Test Artist")
+                    .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, "Highway Song")
+                    .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, "Some Artist")
                     .build()
             )
         }
-        waitFor("song info to reach the service", 5_000) { service().currentSong()?.title == "Test Song" }
+        waitFor("song info to reach the service", 5_000) { service().currentSong()?.title == "Highway Song" }
         onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_PROJECTION) }
         // Whether or not the emulator has a voice installed, music must start after the greeting.
         waitFor("music to start after the greeting", 60_000) { currentState == PlaybackState.STATE_PLAYING }
         val log = log()
         assertTrue(log, log.contains("GREETING: \"Good"))
-        assertTrue(log, log.contains("Mister Test"))
-        assertTrue(log, log.contains("Up first: Test Song by Test Artist."))
+        // The name is what the voice said, but the log is a file you share: it must not be in there.
+        assertFalse("the greeting name must not reach the log:\n$log", log.contains("Mister Test"))
+        assertTrue("the redacted greeting is still readable:\n$log", log.contains("Mister (name)"))
+        assertTrue(log, log.contains("Up first: Highway Song by Some Artist."))
         assertTrue(log, Regex("GREETING: (spoken|no text-to-speech|speech|timed out)").containsMatchIn(log))
     }
 
