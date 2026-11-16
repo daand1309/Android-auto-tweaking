@@ -74,4 +74,12 @@ object HomeFeatures {
         if (q.length < 3) return null   // "a" would match "battery": too little to jump anywhere
         return sections[feature.id]?.firstOrNull { (_, words) -> words.any { it.contains(q) || q.contains(it) } }?.first
     }
+
+    /** The feature a settings page belongs to (its header shows that icon and state), by page name. */
+    fun forPage(page: String): Feature? = when (page) {
+        "MUSIC" -> "music"; "GREETING" -> "greeting"; "VOICE" -> "voice"; "DRIVE_MODE" -> "drive_mode"
+        "OBD" -> "car_data"; "TRIPS" -> "trips"; "CAR" -> "car_screen"; "THEMES" -> "themes"
+        "SETUP" -> "setup"; "UPDATES" -> "updates"; "BACKUP" -> "backup"; "HELP" -> "help"
+        else -> null
+    }?.let { id -> all.firstOrNull { it.id == id } }
 }
