@@ -586,6 +586,15 @@ class MainActivity : Activity() {
                 "and the voice tells you when something needs attention.")
             return
         }
+        // The live block first: this page is opened while driving, so the numbers are what you came for.
+        header("Right now")
+        val obd = com.daand.drivemusic.obd.ObdManager
+        val live = obd.live()
+        text(if (live != null) com.daand.drivemusic.obd.CarStatusText.report(live, prefs.greetingDutch, obd.trip) +
+                (obd.vin?.let { "\n\nVIN: $it" } ?: "") + "\n${obd.supportedCount} values shared by your car"
+             else "Status: ${obd.status}. Values appear here while you drive.")
+
+        header("Adapter")
         stepperLike("Adapter: ${prefs.obdDeviceName.ifBlank { "not chosen" }}", "Choose") { chooseObdDevice() }
         text("First time: plug it in, ignition on, then in your phone's Bluetooth settings pair \"Android-Vlink\" " +
             "(PIN 1234). Then choose it above.")
@@ -604,13 +613,6 @@ class MainActivity : Activity() {
                     prefs.obdEngineLitres = sizes[i]; render()
                 }.show()
         }
-
-        header("Right now")
-        val obd = com.daand.drivemusic.obd.ObdManager
-        val live = obd.live()
-        text(if (live != null) com.daand.drivemusic.obd.CarStatusText.report(live, prefs.greetingDutch, obd.trip) +
-                (obd.vin?.let { "\n\nVIN: $it" } ?: "") + "\n${obd.supportedCount} values shared by your car"
-             else "Status: ${obd.status}. Values appear here while you drive.")
 
         header("Your car")
         stepperLike("Fuel tank: ${Math.round(prefs.tankLitres)} L", "Change") {
@@ -664,7 +666,7 @@ class MainActivity : Activity() {
             }
         }
 
-        header("Alerts")
+        header("What the voice tells you")
         switch("Remind me to take the adapter out after each drive", prefs.obdUnplugReminder) {
             prefs.obdUnplugReminder = it
             // Turning the reminder off also drops a question that's still open (it's in the app too).
