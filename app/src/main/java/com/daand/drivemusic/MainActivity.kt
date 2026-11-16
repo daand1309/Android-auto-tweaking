@@ -1792,8 +1792,8 @@ class MainActivity : Activity() {
             statRow(fmt.format(java.util.Date(t.at)), com.daand.drivemusic.obd.TripNotice.text(t, price, prefs.greetingDutch) +
                 if (t.codes.isNotEmpty()) "  ·  ⚠ ${t.codes.joinToString()}" else "")
         }
-        button("Clear trip history") {
-            AlertDialog.Builder(this).setTitle("Clear all trips?").setMessage("This can't be undone.")
+        button("Clear trip history", danger = true) {
+            AlertDialog.Builder(this).setTitle("Clear all trips?").setMessage("Distance, fuel and costs for every drive - this can't be undone.")
                 .setPositiveButton("Clear") { _, _ -> com.daand.drivemusic.obd.TripHistory.clear(this); render() }
                 .setNegativeButton("Cancel", null).show()
         }
