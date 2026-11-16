@@ -181,11 +181,17 @@ class MainActivity : Activity() {
     /** How the next render appears: glide in (a new page / app start), fade (going back), or not at all (a refresh). */
     private var animateNext = 0
 
-    private fun go(p: Page, back: Boolean = false) {
+    private fun go(p: Page, back: Boolean = false, section: String? = null) {
         page = p
         animateNext = if (back) BACK else ENTER
         render()
-        scroll.post { scroll.scrollTo(0, 0) }
+        scroll.post {
+            // A search result can open a page at its section: scroll to that heading.
+            val target = section?.uppercase()?.let { s ->
+                (0 until root.childCount).map { root.getChildAt(it) }.firstOrNull { (it as? TextView)?.text?.toString() == s }
+            }
+            scroll.scrollTo(0, target?.let { (it.top - dp(8)).coerceAtLeast(0) } ?: 0)
+        }
     }
 
     private fun handleBack() {
@@ -456,7 +462,10 @@ class MainActivity : Activity() {
 
     /** What a grid icon / search result opens. */
     private fun openFeature(id: String) {
+        val section = HomeFeatures.all.firstOrNull { it.id == id }?.let { HomeFeatures.sectionFor(homeQuery, it) }
         homeQuery = ""
+        if (section != null && id in setOf("car_data", "service")) { go(Page.OBD, section = section); return }
+        if (section != null && id == "voice") { go(Page.VOICE, section = section); return }
         when (id) {
             "music" -> go(Page.MUSIC)
             "greeting" -> go(Page.GREETING)

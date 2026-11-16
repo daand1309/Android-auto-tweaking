@@ -55,4 +55,23 @@ object HomeFeatures {
         val byWord = all.filter { f -> f !in byTitle && f.words.any { it.lowercase().contains(q) } }
         return byTitle + byWord
     }
+
+    /** Which heading on a feature's page a search word belongs to (the page opens scrolled to it). */
+    private val sections: Map<String, List<Pair<String, List<String>>>> = mapOf(
+        "car_data" to listOf(
+            "Battery" to listOf("battery", "accu"),
+            "Your car" to listOf("fuel price", "brandstof", "tank", "engine size"),
+            "Adapter" to listOf("adapter", "obd", "bluetooth", "vgate"),
+            "Early warnings" to listOf("early warnings"),
+        ),
+        "voice" to listOf("Delivery" to listOf("pitch", "speed", "toonhoogte", "snelheid", "pronunciation", "uitspraak")),
+    )
+
+    /** The heading to scroll to for [query] on [feature]'s page, or null for the top. */
+    fun sectionFor(query: String, feature: Feature): String? {
+        if (feature.id == "service") return "Service"   // service lives on the Car data page
+        val q = query.trim().lowercase()
+        if (q.length < 3) return null   // "a" would match "battery": too little to jump anywhere
+        return sections[feature.id]?.firstOrNull { (_, words) -> words.any { it.contains(q) || q.contains(it) } }?.first
+    }
 }

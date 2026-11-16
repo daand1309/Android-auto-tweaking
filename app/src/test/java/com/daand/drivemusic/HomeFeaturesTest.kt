@@ -33,4 +33,17 @@ class HomeFeaturesTest {
         assertTrue(HomeFeatures.search("   ").isEmpty())
         assertTrue(HomeFeatures.search("zzz").isEmpty())
     }
+
+    private fun f(id: String) = HomeFeatures.all.first { it.id == id }
+
+    @Test fun searchOpensTheSection() {
+        assertEquals("Your car", HomeFeatures.sectionFor("fuel price", f("car_data")))
+        assertEquals("Battery", HomeFeatures.sectionFor("accu", f("car_data")))
+        assertEquals("Adapter", HomeFeatures.sectionFor("Bluetooth", f("car_data")))
+        assertEquals("Service", HomeFeatures.sectionFor("onderhoud", f("service")))
+        assertEquals("Delivery", HomeFeatures.sectionFor("pitch", f("voice")))
+        assertEquals(null, HomeFeatures.sectionFor("trips", f("trips")))
+        assertEquals(null, HomeFeatures.sectionFor("", f("car_data")))
+        assertEquals("a single letter isn't a section", null, HomeFeatures.sectionFor("a", f("car_data")))
+    }
 }
