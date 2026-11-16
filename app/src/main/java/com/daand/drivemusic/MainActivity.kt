@@ -783,8 +783,8 @@ class MainActivity : Activity() {
                 }
             if (!dutch && voiceList.none { VoicePicker.accent(it) == "GB" }) {
                 // No second button here: "Download more voices" below opens the very same screen.
-                text("No British voice on this phone yet. \"Download more voices\" below opens the screen where " +
-                    "you add one (Google speech engine → Install voice data → English (United Kingdom)).")
+                text("No British voice on this phone yet - \"Download more voices\" below adds one " +
+                    "(English (United Kingdom)).")
             }
         }
 
@@ -1121,8 +1121,9 @@ class MainActivity : Activity() {
             "• No overlay, accessibility, contacts, SMS or storage access.")
 
         header("Still stuck?")
-        text("Home → Music & driving picks the app that plays; Home → Setup runs the checklist again. That's also " +
-            "where the settings for everything above live.")
+        text("Home → Music & driving is where the music settings live; Home → Setup runs the checklist again and " +
+            "explains a greyed-out switch.\nFor help from someone else: Home → Logs → Share sends a file with what " +
+            "happened, your Android version and your music app.")
     }
 
     private fun renderCar() {
