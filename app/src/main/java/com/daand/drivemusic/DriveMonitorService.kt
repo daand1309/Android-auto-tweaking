@@ -992,7 +992,7 @@ class DriveMonitorService : NotificationListenerService() {
 
     /** Fires a full-screen-intent notification that opens Drive Mode on the phone when the car
      *  connects. No overlay permission needed - the system launches it (or shows a heads-up to tap). */
-    private fun openDriveMode() {
+    private fun openDriveMode(afterScreenOff: Boolean = false) {
         // The screen going off right after a connect used to fire a second full-screen request while the
         // first was still being delivered, so Drive Mode started twice (two activities, two ticks).
         if (SystemClock.elapsedRealtime() - lastDriveModePostAt < DRIVE_MODE_MIN_GAP_MS) {
@@ -1000,6 +1000,9 @@ class DriveMonitorService : NotificationListenerService() {
             return
         }
         lastDriveModePostAt = SystemClock.elapsedRealtime()
+        // One line per attempt, and it says which attempt it is. The connect line used to be written by
+        // the notification path only, so going straight to the screen first left the log without it.
+        DriveLog.log(if (afterScreenOff) "Drive Mode: opening after the screen went off" else "Drive Mode: opening on connect")
         // Straight onto the screen where Android allows it; Android doesn't say when it refuses, so look
         // a moment later and fall back to the full-screen notification (which it always allows to try).
         val opened = runCatching {
@@ -1049,9 +1052,10 @@ class DriveMonitorService : NotificationListenerService() {
             // If last drive's banner is still in the shade, remove it first so this one is new.
             nm.cancel(DRIVE_MODE_NOTIFICATION)
             nm.notify(DRIVE_MODE_NOTIFICATION, n)
+            // No "opening on connect" here any more: openDriveMode() already said it, once per attempt.
             val fullScreenOk = android.os.Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent()
-            DriveLog.log(if (fullScreenOk) "Drive Mode: opening on connect"
-                else "Drive Mode: shown as a tap notification - allow 'full-screen notifications' to make it pop up by itself")
+            if (!fullScreenOk) DriveLog.log(
+                "Drive Mode: shown as a tap notification - allow 'full-screen notifications' to make it pop up by itself")
         } catch (e: Exception) {
             DriveLog.log("Drive Mode: could not open (${e.message})")
         }
@@ -1071,7 +1075,7 @@ class DriveMonitorService : NotificationListenerService() {
             if (driveModeRetries >= DRIVE_MODE_RETRIES) return
             driveModeRetries++
             DriveLog.log("Drive Mode: screen went off with Drive Mode not on screen - opening it now")
-            openDriveMode()
+            openDriveMode(afterScreenOff = true)
         }
     }
 
