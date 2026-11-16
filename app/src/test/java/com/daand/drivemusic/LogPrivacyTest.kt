@@ -48,6 +48,30 @@ class LogPrivacyTest {
         assertEquals("OBD: codes P0420,P0141 12345678901234567", codes)
     }
 
+    @Test fun aNameIsNeverFoundInsideAnotherWord() {
+        // The crude version replaced bare text, so "Max" would have mangled "maximum" in another line.
+        assertEquals("maximum and (name)", LogPrivacy.redact("maximum and Max", listOf("Max")))
+        assertEquals("Maxim is not (name)", LogPrivacy.redact("Maxim is not Max", LogPrivacy.names("Max")))
+        // A street or a place that merely starts with the name stays readable.
+        assertEquals("Daanstraat, 2 min", LogPrivacy.redact("Daanstraat, 2 min", listOf("Daan")))
+    }
+
+    @Test fun aHyphenatedNameAlsoHidesItsPartsAndPunctuationDoesNotHideIt() {
+        val spellings = LogPrivacy.names("Dick-hoff")
+        assertTrue("both parts and the whole: $spellings", spellings.containsAll(listOf("Dick-hoff", "Dick", "hoff")))
+        assertEquals("(name), welcome", LogPrivacy.redact("Dick, welcome", spellings))
+        assertEquals("(name) and (name)", LogPrivacy.redact("Dick-hoff and Dickhoff", LogPrivacy.names("Dick-hoff", "Dickhoff")))
+        // A name in quotes or before a comma is still a whole word.
+        assertEquals("Master, (name).", LogPrivacy.redact("Master, Dick-hoff.", spellings))
+    }
+
+    @Test fun shortPartsOfANameAreNotSplitOut() {
+        // "D-aan": the parts are one letter each, so only the name itself is matched - no stray redaction.
+        val spellings = LogPrivacy.names("D-aan", "Daan")
+        assertTrue(spellings.toString(), spellings.none { it.length < 3 })
+        assertEquals("(name) arrived", LogPrivacy.redact("Daan arrived", spellings))
+    }
+
     // ---------------------------------------------------------------- and the logger actually uses it
 
     private val ctx: Context = ApplicationProvider.getApplicationContext()

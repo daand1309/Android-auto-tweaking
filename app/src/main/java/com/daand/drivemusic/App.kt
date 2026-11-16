@@ -9,7 +9,7 @@ class App : Application() {
         super.onCreate()
         DriveLog.init(this)
         val startPrefs = Prefs(this)
-        DriveLog.setPrivateNames(startPrefs.greetingName, startPrefs.namePronunciation)
+        DriveLog.setPrivateNames(*LogPrivacy.names(startPrefs.greetingName, startPrefs.namePronunciation).toTypedArray())
         Style.apply(startPrefs.theme)
         // One line per process start: a shared log then says which build wrote the lines around it
         // (reading a log without that means guessing the version from timestamps).

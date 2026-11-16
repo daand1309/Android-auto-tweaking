@@ -106,7 +106,8 @@ class Prefs(context: Context) {
         get() = sp.getString("greeting_name", "") ?: ""
         set(v) {
             sp.edit().putString("greeting_name", v).apply()
-            DriveLog.setPrivateNames(v, namePronunciation)   // the greeting is logged, so keep it out
+            // The greeting is logged in full, so keep every spelling of it out.
+            DriveLog.setPrivateNames(*LogPrivacy.names(v, namePronunciation).toTypedArray())
         }
 
     /** During a drive: speak up when weather / road conditions change. */
@@ -388,7 +389,7 @@ class Prefs(context: Context) {
         get() = sp.getString("name_pronunciation", "") ?: ""
         set(v) {
             sp.edit().putString("name_pronunciation", v).apply()
-            DriveLog.setPrivateNames(greetingName, v)        // the spoken text is logged in full
+            DriveLog.setPrivateNames(*LogPrivacy.names(greetingName, v).toTypedArray())
         }
 
     /** Optional birthday as "MM-DD" for a birthday greeting. */
