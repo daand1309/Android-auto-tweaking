@@ -25,6 +25,10 @@
          REQUEST_IGNORE_BATTERY_OPTIMIZATIONS (policy-flagged). -->
 
     <queries>
+        <!-- Wake the music app without its screen (like Android Auto does), via its media browser service. -->
+        <intent>
+            <action android:name="android.media.browse.MediaBrowserService" />
+        </intent>
         <!-- Needed to find patched YouTube Music builds (e.g. Morphe) whose package name we don't know in advance. -->
         <intent>
             <action android:name="android.intent.action.MAIN" />

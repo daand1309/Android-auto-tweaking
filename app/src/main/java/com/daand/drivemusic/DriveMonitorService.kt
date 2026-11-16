@@ -58,7 +58,7 @@ class DriveMonitorService : NotificationListenerService() {
          * app take the screen. The screen going off lifts that, so Drive Mode gets one more try - but only
          * shortly after the car connected, so it doesn't leap up mid-drive.
          */
-        private const val DRIVE_MODE_RETRIES = 1
+        private const val DRIVE_MODE_RETRIES = 3
         /** Two full-screen requests closer together than this are one intent, not two. */
         private const val DRIVE_MODE_MIN_GAP_MS = 3_000L
         private const val DRIVE_MODE_RETRY_WINDOW_MS = 5 * 60_000L
@@ -213,6 +213,7 @@ class DriveMonitorService : NotificationListenerService() {
     }
 
     override fun onDestroy() {
+        runCatching { musicBrowser?.disconnect() }
         cleanup()
         super.onDestroy()
     }
@@ -556,6 +557,7 @@ class DriveMonitorService : NotificationListenerService() {
     private fun endDrive(reason: String) {
         val alreadyEnded = driveEnded
         driveEnded = true
+        runCatching { musicBrowser?.disconnect() }; musicBrowser = null
         driveModeOffered = false      // a new drive gets its own pop-up
         // The gap guard is about one drive's burst of requests, not about the clock: drive and park
         // again within three seconds and the next car would have been told "already on its way".
@@ -774,13 +776,14 @@ class DriveMonitorService : NotificationListenerService() {
                         }
                         playSentAtTick = tick
                     }
-                    tick == 0 -> launchYtm()
+                    // No player yet. Wake it without its screen first; only open the app if that fails.
+                    tick == 0 -> { if (!wakeMusicQuietly()) { DriveLog.log("START: no YouTube Music session yet - sending media PLAY key"); sendPlayKey() } }
                     tick == 2 || tick == 6 -> {
-                        // No YouTube Music session yet: a media PLAY key wakes the last-used music app.
+                        // A media PLAY key wakes the last-used music app, also without its screen.
                         DriveLog.log("START: no YouTube Music session yet - sending media PLAY key")
                         sendPlayKey()
                     }
-                    tick == 4 -> launchYtm()
+                    tick == 4 || tick == 9 -> launchYtm()
                     else -> DriveLog.log("START: waiting for YouTube Music to be ready...")
                 }
                 tick++
@@ -820,6 +823,34 @@ class DriveMonitorService : NotificationListenerService() {
         startRunnable = null
     }
 
+    /**
+     * Wakes the music app without showing it, the way Android Auto does: connecting to its media
+     * browser service starts the app in the background and makes it publish its player, which we then
+     * press play on. Its screen doesn't come up, so Drive Mode stays where it is.
+     */
+    private var musicBrowser: android.media.browse.MediaBrowser? = null
+    private fun wakeMusicQuietly(): Boolean {
+        val svc = packageManager.queryIntentServices(
+            Intent("android.media.browse.MediaBrowserService").setPackage(musicPkg), 0
+        ).firstOrNull()?.serviceInfo ?: return false
+        runCatching { musicBrowser?.disconnect() }
+        return try {
+            val b = android.media.browse.MediaBrowser(this, ComponentName(svc.packageName, svc.name),
+                object : android.media.browse.MediaBrowser.ConnectionCallback() {
+                    override fun onConnected() { DriveLog.log("START: music app woken in the background") }
+                    override fun onConnectionFailed() { DriveLog.log("START: music app didn't let us connect (it may still have started)") }
+                }, null)
+            musicBrowser = b
+            b.connect()
+            DriveLog.log("START: waking the music app in the background (no screen)")
+            true
+        } catch (e: Exception) {
+            DriveLog.log("START: couldn't wake the music app in the background (${e.javaClass.simpleName})")
+            false
+        }
+    }
+
+    /** Last resort: open the music app's screen. Drive Mode, if it was up, is put straight back on top. */
     private fun launchYtm() {
         val intent = packageManager.getLaunchIntentForPackage(musicPkg)
         if (intent == null) {
@@ -827,9 +858,16 @@ class DriveMonitorService : NotificationListenerService() {
             return
         }
         try {
+            val driveModeUp = DriveModeActivity.onScreen
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(intent)
             DriveLog.log("START: asked Android to open YouTube Music")
+            if (driveModeUp) {
+                // Same moment, while we're still on screen (which is what allows it): Drive Mode back on top.
+                startActivity(Intent(this, DriveModeActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+                DriveLog.log("START: Drive Mode kept in front of YouTube Music")
+            }
         } catch (e: Exception) {
             DriveLog.log("START: could not open YouTube Music: ${e.message}")
         }
@@ -947,6 +985,21 @@ class DriveMonitorService : NotificationListenerService() {
             return
         }
         lastDriveModePostAt = SystemClock.elapsedRealtime()
+        // Straight onto the screen where Android allows it; Android doesn't say when it refuses, so look
+        // a moment later and fall back to the full-screen notification (which it always allows to try).
+        val opened = runCatching {
+            startActivity(Intent(this, DriveModeActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+        }.isSuccess
+        val gen = connectGen
+        handler.postDelayed({
+            if (gen != connectGen || driveEnded) return@postDelayed
+            if (opened && (DriveModeActivity.onScreen || driveModeShown)) DriveLog.log("Drive Mode: opened directly")
+            else postDriveModeNotification()
+        }, if (opened) 1_200L else 0L)
+    }
+
+    private fun postDriveModeNotification() {
         try {
             val nm = getSystemService(NotificationManager::class.java)
             // Silent: it still pops up (high importance is what allows that), but no ding in the car -
