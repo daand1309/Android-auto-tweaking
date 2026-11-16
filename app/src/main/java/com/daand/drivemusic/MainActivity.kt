@@ -137,6 +137,43 @@ class MainActivity : Activity() {
         return (scroll.getChildAt(0)?.height ?: 0) > scroll.height
     }
 
+    /**
+     * Test hook: text that the layout had to cut off with "…". A phone with a big font scale is the
+     * usual reason, and a cut-off value ("6° · light ra…") is unreadable in a way a screenshot review
+     * misses - so the large-text test fails on these instead.
+     */
+    @androidx.annotation.VisibleForTesting
+    internal fun cutOffTextsForTest(): List<String> {
+        val out = mutableListOf<String>()
+        fun walk(v: android.view.View) {
+            if (v.visibility != android.view.View.VISIBLE) return
+            if (v is TextView) {
+                val l = v.layout
+                if (l != null && (0 until l.lineCount).any { l.getEllipsisCount(it) > 0 }) out += "${v.text}".take(48)
+            }
+            if (v is android.view.ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
+        }
+        walk(root)
+        return out
+    }
+
+    /** Test hook: tappable things smaller than a fingertip (44 dp), so a big font can't squeeze them. */
+    @androidx.annotation.VisibleForTesting
+    internal fun smallTargetsForTest(): List<String> {
+        val out = mutableListOf<String>()
+        val min = dp(44)
+        fun walk(v: android.view.View) {
+            if (v.visibility != android.view.View.VISIBLE) return
+            if (v.isClickable && (v.height in 1 until min)) {
+                val label = (v as? TextView)?.text?.toString() ?: v.contentDescription?.toString() ?: v.javaClass.simpleName
+                out += "$label (${(v.height / resources.displayMetrics.density).toInt()}dp)"
+            }
+            if (v is android.view.ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
+        }
+        walk(root)
+        return out
+    }
+
     /** How the next render appears: glide in (a new page / app start), fade (going back), or not at all (a refresh). */
     private var animateNext = 0
 
