@@ -628,9 +628,10 @@ class MainActivity : Activity() {
         header("Right now")
         val obd = com.daand.drivemusic.obd.ObdManager
         val live = obd.live()
-        text(if (live != null) com.daand.drivemusic.obd.CarStatusText.report(live, prefs.greetingDutch, obd.trip) +
-                (obd.vin?.let { "\n\nVIN: $it" } ?: "") + "\n${obd.supportedCount} values shared by your car"
-             else "Status: ${obd.status}. Values appear here while you drive.")
+        if (live != null) {
+            liveReport(com.daand.drivemusic.obd.CarStatusText.report(live, prefs.greetingDutch, obd.trip))
+            text((obd.vin?.let { "VIN: $it · " } ?: "") + "${obd.supportedCount} values shared by your car")
+        } else text("Status: ${obd.status}. Values appear here while you drive.")
 
         header("Adapter")
         stepperLike("Adapter: ${prefs.obdDeviceName.ifBlank { "not chosen" }}", "Choose") { chooseObdDevice() }
@@ -1121,7 +1122,7 @@ class MainActivity : Activity() {
 
         header("Update")
         if (upd == null) {
-            text("You're on the latest version, or nothing has been checked yet.")
+            text("No update waiting to install." + if (prefs.autoUpdateCheck) " The app checks once a day by itself, or tap below to check now." else " Tap below to check now.")
         } else {
             statRow("Available", "${upd.versionName} - ready to install")
             if (upd.notes.isNotBlank()) text(upd.notes.take(400))
@@ -1870,6 +1871,56 @@ class MainActivity : Activity() {
     }
 
     /** A label over a value, in a card - for the trips page. */
+    /**
+     * The live report as cards - one per group (Engine, Air & fuel, ...) with the label left and the value
+     * right-aligned, instead of a wall of "Label: value" text. Lines that aren't "Label: value" stay text.
+     */
+    private fun liveReport(report: String) {
+        var card: LinearLayout? = null
+        for (raw in report.lines()) {
+            val line = raw.trimEnd()
+            if (line.isBlank()) { card = null; continue }
+            val indented = line.startsWith(" ")
+            val colon = line.indexOf(": ")
+            if (!indented) {
+                card = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    background = Style.rounded(Style.SURFACE, dp(Style.R_CARD).toFloat())
+                    setPadding(dp(16), dp(10), dp(16), dp(10))
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) }
+                    addView(TextView(this@MainActivity).apply {
+                        text = line.trim(); textSize = 13f; setTextColor(Style.TEXT2); setTypeface(typeface, Typeface.BOLD)
+                        setPadding(0, 0, 0, dp(4))
+                    })
+                }
+                root.addView(card)
+                continue
+            }
+            val c = card ?: run { text(line.trim()); null } ?: continue
+            if (colon < 0) { c.addView(TextView(this).apply { text = line.trim(); textSize = 14f; setTextColor(Style.TEXT) }); continue }
+            val label = line.substring(0, colon).trim(); val value = line.substring(colon + 2).trim()
+            if (value.length > 22) {
+                // A long value (a fault code's meaning): label on top, value under it, not squeezed right.
+                c.addView(TextView(this).apply { text = label; textSize = 15f; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD); setPadding(0, dp(6), 0, 0) })
+                c.addView(TextView(this).apply { text = value; textSize = 14f; setTextColor(Style.TEXT2); setPadding(0, dp(2), 0, dp(4)) })
+                continue
+            }
+            c.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(5), 0, dp(5))
+                addView(TextView(this@MainActivity).apply {
+                    text = label; textSize = 15f; setTextColor(Style.TEXT2)
+                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                addView(TextView(this@MainActivity).apply {
+                    text = value; textSize = 15f; setTextColor(Style.TEXT)
+                    setTypeface(typeface, Typeface.BOLD); gravity = android.view.Gravity.END
+                    fontFeatureSettings = "tnum"
+                }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            })
+        }
+    }
+
     private fun statRow(label: String, value: String) = root.addView(LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         background = Style.rounded(Style.SURFACE, dp(Style.R_CARD).toFloat())

@@ -491,7 +491,7 @@ class DriveModeActivity : Activity() {
         if (playBtn.tag != icon) { if (playBtn.tag != null) Motion.pop(playBtn); playBtn.tag = icon }
         playBtn.setImageResource(icon)
         playBtn.contentDescription = if (playing) "Pause" else "Play"
-        resumeBtn.text = if (resumeOn) "Resume on" else "Resume off"
+        resumeBtn.text = if (resumeOn) "Auto-resume on" else "Auto-resume off"
         // Bright green needs dark text and icon to stay readable.
         val fg = if (resumeOn) Style.ON_BRIGHT else Style.TEXT
         resumeBtn.setTextColor(fg); resumeBtn.compoundDrawableTintList = Style.tint(fg)
@@ -519,9 +519,11 @@ class DriveModeActivity : Activity() {
     /** Smaller button: icon on top, one short label underneath (shrinks to fit, never split mid-word). */
     private fun smallButton(icon: Int, label: String, onClick: () -> Unit) = Button(this).apply {
         text = label; isAllCaps = false
-        fitText(10, 17, 1); setPadding(dp(4), dp(8), dp(4), dp(6))
+        // Landscape rows are short: icon beside the label (not above it), so the label can stay readable.
+        fitText(if (wide) 13 else 10, 17, if (wide) 1 else 2); setPadding(dp(6), dp(6), dp(6), dp(6))
         val d = getDrawable(icon)!!.mutate().apply { setBounds(0, 0, dp(26), dp(26)) }
-        setCompoundDrawablesRelative(null, d, null, null); compoundDrawablePadding = dp(2)
+        if (wide) setCompoundDrawablesRelative(d, null, null, null) else setCompoundDrawablesRelative(null, d, null, null)
+        compoundDrawablePadding = dp(if (wide) 8 else 2)
         compoundDrawableTintList = Style.tint(Style.TEXT)
         setTextColor(Style.TEXT); background = Style.button(Style.SURFACE2, dp(Style.R_CARD).toFloat()); stateListAnimator = null
         setOnClickListener { onClick() }
