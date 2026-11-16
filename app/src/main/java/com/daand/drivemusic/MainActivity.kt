@@ -247,7 +247,8 @@ class MainActivity : Activity() {
             navRow("⚠  Music app not found", "Tap to pick the app that plays your music", warn = true) { pickMusicApp() }
         }
         val missing = setupItems().count { !it.ok && !it.label.contains("optional") }
-        if (missing > 0) navRow("⚠  Setup: $missing step(s) left", "Needed for the app to work properly", warn = true) { go(Page.SETUP) }
+        if (missing > 0) navRow("⚠  Setup: $missing ${if (missing == 1) "step" else "steps"} left",
+            "Needed for the app to work properly", warn = true) { go(Page.SETUP) }
 
         availableUpdate?.let { upd ->
             navRow("⬇  Update ${upd.versionName} available", "Tap to install it", highlight = true) { go(Page.UPDATES) }
@@ -1080,7 +1081,7 @@ class MainActivity : Activity() {
         if (prefs.updateStatus.isNotEmpty() && updateMessage.isEmpty()) statRow("Last update", prefs.updateStatus)
         if (updateMessage.isNotEmpty()) text(updateMessage)
 
-        header("New version")
+        header("Update")
         if (upd == null) {
             text("You're on the latest version, or nothing has been checked yet.")
         } else {
@@ -1326,7 +1327,7 @@ class MainActivity : Activity() {
                 else -> "After your next drive"
             }),
             Triple("⏱", "Last drive", when (lastMins) { null -> "None yet"; "0" -> "Under a minute"; else -> "$lastMins min" }),
-            Triple("📍", "Your car", Parking.spot(this)?.let { "Parked ${Parking.whenText(it.time)}" } ?: "Tap to find it"),
+            Triple("📍", "Your car", Parking.spot(this)?.let { "Parked ${Parking.whenText(it.time)}" } ?: "Tap to find your car"),
         )
         val car = if (prefs.obdEnabled) com.daand.drivemusic.obd.ObdManager.live() else null
         val allTiles = if (car == null) tiles else tiles + listOf(
@@ -1751,7 +1752,7 @@ class MainActivity : Activity() {
                         listOf(quote.nearestName, quote.nearestPlace).filter { it.isNotBlank() }.joinToString(", ").takeIf { it.isNotEmpty() },
                         "%.1f km".format(java.util.Locale.ROOT, quote.nearestKm),
                         if (prefs.greetingDutch) "mediaan van ${quote.stations} stations" else "median of ${quote.stations} stations",
-                    ).joinToString(" · ")
+                    ).joinToString("\u00A0· ")
                 }
                 if (!isDestroyed && page == Page.OBD) render()
             }
@@ -1789,7 +1790,9 @@ class MainActivity : Activity() {
                 if (price > 0 && t.litres > 0) "€%.2f".format(java.util.Locale.ROOT, t.litres * price) else null,
                 "${t.trips} trips",
             )
-            statRow(label, parts.joinToString("  ·  "))
+            // A plain " · " can break after the dot, leaving a line that starts with "· 2 trips".
+            // A no-break space in front keeps the dot with the number it belongs to.
+            statRow(label, parts.joinToString("\u00A0·  "))
         }
         header("Totals")
         line("This week", weekStart)
@@ -1800,7 +1803,7 @@ class MainActivity : Activity() {
         val fmt = java.text.SimpleDateFormat("EEE d MMM, HH:mm", java.util.Locale.getDefault())
         for (t in trips.sortedBy { it.at }.takeLast(30).reversed()) {  // newest first
             statRow(fmt.format(java.util.Date(t.at)), com.daand.drivemusic.obd.TripNotice.text(t, price, prefs.greetingDutch) +
-                if (t.codes.isNotEmpty()) "  ·  ⚠ ${t.codes.joinToString()}" else "")
+                if (t.codes.isNotEmpty()) "\n⚠ ${t.codes.joinToString()}" else "")
         }
         button("Clear trip history", danger = true) {
             AlertDialog.Builder(this).setTitle("Clear all trips?").setMessage("Distance, fuel and costs for every drive - this can't be undone.")
