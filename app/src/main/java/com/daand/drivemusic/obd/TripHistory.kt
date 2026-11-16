@@ -62,7 +62,59 @@ object TripHistory {
         tmp.renameTo(file(ctx))
     }
 
-    @Synchronized fun clear(ctx: Context) { file(ctx).delete() }
+    @Synchronized fun clear(ctx: Context) { file(ctx).delete(); clearDraft(ctx) }
+
+    // ---------------------------------------------------------------- the drive being driven
+
+    private const val DRAFT = "trip-draft.json"
+    private fun draftFile(ctx: Context) = File(ctx.filesDir, DRAFT)
+
+    /**
+     * While you drive, the trip only exists in memory ([ObdManager]'s poll thread). If the process is
+     * killed - low memory, a reboot, the adapter yanked at the wrong moment - the drive was simply gone.
+     * This keeps a small copy on disk every half minute, with [TripRecord.at] set to when the drive
+     * started so a saved version of it can be recognised later.
+     */
+    @Synchronized fun saveDraft(ctx: Context, t: TripRecord, now: Long = System.currentTimeMillis()) {
+        runCatching {
+            val tmp = File(ctx.filesDir, "$DRAFT.tmp")
+            tmp.writeText(JSONObject().put("at", t.at).put("min", t.minutes).put("km", t.km).put("l", t.litres)
+                .put("score", t.score ?: -1).put("maxC", t.maxCoolant ?: -999)
+                .put("codes", t.codes.joinToString(",")).put("p", t.price).put("upd", now).toString())
+            tmp.renameTo(draftFile(ctx))
+        }
+    }
+
+    @Synchronized fun clearDraft(ctx: Context) { draftFile(ctx).delete() }
+
+    /**
+     * Turns a draft left behind by a killed process into a real trip. Returns it if that happened.
+     * A draft younger than [staleAfterMs] is left alone (the drive is probably still going), and one
+     * whose drive already made it into the history is dropped rather than counted twice.
+     */
+    @Synchronized fun recoverDraft(ctx: Context, now: Long = System.currentTimeMillis(),
+                                  staleAfterMs: Long = 90_000L): TripRecord? {
+        val f = draftFile(ctx)
+        if (!f.exists()) return null
+        val rec = try {
+            val o = JSONObject(f.readText())
+            val updatedAt = o.optLong("upd", 0L)
+            if (updatedAt > 0 && now - updatedAt < staleAfterMs) return null   // still driving
+            TripRecord(o.optLong("at"), o.optInt("min"),
+                o.optDouble("km", 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0,
+                o.optDouble("l", 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0,
+                o.optInt("score", -1).takeIf { it in 0..100 }, o.optInt("maxC", -999).takeIf { it > -100 },
+                o.optString("codes").split(',').filter { it.isNotBlank() }, null,
+                o.optDouble("p", 0.0).takeIf { it.isFinite() && it in 0.0..20.0 } ?: 0.0)
+        } catch (e: Exception) {
+            clearDraft(ctx); return null
+        }
+        clearDraft(ctx)
+        if (rec.km < 0.3) return null                       // barely moved: not worth keeping
+        if (load(ctx).any { it.at >= rec.at }) return null  // its drive did get saved after all
+        add(ctx, rec)
+        return rec
+    }
 
     class Totals(val trips: Int, val km: Double, val litres: Double, val minutes: Int) {
         val per100: Double? get() = if (km >= 1 && litres > 0) litres / km * 100 else null

@@ -72,6 +72,8 @@ object ObdManager {
     @Volatile var supportedCount = 0; private set
     @Volatile private var engineLitres = 1.6
     @Volatile private var appCtx: Context? = null
+    /** Last time the half-minute draft was written. */
+    private var lastDraftAt = 0L
     /** Typical L/100 from trip history (for the range), loaded at the start of the drive. */
     @Volatile var typicalPer100: Double? = null; private set
     @Volatile private var tankLitres = 60.0
@@ -120,6 +122,14 @@ object ObdManager {
         // A new drive starts with a clean slate: the same fault happening again next drive is news,
         // and the log is what you read afterwards to see how often something goes wrong.
         lastProblem = null
+        lastDraftAt = 0L
+        // A draft left from a drive that never finished (the process was killed) becomes a real trip.
+        Thread({
+            runCatching { TripHistory.recoverDraft(app) }.getOrNull()?.let { r ->
+                DriveLog.log("OBD: the drive that was cut short is kept (%.1f km, from the copy written while driving)"
+                    .format(java.util.Locale.ROOT, r.km))
+            }
+        }, "trip-recover").start()
         engineLitres = p.obdEngineLitres
         tankLitres = p.tankLitres
         appCtx = app
@@ -252,6 +262,12 @@ object ObdManager {
                 }
             }
             trip.add(snap)
+            // Keep a copy on disk while driving, so a killed process doesn't take the drive with it.
+            val draftNow = System.currentTimeMillis()
+            if (draftNow - lastDraftAt > 30_000L && trip.km >= 0.3) {
+                lastDraftAt = draftNow
+                appCtx?.let { c -> runCatching { TripHistory.saveDraft(c, record(trip, draftNow), draftNow) } }
+            }
             if (!alive(myGen)) break
             recordRestingBattery(snap, onAlert)
             alerts.check(snap).map { a ->
@@ -285,18 +301,28 @@ object ObdManager {
         }
     }
 
+    /**
+     * The trip so far as a record. [at] is when the drive started, so the copy on disk can be matched
+     * against a finished trip and the end-of-drive save can be recognised as the same drive.
+     * The price is stamped here, so changing it later doesn't rewrite old drives.
+     */
+    private fun record(t: Trip, now: Long): TripRecord {
+        val price = appCtx?.let { c -> runCatching { Prefs(c).fuelPriceForCosts }.getOrDefault(0.0) } ?: 0.0
+        return TripRecord(t.startedAt,
+            ((t.drivingSeconds + t.idleSeconds) / 60).toInt(), t.km, t.litres,
+            t.score(), t.maxCoolant, latest?.codes ?: emptyList(), t.health.sample(), price = price)
+    }
+
     /** The drive is over: keep it for the Trips page and tell the phone (a quiet notification). */
     private fun saveTrip() {
         val ctx = appCtx ?: return
         val t = trip
         if (t.km < 0.3) return
         // Snapshot now (a new drive may start right away), write the file off the main thread.
-        // The price is stamped on the trip now, so changing it later doesn't rewrite old drives.
-        val rec = TripRecord(System.currentTimeMillis(), ((t.drivingSeconds + t.idleSeconds) / 60).toInt(), t.km, t.litres,
-            t.score(), t.maxCoolant, latest?.codes ?: emptyList(), t.health.sample(),
-            price = runCatching { Prefs(ctx).fuelPriceForCosts }.getOrDefault(0.0))
+        val rec = record(t, System.currentTimeMillis())
         Thread({
-            runCatching { TripHistory.add(ctx, rec) }.onFailure { DriveLog.log("OBD: couldn't save the trip (${it.javaClass.simpleName})") }
+            runCatching { TripHistory.add(ctx, rec); TripHistory.clearDraft(ctx) }
+                .onFailure { DriveLog.log("OBD: couldn't save the trip (${it.javaClass.simpleName})") }
             runCatching { TripNotice.post(ctx, rec, Prefs(ctx)) }
             runCatching { checkTrends(ctx) }.onFailure { DriveLog.log("OBD: trend check failed (${it.javaClass.simpleName})") }
         }, "trip-save").start()

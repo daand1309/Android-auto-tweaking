@@ -5,6 +5,8 @@ package com.daand.drivemusic.obd
  * Pure, unit tested.
  */
 class Trip {
+    /** When this drive began: the trip is dated by it, and the copy on disk is stamped with it. */
+    val startedAt: Long = System.currentTimeMillis()
     var km = 0.0; private set
     var litres = 0.0; private set
     var idleSeconds = 0.0; private set
