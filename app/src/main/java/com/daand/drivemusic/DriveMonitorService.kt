@@ -557,6 +557,9 @@ class DriveMonitorService : NotificationListenerService() {
         val alreadyEnded = driveEnded
         driveEnded = true
         driveModeOffered = false      // a new drive gets its own pop-up
+        // The gap guard is about one drive's burst of requests, not about the clock: drive and park
+        // again within three seconds and the next car would have been told "already on its way".
+        lastDriveModePostAt = 0L
         driveModeRetries = 0
         driveModeShown = false
         reconnectedAt = 0L
