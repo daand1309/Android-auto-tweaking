@@ -63,8 +63,15 @@ object AdapterReminder {
         try {
             NotificationManagerCompat.from(ctx).notify(ID, n)
         } catch (_: SecurityException) {}
-        // Android drops a notification silently when it's not allowed: check it's really there.
-        DriveLog.log("OBD: adapter reminder " + visibility(ctx, nm))
+        // Android hands the notification to SystemUI asynchronously, so asking immediately says "not
+        // there" on a fast phone - it said so on 7 of 10 drives while the reminder was really on screen.
+        // Ask again a moment later, and only write a line when something is actually wrong.
+        val app = ctx.applicationContext
+        Thread({
+            Thread.sleep(1_200)
+            val why = visibility(app, app.getSystemService(NotificationManager::class.java))
+            if (why.startsWith("NOT")) DriveLog.log("OBD: adapter reminder $why")
+        }, "adapter-reminder-check").start()
     }
 
     /** [takenOut] null = swiped away without an answer. Remembered for the battery log. */
