@@ -460,6 +460,10 @@ class Prefs(context: Context) {
         "service_reminded", "battery_log", "battery_warned", "trend_told", "trend_say", "code_log_stored", "code_log_pending", "battery_events", "last_drive_end", "adapter_parked",
         // The Azure key never leaves the phone; the usage count must not be reset by restoring an old backup.
         "azure_key", "cloud_voice_chars", "cloud_voice_month",
+        // Questions that were open on the old phone, and a fuel price quoted for the old phone's area
+        // (restoring it would show another town's price as if it were measured here).
+        "adapter_prompt_pending", "fsi_nag_dismissed",
+        "fuel_quoted", "fuel_quoted_at", "fuel_quoted_src", "fuel_tried_at",
     )
 
     /**
@@ -475,6 +479,7 @@ class Prefs(context: Context) {
         "resume_delay" to "int", "start_delay" to "int", "volume_pct" to "int", "obd_ready_s" to "int", "service_km" to "int", "service_months" to "int", "service_sync_km" to "int", "service_sync_days" to "int",
         "speech_pitch" to "float", "speech_rate" to "float", "obd_engine_l" to "float",
         "tank_l" to "float", "fuel_price" to "float", "service_date" to "long", "service_sync_at" to "long", "weather_lat" to "float", "weather_lon" to "float",
+        "fuel_price_auto" to "bool", "fuel_type" to "string",
         "birthday" to "string", "car_name" to "string", "greeting_name" to "string", "music_pkg" to "string",
         "name_pronunciation" to "string", "theme" to "string", "tts_engine" to "string", "voice_name" to "string",
         "weather_place" to "string", "greeting_style" to "string", "azure_region" to "string", "azure_voice" to "string",

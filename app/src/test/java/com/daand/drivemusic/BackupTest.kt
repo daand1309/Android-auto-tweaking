@@ -39,6 +39,38 @@ class BackupTest {
         assertEquals("", r.lastDrive)
     }
 
+    /** The fuel settings added in v1.145 were exported but never restored. */
+    @Test fun fuelChoicesSurviveABackup() {
+        val p = Prefs(ctx)
+        p.fuelPriceAuto = false
+        p.fuelType = FuelPrices.Fuel.DIESEL.code
+        p.fuelPrice = 2.05
+        val json = p.exportJson()
+
+        ctx.getSharedPreferences("drive_music", Context.MODE_PRIVATE).edit().clear().commit()
+        Prefs(ctx).importJson(json)
+        val r = Prefs(ctx)
+        assertFalse("automatic lookup was switched off, so it must stay off", r.fuelPriceAuto)
+        assertEquals(FuelPrices.Fuel.DIESEL.code, r.fuelType)
+        assertEquals(2.05, r.fuelPrice, 0.001)
+    }
+
+    /** A price quoted for the old phone's area is not a fact about the new one. */
+    @Test fun aCachedFuelPriceIsNotRestored() {
+        val p = Prefs(ctx)
+        p.fuelPriceQuoted = 9.99
+        p.fuelPriceQuoteAt = 1_000L
+        p.adapterPromptPending = true
+        val json = p.exportJson()
+
+        ctx.getSharedPreferences("drive_music", Context.MODE_PRIVATE).edit().clear().commit()
+        Prefs(ctx).importJson(json)
+        val r = Prefs(ctx)
+        assertEquals(0.0, r.fuelPriceQuoted, 0.0)
+        assertEquals(0L, r.fuelPriceQuoteAt)
+        assertFalse(r.adapterPromptPending)
+    }
+
     @Test fun damagedBackupCannotCrashTheApp() {
         ctx.getSharedPreferences("drive_music", Context.MODE_PRIVATE).edit().clear().commit()
         val json = """{"app":"drive-music","version":1,"settings":{
