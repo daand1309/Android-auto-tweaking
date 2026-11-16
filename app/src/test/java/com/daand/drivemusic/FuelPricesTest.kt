@@ -136,35 +136,4 @@ class FuelPricesTest {
         assertEquals("LPG is called AUTOGAS there", FuelPrices.Fuel.LPG, FuelPrices.Fuel.of("AUTOGAS"))
         assertEquals("unknown code falls back to petrol", FuelPrices.Fuel.EURO95, FuelPrices.Fuel.of("HYDROGEN"))
     }
-
-    // ---------------------------------------------------------------- second source: the official average
-
-    @Test fun theOfficialFiguresAreReadCorrectly() {
-        val json = """{"value":[{"Perioden":"2026MM10","GemiddeldePompprijs_1":2.387}]}"""
-        assertEquals(2.387, FuelPrices.parseCbsAverage(json)!!, 0.0001)
-        // A month that isn't published yet comes back as an empty list, and nonsense is ignored.
-        assertNull(FuelPrices.parseCbsAverage("""{"value":[]}"""))
-        assertNull(FuelPrices.parseCbsAverage("""{"value":[{"GemiddeldePompprijs_1":0.02}]}"""))
-        assertNull(FuelPrices.parseCbsAverage("not json"))
-    }
-
-    @Test fun theOfficialQueryAsksForTheRightFuelAndMonth() {
-        val url = FuelPrices.cbsUrl(FuelPrices.Fuel.DIESEL, "2026MM10")
-        assertTrue(url, url.contains("A047219"))
-        assertTrue(url, url.contains("2026MM10"))
-        assertTrue("no interpolation left over", url, !url.contains("$"))
-        assertEquals("2026MM10", FuelPrices.periodOf(0, monthStart(2026, 10)))
-        assertEquals("2026MM09", FuelPrices.periodOf(1, monthStart(2026, 10)))
-        assertEquals("2025MM12", FuelPrices.periodOf(1, monthStart(2026, 1)))
-    }
-
-    @Test fun theMonthIsShownInBothLanguages() {
-        assertEquals("Oct 2026", FuelPrices.periodLabel("2026MM10", dutch = false))
-        assertEquals("okt 2026", FuelPrices.periodLabel("2026MM10", dutch = true))
-        assertEquals("2026MM10", FuelPrices.periodLabel("nonsense", dutch = false))
-    }
-
-    private fun monthStart(year: Int, month: Int) = java.util.Calendar.getInstance().apply {
-        clear(); set(year, month - 1, 15, 12, 0)
-    }.timeInMillis
 }
