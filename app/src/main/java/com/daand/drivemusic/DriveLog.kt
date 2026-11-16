@@ -13,9 +13,11 @@ object DriveLog {
     private const val MAX_BYTES = 512 * 1024L
     private val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
 
+    /** How much history is kept: this file plus two older ones. A slow problem needs weeks of log. */
+    private const val KEEP = 2
     private lateinit var dir: File
     private val current get() = File(dir, "drive.log")
-    private val previous get() = File(dir, "drive.log.1")
+    private fun older(n: Int) = File(dir, "drive.log.$n")
 
     fun init(context: Context) {
         if (!::dir.isInitialized) {
@@ -31,8 +33,9 @@ object DriveLog {
         if (!::dir.isInitialized) return
         try {
             if (current.length() > MAX_BYTES) {
-                previous.delete()
-                current.renameTo(previous)
+                older(KEEP).delete()
+                for (n in KEEP - 1 downTo 1) older(n).renameTo(older(n + 1))
+                current.renameTo(older(1))
             }
             current.appendText("${fmt.format(Date())}  $msg\n")
         } catch (e: Exception) {
@@ -42,13 +45,13 @@ object DriveLog {
 
     @Synchronized
     fun readAll(): String = buildString {
-        if (previous.exists()) append(previous.readText())
+        for (n in KEEP downTo 1) older(n).takeIf { it.exists() }?.let { append(it.readText()) }
         if (current.exists()) append(current.readText())
     }
 
     @Synchronized
     fun clear() {
-        previous.delete()
+        for (n in 1..KEEP) older(n).delete()
         current.delete()
     }
 }
