@@ -265,6 +265,7 @@ class MainActivity : Activity() {
             quickBtn(if (Voice.speaking) "\u23F9  Stop" else "🎙  Greeting") {
                 if (Voice.speaking) Voice.stop("stop button on the home screen")
                 else {
+                    stopVoiceSample()   // a voice sample must not talk through the greeting
                     toast("Speaking...")
                     WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false) {
                         refreshIfOn(Page.HOME)
@@ -431,6 +432,7 @@ class MainActivity : Activity() {
         button(if (Voice.speaking) "\u23F9  Stop" else "Test greeting", accent = true) {
             if (Voice.speaking) Voice.stop("you pressed stop")
             else {
+                stopVoiceSample()
                 toast("Speaking...")
                 WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false) {
                     refreshIfOn(Page.GREETING)
@@ -866,6 +868,12 @@ class MainActivity : Activity() {
      * A short line in [voice] (or the automatic choice) with the current speed and pitch. Tapping the
      * one that's already playing stops it, so you're never stuck waiting for a sample to finish.
      */
+    /** Silences a voice that is only being tried out (the rows on the Voice page). */
+    private fun stopVoiceSample() {
+        runCatching { voiceTts?.stop() }
+        samplePlaying = null
+    }
+
     private fun playSample(voice: android.speech.tts.Voice?, automatic: Boolean = false) {
         val e = voiceTts ?: return
         if (!voiceTtsReady) return
@@ -881,6 +889,8 @@ class MainActivity : Activity() {
             refreshIfOn(Page.VOICE)
             return
         }
+        // Trying a voice while the full greeting is talking would play both at once.
+        if (Voice.speaking) Voice.stop("you tried a different voice")
         try {
             if (v != null) e.voice = v else e.language = VoicePicker.localeFor(dutch)
             e.setSpeechRate(prefs.speechRate)
@@ -1890,8 +1900,7 @@ class MainActivity : Activity() {
 
     private fun previewVoice() {
         if (Voice.speaking) { Voice.stop("you pressed stop"); refreshIfOn(Page.VOICE); return }
-        voiceTts?.stop()
-        samplePlaying = null
+        stopVoiceSample()
         toast("Speaking... turn up the media volume")
         WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false) {
             refreshIfOn(Page.VOICE)
