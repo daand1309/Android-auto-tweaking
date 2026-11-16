@@ -1785,11 +1785,18 @@ class MainActivity : Activity() {
                 if (quote != null) {
                     prefs.fuelPriceQuoted = quote.euro
                     prefs.fuelPriceQuoteAt = System.currentTimeMillis()
-                    prefs.fuelPriceQuoteSource = listOfNotNull(
-                        listOf(quote.nearestName, quote.nearestPlace).filter { it.isNotBlank() }.joinToString(", ").takeIf { it.isNotEmpty() },
-                        "%.1f km".format(java.util.Locale.ROOT, quote.nearestKm),
-                        if (prefs.greetingDutch) "mediaan van ${quote.stations} stations" else "median of ${quote.stations} stations",
-                    ).joinToString("\u00A0· ")
+                    prefs.fuelPriceQuoteSource = if (quote.national) {
+                        // The station service had nothing, so this is the official country-wide figure:
+                        // say so, or it looks like the price at the pump around the corner.
+                        val month = FuelPrices.periodLabel(quote.nationalMonth ?: "", prefs.greetingDutch)
+                        if (prefs.greetingDutch) "landelijk gemiddelde ($month)" else "national average ($month)"
+                    } else {
+                        listOfNotNull(
+                            listOf(quote.nearestName, quote.nearestPlace).filter { it.isNotBlank() }.joinToString(", ").takeIf { it.isNotEmpty() },
+                            "%.1f km".format(java.util.Locale.ROOT, quote.nearestKm),
+                            if (prefs.greetingDutch) "mediaan van ${quote.stations} stations" else "median of ${quote.stations} stations",
+                        ).joinToString("\u00A0· ")
+                    }
                 }
                 if (!isDestroyed && page == Page.OBD) render()
             }

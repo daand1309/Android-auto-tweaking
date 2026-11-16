@@ -24,10 +24,10 @@ object FuelPrices {
     const val USABLE_MS = 7 * 24 * 60 * 60 * 1000L
 
     /** The fuels the app knows how to ask for (ANWB's own codes) and their names. */
-    enum class Fuel(val code: String, val en: String, val nl: String) {
-        EURO95("EURO95", "Euro 95 (E10)", "Euro 95 (E10)"),
-        DIESEL("DIESEL", "Diesel (B7)", "Diesel (B7)"),
-        LPG("AUTOGAS", "LPG", "LPG");
+    enum class Fuel(val code: String, val en: String, val nl: String, val cbsCode: String) {
+        EURO95("EURO95", "Euro 95 (E10)", "Euro 95 (E10)", "A047220"),
+        DIESEL("DIESEL", "Diesel (B7)", "Diesel (B7)", "A047219"),
+        LPG("AUTOGAS", "LPG", "LPG", "A047221");
 
         companion object {
             fun of(code: String?): Fuel = values().firstOrNull { it.code == code } ?: EURO95
@@ -55,7 +55,12 @@ object FuelPrices {
         val nearestPlace: String,
         val nearestKm: Double,
         val fuel: Fuel,
-    )
+        /** Set when the price is the official national average instead of nearby stations (see [cbs]). */
+        val nationalMonth: String? = null,
+    ) {
+        /** True if this is the fallback: the official average, not the stations around you. */
+        val national: Boolean get() = nationalMonth != null
+    }
 
     // ------------------------------------------------------------------ parsing (unit tested)
 
@@ -137,8 +142,21 @@ object FuelPrices {
 
     // ------------------------------------------------------------------ network (call off the main thread)
 
-    /** The quote for where you are now, or null (no signal, no stations, or the source changed). */
-    fun fetch(lat: Double, lon: Double, fuel: Fuel): Quote? {
+    /**
+     * The price for where you are now: the stations around you, or - when that service has nothing for
+     * us - the official national average for this month. Null only if both sources are unreachable.
+     */
+    fun fetch(lat: Double, lon: Double, fuel: Fuel, now: Long = System.currentTimeMillis()): Quote? {
+        val nearby = runCatching { nearbyStations(lat, lon, fuel) }.getOrElse { e ->
+            DriveLog.log("FUEL: the station service didn't answer (${e.javaClass.simpleName}: ${e.message})")
+            null
+        }
+        if (nearby != null) return nearby
+        // One source is one point of failure: fall back to the official figures before giving up.
+        return cbs(fuel, now)
+    }
+
+    private fun nearbyStations(lat: Double, lon: Double, fuel: Fuel): Quote? {
         if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return null
         val json = httpGet(urlFor(lat, lon))
         val stations = parseAll(json)
@@ -153,6 +171,54 @@ object FuelPrices {
         DriveLog.log("FUEL: ${"%.3f".format(java.util.Locale.ROOT, q.euro)} €/L ${fuel.en} " +
             "(median of ${q.stations} within 10 km, nearest ${q.nearestName}, ${q.nearestKm} km)")
         return q
+    }
+
+    // ------------------------------------------------------------------ second source: the official average
+
+    private const val CBS = "https://opendata.cbs.nl/ODataApi/OData/81567NED/TypedDataSet"
+
+    /** "2026MM10" - the month the official figures use (they publish once a month, so it lags a bit). */
+    fun periodOf(monthOffset: Int, now: Long = System.currentTimeMillis()): String {
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = now; add(java.util.Calendar.MONTH, -monthOffset) }
+        return "%04dMM%02d".format(cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH) + 1)
+    }
+
+    fun cbsUrl(fuel: Fuel, period: String): String =
+        "$CBS?\$filter=Motorbrandstof%20eq%20'${fuel.cbsCode}'%20and%20Perioden%20eq%20'$period'" +
+            "&\$select=Perioden,GemiddeldePompprijs_1&\$format=json"
+
+    /** The average pump price in that answer, or null if the month isn't published (yet). Pure. */
+    fun parseCbsAverage(json: String): Double? = try {
+        JSONObject(json).optJSONArray("value")?.optJSONObject(0)?.let { sane(it.optDouble("GemiddeldePompprijs_1", Double.NaN)) }
+    } catch (e: Exception) { null }
+
+    /** "2026MM10" -> "okt 2026" / "Oct 2026". */
+    fun periodLabel(period: String, dutch: Boolean): String {
+        val m = Regex("""(\d{4})MM(\d{2})""").find(period) ?: return period
+        val (y, mo) = m.destructured
+        val fmt = java.text.SimpleDateFormat("MMM yyyy", if (dutch) java.util.Locale("nl", "NL") else java.util.Locale.UK)
+        val cal = java.util.Calendar.getInstance().apply {
+            clear(); set(y.toInt(), mo.toInt() - 1, 1)
+        }
+        return fmt.format(cal.time)
+    }
+
+    /**
+     * The official national average for the newest month that has been published (this month, or one or
+     * two back). It is a country-wide average, so it is a rough price, not your station's - the app says so.
+     */
+    fun cbs(fuel: Fuel, now: Long = System.currentTimeMillis()): Quote? {
+        for (back in 0..2) {
+            val period = periodOf(back, now)
+            val avg = runCatching { parseCbsAverage(httpGet(cbsUrl(fuel, period))) }
+                .onFailure { DriveLog.log("FUEL: the official figures didn't answer (${it.javaClass.simpleName})") }
+                .getOrNull() ?: continue
+            DriveLog.log("FUEL: ${"%.3f".format(java.util.Locale.ROOT, avg)} €/L ${fuel.en} " +
+                "(national average $period - the station service had nothing)")
+            return Quote(avg, 0, "", "", 0.0, fuel, nationalMonth = period)
+        }
+        DriveLog.log("FUEL: no price from either source (${fuel.en})")
+        return null
     }
 
     private fun httpGet(url: String): String {
