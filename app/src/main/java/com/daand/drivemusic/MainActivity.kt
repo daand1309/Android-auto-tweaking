@@ -185,13 +185,16 @@ class MainActivity : Activity() {
         page = p
         animateNext = if (back) BACK else ENTER
         render()
-        scroll.post {
-            // A search result can open a page at its section: scroll to that heading.
-            val target = section?.uppercase()?.let { s ->
-                (0 until root.childCount).map { root.getChildAt(it) }.firstOrNull { (it as? TextView)?.text?.toString() == s }
+        if (section == null) { scroll.post { scroll.scrollTo(0, 0) }; return }
+        // A search result opens the page at its section: scroll to that heading once the new page is laid out.
+        root.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                root.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                val s = section.uppercase()
+                val target = (0 until root.childCount).map { root.getChildAt(it) }.firstOrNull { (it as? TextView)?.text?.toString() == s }
+                scroll.scrollTo(0, target?.let { (it.top - dp(8)).coerceAtLeast(0) } ?: 0)
             }
-            scroll.scrollTo(0, target?.let { (it.top - dp(8)).coerceAtLeast(0) } ?: 0)
-        }
+        })
     }
 
     private fun handleBack() {
