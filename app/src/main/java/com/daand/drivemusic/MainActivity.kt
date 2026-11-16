@@ -768,7 +768,7 @@ class MainActivity : Activity() {
                 render(); playSample(null, automatic = true)
             }
             voiceList.filter { accentFilter.isEmpty() || VoicePicker.accent(it) == accentFilter }
-                .sortedWith(compareBy<android.speech.tts.Voice> { it.isNetworkConnectionRequired }
+                .sortedWith(compareBy<android.speech.tts.Voice> { if (VoicePicker.offline(it)) 0 else 1 }
                     .thenByDescending { it.quality }.thenBy { names[it.name]?.first })
                 .forEach { v ->
                     val (title, details) = names[v.name] ?: (v.name to "")

@@ -808,12 +808,20 @@ object VoicePicker {
         val country = localeFor(dutch).country
         return ok.sortedWith(
             compareByDescending<android.speech.tts.Voice> { it.locale.country == country }
-                .thenBy { it.isNetworkConnectionRequired }
+                .thenBy { if (offline(it)) 0 else 1 }
                 .thenByDescending { it.quality }
                 .thenBy { it.latency }
                 .thenBy { it.name }
         ).firstOrNull()
     }
+
+    /**
+     * Works without signal. The SDK flag is the authority, but some engines report a "...-network" voice
+     * as offline until it is first used - and then the greeting hangs in a car with bad signal, which is
+     * exactly where this app lives. So the name is checked as well. One definition, used everywhere.
+     */
+    fun offline(v: android.speech.tts.Voice): Boolean =
+        !v.isNetworkConnectionRequired && !v.name.contains("network", ignoreCase = true)
 
     /** Human-friendly label, e.g. "English (UK) · voice gbb · offline · very high quality". */
     fun label(v: android.speech.tts.Voice): String {
@@ -824,7 +832,7 @@ object VoicePicker {
             else -> "low quality"
         }
         val short = Regex("""-x-([a-z0-9]+)""").find(v.name)?.groupValues?.get(1) ?: v.name
-        val net = if (v.isNetworkConnectionRequired) "needs internet" else "offline"
+        val net = if (offline(v)) "offline" else "needs internet"
         return "${v.locale.getDisplayName(Locale.ENGLISH)} · voice $short · $net · $q"
     }
 
@@ -869,7 +877,7 @@ object VoicePicker {
     fun butlerVoice(voices: Collection<android.speech.tts.Voice>): android.speech.tts.Voice? {
         val british = usable(voices, dutch = false).filter { accent(it) == "GB" }
         // Offline first (a car often has bad signal), then the most butler-like voice, then quality.
-        val order = compareBy<android.speech.tts.Voice> { it.isNetworkConnectionRequired }
+        val order = compareBy<android.speech.tts.Voice> { if (offline(it)) 0 else 1 }
             .thenBy { BUTLER_ORDER.indexOf(code(it.name)).let { i -> if (i < 0) 99 else i } }
             .thenByDescending { it.quality }
         return british.filter { gender(it.name) == "male" }.sortedWith(order).firstOrNull()
@@ -890,7 +898,7 @@ object VoicePicker {
                     v.quality >= android.speech.tts.Voice.QUALITY_HIGH -> "high quality"
                     else -> "normal quality"
                 }
-                val net = if (v.isNetworkConnectionRequired) "needs internet" else "works offline"
+                val net = if (offline(v)) "works offline" else "needs internet"
                 out[v.name] = "${accentName(acc)} ${i + 1}$g" to "$net · $q"
             }
         }
@@ -930,6 +938,8 @@ class Greeter(private val context: Context) {
     private var player: android.media.MediaPlayer? = null
     /** Set once the speech has finished, failed, timed out or been cut short - whichever is first. */
     private var done = false
+    /** The first sound has actually begun (a network voice with no signal never gets this far). */
+    private var startedSpeaking = false
     /** [stop] was called while the voice was still being prepared: don't start talking at all. */
     @Volatile private var stopped = false
     private var focus: AudioFocusRequest? = null
@@ -939,6 +949,7 @@ class Greeter(private val context: Context) {
 
     fun speak(text: String, dutch: Boolean, pauseOthers: Boolean = false, onDone: () -> Unit) {
         this.onDone = onDone
+        startedSpeaking = false
         Voice.attach(this)
         val prefs = Prefs(context)
         fallback = { speakOnDevice(text, dutch, pauseOthers) }
@@ -1011,6 +1022,7 @@ class Greeter(private val context: Context) {
                 setOnErrorListener { _, what, _ -> handler.post { file.delete(); fallBack("couldn't play ($what)") }; true }
                 prepare()
                 start()
+                startedSpeaking = true
             }
             DriveLog.log("GREETING: voice ${CloudVoice.voiceFor(prefs, dutch)} (premium, ${CloudVoice.usedThisMonth(prefs)} of ${CloudVoice.MONTHLY_CAP} free characters used this month)")
             handler.postDelayed({ end("timed out - continuing") }, 60_000)
@@ -1030,6 +1042,11 @@ class Greeter(private val context: Context) {
 
         // Never let the greeting block the music for long.
         handler.postDelayed({ end("timed out - continuing") }, 60_000)
+        // A minute of silence helps nobody: if no sound has started by now, carry on without it (a
+        // network voice with no signal is the usual cause - the log shows that as a 60 s silence).
+        handler.postDelayed({
+            if (!startedSpeaking && !done) end("nothing to hear after 12 s - continuing (network voice without signal?)")
+        }, 12_000)
 
         val engineName = VoicePicker.preferredEngine(context, prefs.ttsEngine)
         val listener = TextToSpeech.OnInitListener { status ->
@@ -1060,7 +1077,7 @@ class Greeter(private val context: Context) {
                 val parts = SpeechText.sentences(text)
                 val lastId = "s${parts.size - 1}"
                 engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(id: String?) {}
+                    override fun onStart(id: String?) { startedSpeaking = true }
                     override fun onDone(id: String?) { if (id == lastId) handler.post { end("spoken") } }
                     @Deprecated("Deprecated in Java")
                     override fun onError(id: String?) { handler.post { end("speech failed") } }
