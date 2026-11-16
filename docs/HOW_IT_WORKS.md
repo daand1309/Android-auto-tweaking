@@ -98,7 +98,9 @@ What happens, in order:
   *Music*: Music & driving, Greeting, Voice, Drive Mode · *Car*: Car data, Trips & costs, Service,
   Car screen · *App*: Themes, Setup, Updates, Backup, Logs, Help.
 
-Back on any page returns to Home. New features and themes are one entry each (`HomeFeatures`,
+Every page behind an icon looks the same way: its icon, name and state at the top, settings in one card
+per section, and long explanations folded to their first sentence ("More ›" opens them; never for
+warnings, the setup checklist or the Help page). Back on any page returns to Home. New features and themes are one entry each (`HomeFeatures`,
 `Style.ALL_THEMES`).
 
 **Drive Mode** (full-screen, keeps the screen on, two tabs you can swipe between):
