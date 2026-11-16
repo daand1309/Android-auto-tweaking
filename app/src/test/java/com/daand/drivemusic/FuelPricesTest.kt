@@ -152,7 +152,8 @@ class FuelPricesTest {
         val url = FuelPrices.cbsUrl(FuelPrices.Fuel.DIESEL, "2026MM10")
         assertTrue(url, url.contains("A047219"))
         assertTrue(url, url.contains("2026MM10"))
-        assertTrue("no interpolation left over: $url", !url.contains("$"))
+        assertTrue("the OData filter is in the query: $url", url.contains("\$filter="))
+        assertTrue("and the fields are limited to what is needed: $url", url.contains("\$select=Perioden,GemiddeldePompprijs_1"))
         assertEquals("2026MM10", FuelPrices.periodOf(0, monthStart(2026, 10)))
         assertEquals("2026MM09", FuelPrices.periodOf(1, monthStart(2026, 10)))
         assertEquals("2025MM12", FuelPrices.periodOf(1, monthStart(2026, 1)))
@@ -160,7 +161,7 @@ class FuelPricesTest {
 
     @Test fun theMonthIsShownInBothLanguages() {
         assertEquals("Oct 2026", FuelPrices.periodLabel("2026MM10", dutch = false))
-        assertEquals("okt 2026", FuelPrices.periodLabel("2026MM10", dutch = true))
+        assertEquals("okt 2026", FuelPrices.periodLabel("2026MM10", dutch = true))   // no trailing period
         assertEquals("2026MM10", FuelPrices.periodLabel("nonsense", dutch = false))
     }
 

@@ -200,7 +200,8 @@ object FuelPrices {
         val cal = java.util.Calendar.getInstance().apply {
             clear(); set(y.toInt(), mo.toInt() - 1, 1)
         }
-        return fmt.format(cal.time)
+        // Dutch custom is "okt." with a period; the label reads better without it (and matches "Oct").
+        return fmt.format(cal.time).replace(".", "")
     }
 
     /**
