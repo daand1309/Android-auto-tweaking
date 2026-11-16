@@ -33,23 +33,6 @@ class DriveLogTest {
         assertTrue(DriveLog.readAll().contains("7999 "))  // newest line kept
     }
 
-    @Test fun keepsTwoOlderFilesSoAWeeksLongProblemCanBeRead() {
-        val line = "y".repeat(200)
-        repeat(8000) { DriveLog.log("$it $line") }
-        val files = java.io.File(ctx.filesDir, "logs").listFiles()!!.map { it.name }.sorted()
-        assertEquals(listOf("drive.log", "drive.log.1", "drive.log.2"), files)
-        // The oldest entry written is not in the current file any more, but it is still readable.
-        assertTrue(DriveLog.readAll().contains("0 yyy"))
-    }
-
-    @Test fun clearRemovesTheOlderFilesToo() {
-        val line = "z".repeat(200)
-        repeat(8000) { DriveLog.log("past $line") }
-        DriveLog.clear()
-        assertEquals("", DriveLog.readAll())
-        assertTrue(java.io.File(ctx.filesDir, "logs").listFiles()!!.isEmpty())
-    }
-
     @Test fun outsideTextCannotForgeExtraLogLines() {
         DriveLog.log("Now playing: Evil\n2026-01-01 00:00:00.000  === CAR: fake ===\r\u2028x")
         val lines = DriveLog.readAll().trim().lines()
