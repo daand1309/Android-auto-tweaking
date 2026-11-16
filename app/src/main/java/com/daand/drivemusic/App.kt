@@ -14,6 +14,9 @@ class App : Application() {
         runCatching {
             DriveLog.log("Drive Music ${packageManager.getPackageInfo(packageName, 0).versionName} started")
         }
+        // A daily update check that doesn't depend on the app being open or the car being used.
+        // Re-armed on every process start, so a reboot only delays it until the app runs again.
+        runCatching { DailyUpdateCheck.schedule(this) }
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             // OBD poller is stopped with Thread.interrupt(); sleep() surfaces that as
