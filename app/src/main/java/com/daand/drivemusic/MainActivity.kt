@@ -117,7 +117,7 @@ class MainActivity : Activity() {
     private enum class Page(val title: String) {
         HOME("Drive Music"), SETUP("Setup"), MUSIC("Music & driving"), GREETING("Welcome greeting"),
         VOICE("Voice"), DRIVE_MODE("Drive Mode"), UPDATES("Updates"), HELP("Help & privacy"),
-        CAR("Car screen"), BACKUP("Backup & restore"), OBD("Car data (OBD)"), TRIPS("Trips & costs")
+        CAR("Car screen"), BACKUP("Backup & restore"), OBD("Car data (OBD)"), TRIPS("Trips & costs"), THEMES("Themes")
     }
 
     private var page = Page.HOME
@@ -263,6 +263,7 @@ class MainActivity : Activity() {
             Page.TRIPS -> renderTrips()
             Page.CAR -> renderCar()
             Page.BACKUP -> renderBackup()
+            Page.THEMES -> renderThemes()
         }
         when (animateNext) { ENTER -> Motion.enter(root); BACK -> Motion.fadeIn(root) }
         animateNext = 0
@@ -1079,10 +1080,7 @@ class MainActivity : Activity() {
             }
         }
 
-        header("How it looks")
-        switch("Animations (launch, pages, power-up sweep)", prefs.animations) {
-            prefs.animations = it; Motion.enabled = it; render()
-        }
+        header("How it opens")
         switch("Intro animation", prefs.showSplash) { prefs.showSplash = it; render() }
 
         if (prefs.showSplash) {
@@ -1108,6 +1106,23 @@ class MainActivity : Activity() {
             }
             text("The intro plays every time Drive Mode opens - the button at the top of this page shows it now.")
         }
+    }
+
+    /** Themes and animations: how the whole app looks. A new theme shows up here by itself (Style.ALL_THEMES). */
+    private fun renderThemes() {
+        pageHeader()
+        header("Theme")
+        Style.ALL_THEMES.forEach { t ->
+            val current = Style.theme(prefs.theme).id == t.id
+            stepperLike(t.name + if (current) "  ✓" else "", if (current) "In use" else "Use") {
+                if (!current) { prefs.theme = t.id; Style.apply(t.id); recreate() }
+            }
+        }
+        header("Animations")
+        switch("Animations (launch, pages, power-up sweep)", prefs.animations) {
+            prefs.animations = it; Motion.enabled = it; render()
+        }
+        text("The Drive Mode intro has its own switch under Drive Mode.")
     }
 
     private fun renderUpdates() {
