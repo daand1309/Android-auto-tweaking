@@ -101,7 +101,8 @@ class NewUserJourney {
             SystemClock.sleep(1_200)   // the launch animation (the emulator's own animations are off)
             look("first_open", root)
             // ---- What does the first screen ask me to do? Follow the setup prompt.
-            if (!tap(root!!, "Setup")) tap(root!!, "steps")
+            // The "Needs you" card says "Setup: N steps left" (the car card's status line also says "Setup needed").
+            if (!tap(root!!, "Setup:")) tap(root!!, "steps")
             look("setup_page", root)
             sc.onActivity { it.scrollForTest(true) }
             look("setup_page_bottom", root)
@@ -120,7 +121,8 @@ class NewUserJourney {
             look("home_after_setup", root)
 
             // ---- Personalise: the greeting page.
-            tap(root!!, "Welcome greeting") || tap(root!!, "Greeting")
+            // The Greeting icon in the grid (the car card's "🎙 Greeting" quick button would speak it instead).
+            note("TAP 'Greeting' (grid icon)"); sc.onActivity { it.openPageForTest("GREETING") }
             look("greeting_page", root)
             sc.onActivity { it.openPageForTest("HOME") }
 

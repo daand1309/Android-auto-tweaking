@@ -21,6 +21,9 @@ class CarPhotoView(context: Context, private val photo: Bitmap) : View(context) 
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
 
+    /** The colour the photo fades into: the page, or the card it sits in. */
+    var fadeTo: Int = Style.BG
+
     /** Tall (phone wallpaper) photos get a slightly taller frame so the whole car fits. */
     private val frameRatio = if (photo.height > photo.width) 0.72f else 0.56f
 
@@ -73,8 +76,8 @@ class CarPhotoView(context: Context, private val photo: Bitmap) : View(context) 
         }
         canvas.drawBitmap(photo, src, RectF(0f, 0f, w, h), paint)
 
-        // Fade into the page background at the top, bottom and sides.
-        val bg = Style.BG
+        // Fade into the background (page or card) at the top, bottom and sides.
+        val bg = fadeTo
         val clear = bg and 0x00FFFFFF
         val fade = Paint()
         fade.shader = LinearGradient(0f, 0f, 0f, h, intArrayOf(bg, clear, clear, bg), floatArrayOf(0f, 0.14f, 0.8f, 1f), Shader.TileMode.CLAMP)

@@ -58,7 +58,11 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(20), dp(16), dp(40))
         }
+        // The home search box must not grab focus (and the keyboard, and scroll the page to it) on open.
+        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         scroll = ScrollView(this).apply {
+            isFocusableInTouchMode = true
+            descendantFocusability = android.view.ViewGroup.FOCUS_BEFORE_DESCENDANTS
             addView(root)
             setBackgroundColor(Style.BG)
             isFillViewport = true
@@ -186,7 +190,7 @@ class MainActivity : Activity() {
 
     private fun handleBack() {
         when (page) {
-            Page.HOME -> finish()
+            Page.HOME -> if (homeQuery.isNotBlank()) { homeQuery = ""; render() } else finish()
             Page.VOICE -> go(Page.GREETING, back = true)
             else -> go(Page.HOME, back = true)
         }
@@ -270,73 +274,235 @@ class MainActivity : Activity() {
         scroll.post { scroll.scrollTo(0, y) }
     }
 
+    /** What's typed in the home search box ("" = show the grid). Kept across redraws. */
+    private var homeQuery = ""
+
+    /**
+     * Home: your car (photo card), the big Drive Mode button, what needs you, then everything else as
+     * icons - built from [HomeFeatures] so a new feature is one entry there - with a search box on top.
+     */
     private fun renderHome() {
         lastHomeSignature = homeSignature()
-        heroCard()
-
-        // The adapter question belongs at the top: it's about the car you just left, and the
-        // notification can be missed (or swiped away) while the adapter is still drawing power.
-        if (prefs.adapterPromptPending) adapterPromptCard()
-        fullScreenCard()
-
-        // What a new user must do first goes first (found in the new-user walkthrough: lower down,
-        // under the buttons and the update card, it was easy to miss).
-        if (!MusicApps.isInstalled(packageManager, prefs.musicPackage)) {
-            navRow("⚠  Music app not found", "Tap to pick the app that plays your music", warn = true) { pickMusicApp() }
-        }
-        val missing = setupItems().count { !it.ok && !it.label.contains("optional") }
-        if (missing > 0) navRow("⚠  Setup: $missing ${if (missing == 1) "step" else "steps"} left",
-            "Needed for the app to work properly", warn = true) { go(Page.SETUP) }
-
-        availableUpdate?.let { upd ->
-            navRow("⬇  Update ${upd.versionName} available", "Tap to install it", highlight = true) { go(Page.UPDATES) }
-        }
-
-        // The two things you do on purpose, above the settings: the big screen for the holder, and the
-        // two quick actions (start the music now / hear the greeting now - or stop it).
+        carCard()
         button("Open Drive Mode", accent = true) { startActivity(Intent(this, DriveModeActivity::class.java)) }
-        row(
-            quickBtn("▶  Start music") {
-                val svc = DriveMonitorService.instance
-                if (svc == null) toast("Finish setup first")
-                else { svc.startMusic("manual test button", requireCar = false); toast("Starting...") }
-            },
-            quickBtn(if (Voice.speaking) "\u23F9  Stop" else "🎙  Greeting") {
-                if (Voice.speaking) Voice.stop("stop button on the home screen")
-                else {
-                    stopVoiceSample()   // a voice sample must not talk through the greeting
-                    toast("Speaking...")
-                    WelcomeAnnouncer.run(this, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false) {
-                        refreshIfOn(Page.HOME)
-                    }
-                }
-                refreshIfOn(Page.HOME)
-            },
-        )
-
-        // Grouped the way you'd look for them: what plays, what the car tells us, how it looks and speaks,
-        // then the app itself. (Sound lives inside Music & driving now - it pointed there anyway.)
-        header("Music")
-        navRow("Music & driving", "Which app plays, auto-start, auto-resume, volume and sound") { go(Page.MUSIC) }
-        navRow("Welcome greeting", if (prefs.greetingEnabled) "On · ${prefs.greetingName.ifBlank { "no name set" }}" +
-            (if (needsTown()) " · set your town for weather" else "") else "Off") { go(Page.GREETING) }
-
-        header("Car")
-        navRow("Car data (OBD)", if (prefs.obdEnabled) "On · ${prefs.obdDeviceName.ifBlank { "no adapter chosen" }}" else "Engine temperature, battery, warning lights") { go(Page.OBD) }
-        if (prefs.obdEnabled) navRow("Trips & costs", "Distance, fuel, costs and your driving score") { go(Page.TRIPS) }
-        navRow("Car screen", "Show Drive Music on the Android Auto display") { go(Page.CAR) }
-
-        header("Look & sound")
-        navRow("Drive Mode settings", if (prefs.autoOpenDriveMode) "Opens when the car connects" else "Big buttons for your phone holder") { go(Page.DRIVE_MODE) }
-        navRow("Theme", Style.THEMES[prefs.theme] ?: "") { pickTheme() }
-
-        header("App")
-        if (missing == 0) navRow("Setup", "All done ✓") { go(Page.SETUP) }
-        navRow("Updates", "Version ${packageManager.getPackageInfo(packageName, 0).versionName ?: "?"}") { go(Page.UPDATES) }
-        navRow("Logs", "What happened on your drives") { startActivity(Intent(this, LogActivity::class.java)) }
-        navRow("Backup & restore", "Save your settings to a file") { go(Page.BACKUP) }
-        navRow("Help & privacy", "Car screen setup, tips, what data is used") { go(Page.HELP) }
+        val needs = NeedsYou.items(needsState())
+        if (needs.isNotEmpty()) needsCard(needs)
+        val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        searchBox(grid, results)
+        root.addView(results)
+        root.addView(grid)
+        featureGrid(grid, NeedsYou.dotted(needs))
+        showSearch(grid, results)
         carOffLine()
+    }
+
+    private fun needsState(): NeedsYou.State {
+        val car = if (prefs.obdEnabled) com.daand.drivemusic.obd.ObdManager.live() else null
+        return NeedsYou.State(
+            musicAppMissing = !MusicApps.isInstalled(packageManager, prefs.musicPackage),
+            setupStepsLeft = setupItems().count { !it.ok && !it.label.contains("optional") },
+            adapterQuestion = prefs.adapterPromptPending,
+            updateVersion = availableUpdate?.versionName,
+            faultCode = car?.codes?.firstOrNull(),
+            fullScreenMissing = fullScreenMissing(),
+        )
+    }
+
+    /** One card for everything waiting for you; each line is one tap to fix it. */
+    private fun needsCard(items: List<NeedsYou.Item>) {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = Style.rounded(Style.WARN_BG, dp(Style.R_CARD).toFloat())
+            setPadding(dp(14), dp(10), dp(14), dp(6))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(10) }
+            addView(TextView(this@MainActivity).apply {
+                text = "Needs you"; textSize = 13f; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.AMBER)
+            })
+        }
+        fun line(text: String, action: () -> Unit) = TextView(this).apply {
+            this.text = "$text  ›"; textSize = 15f; setTextColor(Style.TEXT)
+            minHeight = dp(48); gravity = android.view.Gravity.CENTER_VERTICAL
+            isClickable = true; setOnClickListener { action() }; Feel.press(this, 0.98f)
+        }
+        items.forEach { item ->
+            when (item.kind) {
+                NeedsYou.Kind.ADAPTER -> {
+                    card.addView(TextView(this).apply {
+                        text = item.text; textSize = 15f; setTextColor(Style.TEXT); setPadding(0, dp(10), 0, dp(2))
+                    })
+                    card.addView(LinearLayout(this).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        addView(quickBtn(if (prefs.greetingDutch) "✓ Eruit gehaald" else "✓ Taken out") {
+                            com.daand.drivemusic.obd.AdapterReminder.answered(this@MainActivity, true); render()
+                        })
+                        addView(quickBtn(if (prefs.greetingDutch) "Laat zitten" else "Leave it in") {
+                            com.daand.drivemusic.obd.AdapterReminder.answered(this@MainActivity, false); render()
+                        })
+                    })
+                }
+                NeedsYou.Kind.FULL_SCREEN -> card.addView(LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+                    addView(line(item.text) { openFullScreenSetting() }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                    addView(TextView(this@MainActivity).apply {
+                        text = "Not now"; textSize = 13f; setTextColor(Style.TEXT2); minHeight = dp(48); minWidth = dp(64)
+                        gravity = android.view.Gravity.CENTER
+                        setOnClickListener { prefs.fullScreenNagDismissed = true; render() }
+                    })
+                })
+                NeedsYou.Kind.MUSIC_APP -> card.addView(line(item.text) { pickMusicApp() })
+                NeedsYou.Kind.SETUP -> card.addView(line(item.text) { go(Page.SETUP) })
+                NeedsYou.Kind.FAULT -> card.addView(line(item.text) { go(Page.OBD) })
+                NeedsYou.Kind.UPDATE -> card.addView(line(item.text) { go(Page.UPDATES) })
+            }
+        }
+        root.addView(card)
+    }
+
+    /** The search box above the grid: typing swaps the grid for the matching pages. */
+    private fun searchBox(grid: LinearLayout, results: LinearLayout) {
+        root.addView(android.widget.EditText(this).apply {
+            hint = "🔍  Search settings…"; setSingleLine(); textSize = 15f
+            setTextColor(Style.TEXT); setHintTextColor(Style.TEXT2)
+            background = Style.rounded(Style.SURFACE2, dp(24).toFloat())
+            setPadding(dp(18), dp(12), dp(18), dp(12)); minHeight = dp(48)
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(12) }
+            setText(homeQuery)
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(e: android.text.Editable?) {
+                    homeQuery = e?.toString() ?: ""
+                    showSearch(grid, results)
+                }
+            })
+        })
+    }
+
+    private fun showSearch(grid: LinearLayout, results: LinearLayout) {
+        results.removeAllViews()
+        if (homeQuery.isBlank()) { grid.visibility = View.VISIBLE; results.visibility = View.GONE; return }
+        grid.visibility = View.GONE; results.visibility = View.VISIBLE
+        val found = HomeFeatures.search(homeQuery)
+        if (found.isEmpty()) results.addView(TextView(this).apply {
+            text = "Nothing found for \u201C${homeQuery.trim()}\u201D"; textSize = 14f; setTextColor(Style.TEXT2)
+            setPadding(dp(4), dp(14), dp(4), dp(8))
+        })
+        found.forEach { f ->
+            results.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+                background = Style.button(Style.SURFACE, dp(Style.R_CARD).toFloat())
+                setPadding(dp(14), dp(12), dp(14), dp(12)); minimumHeight = dp(56)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    .apply { topMargin = dp(8) }
+                isClickable = true; setOnClickListener { openFeature(f.id) }; Feel.press(this, 0.98f)
+                addView(TextView(this@MainActivity).apply { text = f.icon; textSize = 22f; setPadding(0, 0, dp(14), 0); setTextColor(Style.TEXT) })
+                addView(LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(TextView(this@MainActivity).apply { text = f.title; textSize = 16f; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT) })
+                    addView(TextView(this@MainActivity).apply { text = featureState(f.id); textSize = 13f; setTextColor(Style.TEXT2) })
+                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                addView(TextView(this@MainActivity).apply { text = "›"; textSize = 24f; setTextColor(Style.TEXT2) })
+            })
+        }
+    }
+
+    /** The icon grid: a heading per group, three equal tiles per row. */
+    private fun featureGrid(into: LinearLayout, dots: Set<String>) {
+        HomeFeatures.byGroup().forEach { (group, list) ->
+            into.addView(TextView(this).apply {
+                text = group.en.uppercase(); textSize = 13f; setTypeface(typeface, Typeface.BOLD)
+                setTextColor(Style.PRIMARY); letterSpacing = 0.08f; setPadding(dp(4), dp(18), 0, dp(4))
+            })
+            list.chunked(3).forEach { chunk ->
+                into.addView(LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    chunk.forEach { addView(featureTile(it, it.id in dots)) }
+                    repeat(3 - chunk.size) {
+                        addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 1, 1f).apply { setMargins(dp(4), 0, dp(4), 0) })
+                    }
+                })
+            }
+        }
+    }
+
+    private fun featureTile(f: Feature, dot: Boolean): View = android.widget.FrameLayout(this).apply {
+        background = Style.button(Style.SURFACE, dp(16).toFloat())
+        minimumHeight = dp(96)
+        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
+        isClickable = true; contentDescription = f.title
+        setOnClickListener { openFeature(f.id) }
+        Feel.press(this, 0.95f)
+        addView(LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER_HORIZONTAL
+            setPadding(dp(6), dp(12), dp(6), dp(10))
+            addView(TextView(this@MainActivity).apply { text = f.icon; textSize = 24f; setTextColor(Style.TEXT); gravity = android.view.Gravity.CENTER })
+            addView(TextView(this@MainActivity).apply {
+                text = f.title; textSize = 13f; setTextColor(Style.TEXT); gravity = android.view.Gravity.CENTER
+                setTypeface(typeface, Typeface.BOLD); setPadding(0, dp(4), 0, 0)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = featureState(f.id); textSize = 11f; setTextColor(Style.TEXT2); gravity = android.view.Gravity.CENTER
+                setPadding(0, dp(2), 0, 0)
+            })
+        }, android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.WRAP_CONTENT))
+        if (dot) addView(View(this@MainActivity).apply {
+            background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(Style.AMBER) }
+        }, android.widget.FrameLayout.LayoutParams(dp(9), dp(9), android.view.Gravity.TOP or android.view.Gravity.END).apply { setMargins(0, dp(10), dp(10), 0) })
+    }
+
+    /** What a grid icon / search result opens. */
+    private fun openFeature(id: String) {
+        homeQuery = ""
+        when (id) {
+            "music" -> go(Page.MUSIC)
+            "greeting" -> go(Page.GREETING)
+            "voice" -> go(Page.VOICE)
+            "drive_mode" -> go(Page.DRIVE_MODE)
+            "car_data" -> go(Page.OBD)
+            "trips" -> go(Page.TRIPS)
+            "service" -> go(Page.OBD)
+            "car_screen" -> go(Page.CAR)
+            "themes" -> go(Page.THEMES)
+            "setup" -> go(Page.SETUP)
+            "updates" -> go(Page.UPDATES)
+            "backup" -> go(Page.BACKUP)
+            "logs" -> startActivity(Intent(this, LogActivity::class.java))
+            "help" -> go(Page.HELP)
+        }
+    }
+
+    /** The one-line state under an icon, so you often don't need to open it. */
+    private fun featureState(id: String): String = when (id) {
+        "music" -> MusicApps.label(this, prefs.musicPackage)
+        "greeting" -> if (prefs.greetingEnabled) "On" else "Off"
+        "voice" -> if (prefs.butler) "Butler" else "Sassy"
+        "drive_mode" -> if (prefs.autoOpenDriveMode) "Opens by itself" else "Manual"
+        "car_data" -> if (prefs.obdEnabled) "On · ${prefs.obdDeviceName.ifBlank { "no adapter" }}" else "Off"
+        "trips" -> if (!prefs.obdEnabled) "Needs the adapter"
+            else com.daand.drivemusic.obd.TripHistory.load(this).size.let { if (it == 1) "1 trip" else "$it trips" }
+        "service" -> serviceStateText()
+        "car_screen" -> "Android Auto"
+        "themes" -> Style.theme(prefs.theme).name
+        "setup" -> setupItems().count { !it.ok && !it.label.contains("optional") }.let { if (it == 0) "All done ✓" else "$it left" }
+        "updates" -> "Version ${packageManager.getPackageInfo(packageName, 0).versionName ?: "?"}"
+        "backup" -> "Save / restore"
+        "logs" -> "Your drives"
+        "help" -> "Tips & privacy"
+        else -> ""
+    }
+
+    private fun serviceStateText(): String {
+        if (!prefs.serviceReminderOn) return "Off"
+        val synced = prefs.serviceSyncAt > 0 && prefs.serviceSyncAt >= prefs.serviceDate
+        if (!synced) return if (prefs.serviceDate > 0) "By date" else "Not set"
+        val trips = com.daand.drivemusic.obd.TripHistory.load(this)
+        val left = com.daand.drivemusic.obd.CarAlerts.serviceLeft(prefs.serviceSyncAt, prefs.serviceSyncKm, prefs.serviceSyncDays,
+            com.daand.drivemusic.obd.TripHistory.kmSince(trips, prefs.serviceSyncAt), System.currentTimeMillis())
+        return if (left.first <= 0 || left.second <= 0) "Due now" else "≈ %,d km left".format(java.util.Locale.ROOT, left.first)
     }
 
     /** "The app knows the car is off": said quietly at the bottom of the home screen. */
@@ -367,19 +533,6 @@ class MainActivity : Activity() {
                 com.daand.drivemusic.obd.AdapterReminder.answered(this, false); render()
             },
         )
-    }
-
-    /**
-     * Android 14 and later only let an app take the whole screen on connect if its full-screen
-     * notifications are allowed. Without that, Drive Mode arrives as a banner you have to tap - so ask
-     * here, on the screen you land on, instead of burying it in the Drive Mode settings.
-     */
-    private fun fullScreenCard() {
-        if (!fullScreenMissing()) return
-        warnCard("Drive Mode can't take over the screen when the car connects yet - allow full-screen " +
-            "notifications for Drive Music and it opens by itself.",
-            action = "Allow it") { openFullScreenSetting() }
-        row(quickBtn("Not now") { prefs.fullScreenNagDismissed = true; render() })
     }
 
     /** May Drive Music take the whole screen when the car connects? (Denied by default on Android 14+.) */
@@ -1299,7 +1452,7 @@ class MainActivity : Activity() {
      */
     private val homeTick = object : Runnable {
         override fun run() {
-            if (page == Page.HOME) {
+            if (page == Page.HOME && homeQuery.isBlank()) {   // never redraw under someone typing a search
                 val sig = homeSignature()
                 if (sig != lastHomeSignature) render()
             } else if (page == Page.OBD && prefs.obdEnabled) render()  // live values
@@ -1317,7 +1470,7 @@ class MainActivity : Activity() {
             prefs.lastDrive, prefs.parkedSpot, availableUpdate?.versionName,
             // The adapter question and "the car is off": show up (and go away) without a manual refresh.
             prefs.adapterPromptPending, com.daand.drivemusic.obd.ObdManager.carOffForMs() / 60_000L,
-            fullScreenMissing(), Voice.speaking,
+            fullScreenMissing(), Voice.speaking, MusicApps.isInstalled(packageManager, prefs.musicPackage),
             // Car data: rounded so the screen only redraws when the shown value changes.
             com.daand.drivemusic.obd.ObdManager.live()?.let { "${it.coolantC}|${it.volts?.let { v -> Math.round(v * 10) }}|${it.codes}" }).joinToString("|")
     }
@@ -1329,84 +1482,148 @@ class MainActivity : Activity() {
     }
 
     /** Tesla-style header: car name and status, the car drawn in the theme colour, status tiles around it. */
-    private fun heroCard() {
+    /**
+     * Your car: the photo fills the top of the card (a faint outline + "add a photo" without one, same
+     * size so nothing jumps), the name and status over it, three numbers along its bottom edge - from
+     * the last drive when parked, live while driving - then the song and the quick buttons.
+     */
+    private fun carCard() {
         val svc = DriveMonitorService.instance
         val driving = svc != null && prefs.lastCarState == "Android Auto connected"
-        root.addView(TextView(this).apply {
-            text = "DRIVE MUSIC"; textSize = 11f; letterSpacing = 0.3f; setTextColor(Style.TEXT2)
-            setPadding(dp(4), 0, 0, 0)
-        })
-        root.addView(TextView(this).apply {
-            text = prefs.carName.ifBlank { "My car" }; textSize = 34f; setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Style.TEXT); setPadding(dp(4), 0, 0, 0)
-        })
-        root.addView(TextView(this).apply {
-            text = when {
-                svc == null -> "●  Setup needed"
-                driving -> "●  Driving  ·  Android Auto connected"
-                prefs.lastCarState == DriveHold.STATE -> "●  Android Auto reconnecting…"
-                else -> "●  Parked"
-            }
-            textSize = 14f
-            setTextColor(when { svc == null -> Style.AMBER; driving -> Style.GREEN; prefs.lastCarState == DriveHold.STATE -> Style.AMBER; else -> Style.TEXT2 })
-            setPadding(dp(4), dp(2), 0, 0)
-            if (driving || prefs.lastCarState == DriveHold.STATE) Motion.pulse(this)
-        })
-        val photo = IntroImage.load(this, IntroImage.HERO)
-        if (photo != null) {
-            val settle = animateNext == ENTER
-            root.addView(CarPhotoView(this, photo).apply {
-                if (settle) Motion.settle(this)
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-                    .apply { topMargin = dp(6) }
-                setOnClickListener {
-                    AlertDialog.Builder(this@MainActivity).setTitle("Car photo")
-                        .setItems(arrayOf("Change photo", "Remove photo")) { _, i ->
-                            if (i == 0) pickCarPhoto() else { IntroImage.clear(this@MainActivity, IntroImage.HERO); render() }
-                        }.show()
-                }
-            })
-        } else {
-            navRow("Add a photo of your car", "Shown here; stays on your phone") { pickCarPhoto() }
-        }
-
-        val song = svc?.currentSong()
-        val weatherFresh = System.currentTimeMillis() - prefs.lastWeatherAt < 3 * 60 * 60 * 1000L
-        val lastMins = Regex("""- (\d+) min""").find(prefs.lastDrive)?.groupValues?.get(1)
-        val tiles = listOf(
-            Triple("♪", "Now playing", song?.let { if (it.artist.isNotBlank()) "${it.title}\n${it.artist}" else it.title } ?: "Nothing yet"),
-            Triple("☁", "Weather", when {
-                weatherFresh && prefs.lastWeatherSummary.isNotBlank() -> prefs.lastWeatherSummary
-                needsTown() -> "Set your town"   // weather is on, but without a place it never comes
-                else -> "After your next drive"
-            }),
-            Triple("⏱", "Last drive", when (lastMins) { null -> "None yet"; "0" -> "Under a minute"; else -> "$lastMins min" }),
-            Triple("📍", "Your car", Parking.spot(this)?.let { "Parked ${Parking.whenText(it.time)}" } ?: "Tap to find your car"),
-        )
+        val holding = prefs.lastCarState == DriveHold.STATE
         val car = if (prefs.obdEnabled) com.daand.drivemusic.obd.ObdManager.live() else null
-        val allTiles = if (car == null) tiles else tiles + listOf(
-            Triple("🌡", "Engine", car.coolantC?.let { "$it °C" } ?: "—"),
-            when {
-                car.codes.isNotEmpty() -> Triple("⚠", "Fault code", car.codes.first())
-                car.volts != null -> Triple("🔋", "Battery", "%.1f V".format(java.util.Locale.ROOT, car.volts))
-                else -> Triple("🔋", "Battery", "—")
-            },
-        )
-        allTiles.chunked(2).forEach { pair ->
-            row(*pair.map { (icon, label, value) ->
-                statusTile(icon, label, value).apply {
-                    val action: (() -> Unit)? = when (icon) {
-                        "♪" -> { { openMusicApp() } }
-                        "☁" -> { { go(Page.GREETING) } }
-                        "⏱" -> { { lastDriveDetails() } }
-                        "📍" -> { { whereIsMyCar() } }
-                        "🌡", "🔋", "⚠" -> { { go(Page.OBD) } }
-                        else -> null
-                    }
-                    if (action != null) { background = Style.button(Style.SURFACE, dp(Style.R_CARD).toFloat()); setOnClickListener { action() }; Feel.press(this, 0.97f) }
-                }
-            }.toTypedArray())
+        val card = android.widget.FrameLayout(this).apply {
+            background = Style.rounded(Style.SURFACE, dp(Style.R_BIG).toFloat()); clipToOutline = true
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(4) }
         }
+        val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val photo = IntroImage.load(this, IntroImage.HERO)
+        val photoMenu = {
+            AlertDialog.Builder(this).setTitle("Car photo")
+                .setItems(arrayOf("Change photo", "Remove photo")) { _, i ->
+                    if (i == 0) pickCarPhoto() else { IntroImage.clear(this, IntroImage.HERO); render() }
+                }.show()
+        }
+        val top: View = if (photo != null) CarPhotoView(this, photo).apply {
+            fadeTo = Style.SURFACE
+            if (animateNext == ENTER) Motion.settle(this)
+            setOnClickListener { go(Page.OBD) }
+            setOnLongClickListener { photoMenu(); true }
+        } else android.widget.FrameLayout(this).apply {
+            minimumHeight = dp(180)
+            addView(TextView(this@MainActivity).apply {
+                text = "🚗"; textSize = 96f; alpha = 0.12f; gravity = android.view.Gravity.CENTER
+            }, android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, dp(180)))
+            addView(TextView(this@MainActivity).apply {
+                text = "📷  Add a photo of your car\nstays on your phone"; textSize = 13f; setTextColor(Style.TEXT)
+                gravity = android.view.Gravity.CENTER; minHeight = dp(48)
+                background = Style.button(Style.SURFACE2, dp(Style.R_CARD).toFloat()); setPadding(dp(14), dp(8), dp(14), dp(8))
+                setOnClickListener { pickCarPhoto() }
+            }, android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.view.Gravity.CENTER).apply { topMargin = dp(28) })
+        }
+        column.addView(top)
+
+        // Three numbers along the photo's bottom edge.
+        fun v(d: Double?, fmt: String) = d?.let { fmt.format(java.util.Locale.ROOT, it) } ?: "–"
+        val lastMins = Regex("""- (\d+) min""").find(prefs.lastDrive)?.groupValues?.get(1)
+        val stats: List<Triple<String, String, (() -> Unit)?>> = if (driving) listOf(
+            Triple("Speed", car?.speedKmh?.let { "$it km/h" } ?: "–", null),
+            Triple("Engine", car?.coolantC?.let { "$it °C" } ?: "–") { go(Page.OBD) },
+            Triple("Battery", v(car?.volts, "%.1f V")) { go(Page.OBD) },
+        ) else listOf(
+            Triple("Last drive", when (lastMins) { null -> "–"; "0" -> "< 1 min"; else -> "$lastMins min" }) { lastDriveDetails() },
+            Triple("Battery", v(car?.volts, "%.1f V")) { go(Page.OBD) },
+            Triple("Fault", if (car == null) "–" else car.codes.firstOrNull() ?: "None") { go(Page.OBD) },
+        )
+        column.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; setPadding(dp(8), 0, dp(8), dp(8))
+            stats.forEach { (label, value, action) ->
+                addView(LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER
+                    background = Style.button(Style.SURFACE2, dp(12).toFloat()); setPadding(dp(4), dp(8), dp(4), dp(8))
+                    minimumHeight = dp(56)
+                    if (action != null) { isClickable = true; setOnClickListener { action() }; Feel.press(this, 0.96f) }
+                    val warn = label == "Fault" && value != "None" && value != "–"
+                    addView(TextView(this@MainActivity).apply {
+                        text = value; textSize = 17f; setTypeface(typeface, Typeface.BOLD); fontFeatureSettings = Style.TABULAR
+                        setTextColor(if (warn) Style.AMBER else Style.TEXT); gravity = android.view.Gravity.CENTER
+                    })
+                    addView(TextView(this@MainActivity).apply {
+                        text = label; textSize = 11f; setTextColor(Style.TEXT2); gravity = android.view.Gravity.CENTER
+                    })
+                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply { setMargins(dp(4), 0, dp(4), 0) })
+            }
+        })
+
+        // While driving: the song, with its own controls.
+        val song = svc?.currentSong()
+        if (driving && svc != null) column.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+            background = Style.rounded(Style.SURFACE2, dp(12).toFloat())
+            setPadding(dp(12), dp(4), dp(4), dp(4))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { setMargins(dp(12), 0, dp(12), dp(8)) }
+            addView(TextView(this@MainActivity).apply {
+                text = song?.let { if (it.artist.isNotBlank()) "${it.title}\n${it.artist}" else it.title } ?: "Nothing playing"
+                textSize = 13f; setTextColor(Style.TEXT); setOnClickListener { openMusicApp() }
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            listOf("⏮" to { svc.skipPrevious() }, "⏯" to { svc.playPause() }, "⏭" to { svc.skipNext() }).forEach { (sym, act) ->
+                addView(TextView(this@MainActivity).apply {
+                    text = sym; textSize = 20f; setTextColor(Style.TEXT); gravity = android.view.Gravity.CENTER
+                    contentDescription = when (sym) { "⏮" -> "Previous"; "⏯" -> "Play or pause"; else -> "Next" }
+                    setOnClickListener { act(); handler.postDelayed({ refreshIfOn(Page.HOME) }, 600) }
+                }, LinearLayout.LayoutParams(dp(48), dp(48)))
+            }
+        })
+
+        // Quick buttons: start the music now, hear the greeting (or stop it), find the car.
+        column.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; setPadding(dp(10), 0, dp(4), dp(10))
+            addView(quickBtn("▶  Music") {
+                if (svc == null) toast("Finish setup first")
+                else { svc.startMusic("manual test button", requireCar = false); toast("Starting...") }
+            })
+            addView(quickBtn(if (Voice.speaking) "\u23F9  Stop" else "🎙  Greeting") {
+                if (Voice.speaking) Voice.stop("stop button on the home screen")
+                else {
+                    stopVoiceSample()   // a voice sample must not talk through the greeting
+                    toast("Speaking...")
+                    WelcomeAnnouncer.run(this@MainActivity, svc?.currentSong(), recordAsGreeted = false) { refreshIfOn(Page.HOME) }
+                }
+                refreshIfOn(Page.HOME)
+            })
+            addView(quickBtn("📍  Car") { whereIsMyCar() })
+        })
+        card.addView(column)
+
+        // Name and status over the top of the photo.
+        card.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(12), dp(16), 0)
+            addView(TextView(this@MainActivity).apply {
+                text = "DRIVE MUSIC"; textSize = 10f; letterSpacing = 0.3f; setTextColor(Style.TEXT2)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = prefs.carName.ifBlank { "My car" }; textSize = 32f; setTypeface(typeface, Typeface.BOLD)
+                setTextColor(Style.TEXT); setShadowLayer(dp(6).toFloat(), 0f, dp(1).toFloat(), 0xCC000000.toInt())
+            })
+            val weatherFresh = System.currentTimeMillis() - prefs.lastWeatherAt < 3 * 60 * 60 * 1000L
+            val weather = if (weatherFresh && prefs.lastWeatherSummary.isNotBlank()) "  ·  ${prefs.lastWeatherSummary}" else ""
+            addView(TextView(this@MainActivity).apply {
+                text = when {
+                    svc == null -> "●  Setup needed"
+                    driving -> "●  Driving" + com.daand.drivemusic.obd.ObdManager.trip.km.let { km -> if (km >= 0.5) "  ·  %.0f km so far".format(java.util.Locale.ROOT, km) else "" }
+                    holding -> "●  Android Auto reconnecting…"
+                    else -> "●  Parked$weather"
+                }
+                textSize = 13f; setShadowLayer(dp(4).toFloat(), 0f, dp(1).toFloat(), 0xCC000000.toInt())
+                setTextColor(when { svc == null || holding -> Style.AMBER; driving -> Style.GREEN; else -> Style.TEXT })
+                if (driving || holding) Motion.pulse(this)
+            })
+        }, android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT))
+        root.addView(card)
     }
 
     private fun openMusicApp() {
@@ -1486,34 +1703,6 @@ class MainActivity : Activity() {
         }, REQ_CAR_PHOTO)
     }
 
-    /**
-     * How many lines a tile value may use. Two is enough at the phone's normal text size; with a big
-     * system font the weather summary needs more, and cutting it to "6° · light ra…" is worse than a
-     * taller tile (the row grows to its tallest tile, so they stay even).
-     */
-    private fun tileLines() = if (resources.configuration.fontScale > 1.15f) 4 else 2
-
-    /** Home tile: caption on top, the value underneath (never cut mid-word). */
-    private fun statusTile(@Suppress("UNUSED_PARAMETER") icon: String, label: String, value: String) = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        background = Style.rounded(Style.SURFACE, dp(Style.R_CARD).toFloat())
-        setPadding(dp(14), dp(12), dp(12), dp(12))
-        minimumHeight = dp(76)
-        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply {
-            setMargins(0, dp(6), dp(6), 0)
-        }
-        val warn = icon == "⚠"
-        addView(TextView(this@MainActivity).apply {
-            text = label; textSize = 13f; setTextColor(if (warn) Style.AMBER else Style.TEXT2)
-            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
-        })
-        addView(TextView(this@MainActivity).apply {
-            text = value; textSize = 15f; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD)
-            fontFeatureSettings = Style.TABULAR
-            maxLines = tileLines(); ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(0, dp(4), 0, 0)
-        })
-    }
 
     /** Title row for a sub-page with a back arrow. */
     private fun pageHeader(back: Page = Page.HOME) = root.addView(TextView(this).apply {
