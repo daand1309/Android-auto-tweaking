@@ -71,6 +71,25 @@ class ObdFeaturesTest {
         assertEquals(40.8, TripHistory.kmSince(trips, 2_000), 0.01)
     }
 
+    @Test fun aDriveKeepsThePriceItWasDrivenAt() {
+        // Fuel goes up after the drive: the old drive must not get dearer.
+        val cheap = TripRecord(1_000, 20, 18.4, 1.16, 86, 92, price = 2.05)
+        val unknown = TripRecord(2_000, 35, 40.0, 2.4, null, null)     // before prices were kept
+        assertEquals(2.378, cheap.cost(todaysPrice = 2.20), 0.001)
+        assertEquals("an older trip falls back to today's price", 5.28, unknown.cost(2.20), 0.001)
+        assertEquals(2.05, cheap.priceUsed(2.20), 0.0001)
+        assertEquals(2.20, unknown.priceUsed(2.20), 0.0001)
+        // Survives a round trip through the file, and a nonsense price is ignored rather than trusted.
+        val back = TripHistory.fromJson(TripHistory.toJson(listOf(cheap, unknown)))
+        assertEquals(2.05, back[0].price, 0.0001)
+        assertEquals(0.0, back[1].price, 0.0001)
+        assertEquals(0.0, TripHistory.fromJson("""[{"at":1,"km":9,"l":1,"p":-3}]""").single().price, 0.0001)
+        assertEquals(0.0, TripHistory.fromJson("""[{"at":1,"km":9,"l":1,"p":99}]""").single().price, 0.0001)
+        // The trip line and the notification price the drive with its own price too.
+        assertEquals("18.4 km · 6.3 L/100 · €2.38 · 20 min · smooth 86/100", TripNotice.text(cheap, 2.20, dutch = false))
+        assertEquals("18.4 km · 6.3 L/100 · €2.38 · 20 min", TripNotice.text(cheap.copy(score = null), 2.20, dutch = false))
+    }
+
     @Test fun rangeLeft() {
         assertEquals(380, Range.km(40, 60.0, 6.3))              // 24 L at 6.3 L/100
         assertNull(Range.km(null, 60.0, 6.3))

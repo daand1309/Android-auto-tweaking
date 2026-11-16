@@ -10,8 +10,16 @@ data class TripRecord(
     val at: Long, val minutes: Int, val km: Double, val litres: Double,
     val score: Int?, val maxCoolant: Int?, val codes: List<String> = emptyList(),
     val health: HealthSample? = null,
+    /** What a litre cost when this drive happened (0 = an older record, priced with today's price). */
+    val price: Double = 0.0,
 ) {
     val per100: Double? get() = if (km >= 1 && litres > 0) litres / km * 100 else null
+
+    /** The cost of this drive: yesterday's drive shouldn't get dearer because fuel went up today. */
+    fun cost(todaysPrice: Double): Double = litres * (if (price > 0) price else todaysPrice)
+
+    /** The price this drive was priced with, for showing per trip. */
+    fun priceUsed(todaysPrice: Double): Double = if (price > 0) price else todaysPrice
 }
 
 /**
@@ -26,6 +34,7 @@ object TripHistory {
         list.takeLast(MAX).forEach { t ->
             put(JSONObject().put("at", t.at).put("min", t.minutes).put("km", t.km).put("l", t.litres)
                 .put("score", t.score ?: -1).put("maxC", t.maxCoolant ?: -999).put("codes", t.codes.joinToString(","))
+                .put("p", t.price)
                 .apply { t.health?.takeIf { !it.isEmpty }?.let { put("h", it.toJson()) } })
         }
     }.toString()
@@ -37,7 +46,8 @@ object TripHistory {
             TripRecord(o.optLong("at"), o.optInt("min"), o.optDouble("km", 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0,
                 o.optDouble("l", 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0,
                 o.optInt("score", -1).takeIf { it in 0..100 }, o.optInt("maxC", -999).takeIf { it > -100 },
-                o.optString("codes").split(',').filter { it.isNotBlank() }, HealthSample.fromJson(o.optJSONObject("h")))
+                o.optString("codes").split(',').filter { it.isNotBlank() }, HealthSample.fromJson(o.optJSONObject("h")),
+                o.optDouble("p", 0.0).takeIf { it.isFinite() && it in 0.0..20.0 } ?: 0.0)
         }
     } catch (e: Exception) { emptyList() }
 

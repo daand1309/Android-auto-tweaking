@@ -1789,9 +1789,12 @@ class MainActivity : Activity() {
                 "%.0f km".format(java.util.Locale.ROOT, t.km),
                 t.per100?.let { "%.1f L/100".format(java.util.Locale.ROOT, it) },
             ).joinToString(" · ")
+            // Each drive is priced with the price from its own day, so the totals don't move when you
+            // update the fuel price. Drives from before this was kept fall back to today's price.
+            val cost = trips.filter { it.at >= since }.sumOf { it.cost(price) }
             val fuel = listOfNotNull(
                 if (t.litres > 0) "%.1f L".format(java.util.Locale.ROOT, t.litres) else null,
-                if (price > 0 && t.litres > 0) "€%.2f".format(java.util.Locale.ROOT, t.litres * price) else null,
+                if (price > 0 && cost > 0) "€%.2f".format(java.util.Locale.ROOT, cost) else null,
                 if (t.trips == 1) "1 trip" else "${t.trips} trips",
             ).joinToString(" · ")
             statRow(label, if (fuel.isEmpty()) distance else "$distance\n$fuel")

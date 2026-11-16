@@ -291,8 +291,10 @@ object ObdManager {
         val t = trip
         if (t.km < 0.3) return
         // Snapshot now (a new drive may start right away), write the file off the main thread.
+        // The price is stamped on the trip now, so changing it later doesn't rewrite old drives.
         val rec = TripRecord(System.currentTimeMillis(), ((t.drivingSeconds + t.idleSeconds) / 60).toInt(), t.km, t.litres,
-            t.score(), t.maxCoolant, latest?.codes ?: emptyList(), t.health.sample())
+            t.score(), t.maxCoolant, latest?.codes ?: emptyList(), t.health.sample(),
+            price = runCatching { Prefs(ctx).fuelPriceForCosts }.getOrDefault(0.0))
         Thread({
             runCatching { TripHistory.add(ctx, rec) }.onFailure { DriveLog.log("OBD: couldn't save the trip (${it.javaClass.simpleName})") }
             runCatching { TripNotice.post(ctx, rec, Prefs(ctx)) }

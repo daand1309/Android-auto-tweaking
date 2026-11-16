@@ -21,10 +21,11 @@ object TripNotice {
     /** [multiline] puts the driving score on its own line: the Trips screen has a narrow column, and
      *  wrapped there the row began with "· smooth 86/100", which reads like a bullet. */
     fun text(t: TripRecord, price: Double, dutch: Boolean, multiline: Boolean = false): String {
+        val used = t.priceUsed(price)   // the price when you drove, not today's
         val head = listOfNotNull(
             "%.1f km".format(Locale.ROOT, t.km),
             t.per100?.let { "%.1f L/100".format(Locale.ROOT, it) },
-            if (price > 0 && t.litres > 0) "€%.2f".format(Locale.ROOT, t.litres * price) else null,
+            if (used > 0 && t.litres > 0) "€%.2f".format(Locale.ROOT, t.litres * used) else null,
             "${t.minutes} min",
         ).joinToString(" · ")
         val score = t.score?.let { "${Trip.scoreWord(it, dutch)} $it/100" } ?: return head
