@@ -638,8 +638,8 @@ class DriveMonitorService : NotificationListenerService() {
         suppressPauseUntil = SystemClock.elapsedRealtime() + 60_000L
         if (alert.urgent) {
             val token = Briefing.start(this, if (prefs.greetingDutch) "Auto" else "Car", text)
-            safeSpeak(text) { Briefing.end(this, token); suppressPauseUntil = 0L }
-        } else safeSpeak(text) { suppressPauseUntil = 0L }
+            safeSpeak(text) { Briefing.end(this, token); ownSpeechDone("car alert") }
+        } else safeSpeak(text) { ownSpeechDone("car alert") }
     }
 
     // ---------------------------------------------------------------- updates during the drive
@@ -692,7 +692,7 @@ class DriveMonitorService : NotificationListenerService() {
                 if (!carConnected || gen != connectGen) return@awaitAnswer
                 if (yes) speakUpdate(DriveUpdates.compose(found.weather, found.news, dutch, butler, prefs.greetingName, withIntro = false,
                     followed = found.followed, source = found.source)!!, found.title(dutch))
-                else safeSpeak(DriveUpdates.declinedLine(dutch, butler)) { suppressPauseUntil = 0L }
+                else safeSpeak(DriveUpdates.declinedLine(dutch, butler)) { ownSpeechDone("update") }
             }
         }
     }
@@ -702,7 +702,30 @@ class DriveMonitorService : NotificationListenerService() {
         val token = Briefing.start(this, title, text)
         safeSpeak(text) {
             Briefing.end(this, token)
-            suppressPauseUntil = 0L
+            ownSpeechDone("update")
+        }
+    }
+
+    /**
+     * Our own speech is over. While it ran, stops were ignored (a duck or a short pause is ours, not an
+     * interruption) - but the music app sometimes stays stopped afterwards (seen on real drives right
+     * after "Now playing" and "Ready to drive"). So look once more: if the music the app started is
+     * still not playing, treat that like any other stop (grace, then auto-resume).
+     */
+    private fun ownSpeechDone(what: String) {
+        suppressPauseUntil = 0L
+        val gen = connectGen
+        handler.postDelayed({ checkAfterOwnSpeech(what, gen) }, 1_500L)
+    }
+
+    private fun checkAfterOwnSpeech(what: String, gen: Int) {
+        if (!carConnected || gen != connectGen || !musicStartedThisDrive || userPausedViaUi) return
+        if (SystemClock.elapsedRealtime() < suppressPauseUntil) return   // something else is speaking now
+        if (pendingPauseRunnable != null || resumeRunnable != null || startRunnable != null) return
+        val state = (ytm?.takeIf { isMusic(it) } ?: findYtm())?.playbackState?.state ?: return
+        if (state == PlaybackState.STATE_PAUSED || state == PlaybackState.STATE_STOPPED || state == PlaybackState.STATE_ERROR) {
+            DriveLog.log("Music still stopped after our own $what - treating it as a pause")
+            schedulePendingPause(state)
         }
     }
 
@@ -787,6 +810,7 @@ class DriveMonitorService : NotificationListenerService() {
             if (song != null && carConnected && gen == connectGen) {
                 suppressPauseUntil = SystemClock.elapsedRealtime() + 15_000
                 SongAnnouncer.announce(this@DriveMonitorService, song, prefs.greetingDutch)
+                handler.postDelayed({ checkAfterOwnSpeech("song announcement", gen) }, 16_000L)
             }
         }, 2_500)
     }
