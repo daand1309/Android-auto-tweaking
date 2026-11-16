@@ -617,7 +617,7 @@ class MainActivity : Activity() {
 
         // This used to be its own "Sound" page, whose only advice was to come here.
         header("Sound")
-        button("Open the equalizer", accent = true) { openEqualizer() }
+        button("Open the equalizer") { openEqualizer() }
         button("Phone sound settings") {
             try { startActivity(Intent(Settings.ACTION_SOUND_SETTINGS)) } catch (e: Exception) { toast("Open Settings → Sounds") }
         }
