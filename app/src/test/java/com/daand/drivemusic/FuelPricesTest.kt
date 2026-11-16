@@ -162,7 +162,8 @@ class FuelPricesTest {
     @Test fun theMonthIsShownInBothLanguages() {
         assertEquals("Oct 2026", FuelPrices.periodLabel("2026MM10", dutch = false))
         assertEquals("okt 2026", FuelPrices.periodLabel("2026MM10", dutch = true))   // no trailing period
-        assertEquals("2026MM10", FuelPrices.periodLabel("nonsense", dutch = false))
+        // Something it can't parse is handed back as it came, rather than shown as a broken date.
+        assertEquals("nonsense", FuelPrices.periodLabel("nonsense", dutch = false))
     }
 
     private fun monthStart(year: Int, month: Int) = java.util.Calendar.getInstance().apply {
