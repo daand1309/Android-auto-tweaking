@@ -63,18 +63,28 @@ object AdapterReminder {
         try {
             NotificationManagerCompat.from(ctx).notify(ID, n)
         } catch (_: SecurityException) {}
-        // Android hands the notification to SystemUI asynchronously, so asking immediately says "not
-        // there" on a fast phone - it said so on 7 of 10 drives while the reminder was really on screen.
-        // Ask again a moment later, and only write a line when something is actually wrong.
+        verifyLater(ctx)
+    }
+
+    /**
+     * Android hands the notification to SystemUI asynchronously, so asking immediately says "not there"
+     * on a fast phone - it did on 7 of 10 drives while the reminder was really on screen. Ask again a
+     * moment later instead, so only a real problem ends up in the log.
+     */
+    internal fun verifyLater(ctx: Context, delayMs: Long = 1_200L) {
         val app = ctx.applicationContext
         Thread({
-            Thread.sleep(1_200)
-            val why = visibility(app, app.getSystemService(NotificationManager::class.java))
-            if (why.startsWith("NOT")) DriveLog.log("OBD: adapter reminder $why")
+            Thread.sleep(delayMs)
+            verifyNow(app)
         }, "adapter-reminder-check").start()
     }
 
-    /** [takenOut] null = swiped away without an answer. Remembered for the battery log. */
+    /** The check itself (no delay), so a test can call it directly. Writes a line only when it's missing. */
+    internal fun verifyNow(ctx: Context) {
+        val why = visibility(ctx, ctx.getSystemService(NotificationManager::class.java))
+        if (why.startsWith("NOT")) DriveLog.log("OBD: adapter reminder $why")
+    }
+
     /** "shown (pops up)" or why it isn't visible. */
     fun visibility(ctx: Context, nm: NotificationManager): String {
         val there = runCatching { nm.activeNotifications.any { it.id == ID } }.getOrDefault(false)
