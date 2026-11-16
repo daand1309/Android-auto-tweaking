@@ -27,7 +27,7 @@ When you park, it pauses the music, writes down how the drive went and (optional
 **Installing.** Install the APK from the app's GitHub Releases page. After that the app updates
 itself: it checks daily and asks before installing a new version.
 
-**The Setup checklist.** The home screen shows "Setup: N step(s) left" until everything is done.
+**The Setup checklist.** The home screen's *Needs you* card shows "Setup: N step(s) left" until everything is done.
 Tap it. Each item has a button that opens the right Android setting:
 
 | Step | Why |
@@ -51,7 +51,7 @@ settings → *Unknown sources*, then *Customise launcher* → tick Drive Music).
 
 - *Welcome greeting*: your name, birthday, Dutch or English, weather and roads, announcing the first song.
   **Set your town (Location)** here – weather is on by default but needs a place; until then the
-  greeting has no weather and the home screen's Weather tile says *Set your town*.
+  greeting has no weather (the home screen's car card shows the weather once it has a place).
 - *Voice & style*: **Sassy** (cheeky one-liners) or **Butler** (refined, British); pick a voice and hear it.
 - *Music & driving*: which music app, how long to wait before starting/resuming, volume on connect.
 - *Drive Mode*: open it automatically when the car connects.
@@ -83,9 +83,23 @@ What happens, in order:
 
 ## 4. The screens
 
-**Home.** Your car photo, then *Drive Mode*, *Start music* and *Greeting* buttons and four tiles:
-*Now playing*, *Weather*, *Last drive*, *Your car* (where you parked). With the OBD adapter two more:
-*Engine* temperature and *Battery* (or the fault code if there is one). Below that, the menu.
+**Home**, top to bottom:
+
+- **The car card**: your photo (long-press to change it; without one a same-size card asks for it) with
+  the car's name and status over it ("Parked · 6° light rain", green "Driving · 25 km so far"). Along the
+  bottom three numbers: *last drive*, *battery*, *fault* when parked; *speed*, *engine*, *battery* while
+  driving, plus the song with ⏮ ⏯ ⏭. Quick buttons: *Music* (start it now), *Greeting* (or *Stop*),
+  *Car* (where you parked). Tap the photo for Car data.
+- **Open Drive Mode.**
+- **Needs you** – only when something waits: music app missing, the adapter question, a fault code,
+  setup steps, full-screen permission, an update. Each line is one tap to fix.
+- **Search settings** – type "pitch", "fuel price", "brandstof"…; the page opens at the right section.
+- **The icons**, in three groups, each with its state underneath and an orange dot when it needs you:
+  *Music*: Music & driving, Greeting, Voice, Drive Mode · *Car*: Car data, Trips & costs, Service,
+  Car screen · *App*: Themes, Setup, Updates, Backup, Logs, Help.
+
+Back on any page returns to Home. New features and themes are one entry each (`HomeFeatures`,
+`Style.ALL_THEMES`).
 
 **Drive Mode** (full-screen, keeps the screen on, two tabs you can swipe between):
 
