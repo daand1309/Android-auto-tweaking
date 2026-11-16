@@ -1719,20 +1719,41 @@ class MainActivity : Activity() {
 
 
     /** Title row for a sub-page with a back arrow. */
-    private fun pageHeader(back: Page = Page.HOME) = root.addView(TextView(this).apply {
-        text = "‹  ${page.title}"; textSize = 24f; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT)
-        setPadding(dp(4), dp(4), 0, dp(14))
-        setOnClickListener { go(back, back = true) }
-    })
+    /** The page's header: the home icon grown up - back, icon, name and the same state line as on Home. */
+    private fun pageHeader(back: Page = Page.HOME) {
+        group = null
+        val f = HomeFeatures.forPage(page.name)
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(0, dp(2), 0, dp(12))
+            addView(TextView(this@MainActivity).apply {
+                text = "‹"; textSize = 28f; setTextColor(Style.TEXT2); gravity = android.view.Gravity.CENTER
+                contentDescription = "Back"; setOnClickListener { go(back, back = true) }
+            }, LinearLayout.LayoutParams(dp(44), dp(48)))
+            if (f != null) addView(TextView(this@MainActivity).apply {
+                text = f.icon; textSize = 22f; gravity = android.view.Gravity.CENTER; setTextColor(Style.TEXT)
+                background = Style.rounded(Style.SURFACE, dp(14).toFloat())
+            }, LinearLayout.LayoutParams(dp(46), dp(46)).apply { marginEnd = dp(12) })
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(TextView(this@MainActivity).apply {
+                    text = page.title; textSize = 22f; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT)
+                })
+                if (f != null) addView(TextView(this@MainActivity).apply {
+                    text = featureState(f.id); textSize = 13f; setTextColor(Style.TEXT2)
+                })
+            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        })
+    }
+
 
     /** Menu row: title + short subtitle, opens something when tapped. */
     private fun navRow(title: String, subtitle: String, highlight: Boolean = false, warn: Boolean = false, onClick: () -> Unit) =
-        root.addView(LinearLayout(this).apply {
+        (if (highlight || warn) ::addCard else ::addRow)(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
-            background = Style.button(
-                when { highlight -> Style.HIGHLIGHT; warn -> Style.WARN_BG; else -> Style.SURFACE }, dp(Style.R_CARD).toFloat()
-            )
+            background = if (highlight || warn) Style.button(if (highlight) Style.HIGHLIGHT else Style.WARN_BG, dp(Style.R_CARD).toFloat())
+                else Style.button(Color.TRANSPARENT, 0f)
             setPadding(dp(16), dp(14), dp(14), dp(14))
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also {
                 it.topMargin = dp(8); layoutParams = it
@@ -1775,10 +1796,10 @@ class MainActivity : Activity() {
         val cut = label.indexOf(": ")
         val title = if (cut > 0) label.substring(0, cut) else label
         val value = if (cut > 0) label.substring(cut + 2) else ""
-        root.addView(LinearLayout(this).apply {
+        addRow(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
-            background = Style.button(Style.SURFACE, dp(Style.R_CARD).toFloat())
+            background = Style.button(Color.TRANSPARENT, 0f)
             setPadding(dp(16), dp(12), dp(14), dp(12))
             minimumHeight = dp(56)
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also {
@@ -1856,10 +1877,10 @@ class MainActivity : Activity() {
         })
 
     /** A numbered instruction: the step number in a bubble, the instruction beside it. */
-    private fun stepRow(n: Int, instruction: String) = root.addView(LinearLayout(this).apply {
+    private fun stepRow(n: Int, instruction: String) = addRow(LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = android.view.Gravity.TOP
-        background = Style.rounded(Style.SURFACE, dp(Style.R_CARD).toFloat())
+        background = null
         setPadding(dp(14), dp(12), dp(14), dp(12))
         LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also {
             it.topMargin = dp(8); layoutParams = it
@@ -2139,9 +2160,9 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun statRow(label: String, value: String) = root.addView(LinearLayout(this).apply {
+    private fun statRow(label: String, value: String) = addRow(LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = Style.rounded(Style.SURFACE, dp(Style.R_CARD).toFloat())
+        background = null
         setPadding(dp(16), dp(12), dp(16), dp(12))
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) }
         addView(TextView(this@MainActivity).apply { text = label; textSize = 13f; setTextColor(Style.TEXT2) })
@@ -2455,34 +2476,103 @@ class MainActivity : Activity() {
         })
     })
 
-    private fun header(s: String) = root.addView(TextView(this).apply {
-        text = s.uppercase(); textSize = 13f; setTypeface(typeface, Typeface.BOLD)
-        setTextColor(Style.PRIMARY); letterSpacing = 0.08f
-        setPadding(dp(4), dp(22), 0, dp(8))
-    })
+    /** A section heading; the rows after it go into a new card. */
+    private fun header(s: String) {
+        group = null
+        root.addView(TextView(this).apply {
+            text = s.uppercase(); textSize = 13f; setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Style.PRIMARY); letterSpacing = 0.08f
+            setPadding(dp(4), dp(20), 0, dp(6))
+        })
+    }
 
-    private fun text(s: String) = root.addView(TextView(this).apply {
-        text = s; textSize = 14f; setTextColor(Style.TEXT2); setLineSpacing(dp(3).toFloat(), 1f)
-        setPadding(dp(4), dp(2), dp(4), dp(8))
-    })
+    /** The section card rows are going into: a new one starts after a heading or any other view. */
+    private var group: LinearLayout? = null
 
+    private fun openGroup(): LinearLayout? = group?.takeIf { root.childCount > 0 && root.getChildAt(root.childCount - 1) === it }
+
+    /** Adds a row to the current section card (rows inside one card, thin lines between them). */
+    private fun addRow(v: View) {
+        val g = openGroup() ?: LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = Style.rounded(Style.SURFACE, dp(Style.R_CARD + 2).toFloat()); clipToOutline = true
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(6) }
+            root.addView(this); group = this
+        }
+        if (g.childCount > 0) g.addView(View(this).apply { setBackgroundColor(Style.BG) },
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)).apply { marginStart = dp(14) })
+        g.addView(v, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+    }
+
+    /** A view that stands on its own (a warning, a big button): closes the current card. */
+    private fun addCard(v: View) { group = null; root.addView(v) }
+
+
+    /**
+     * Explanation text. Inside a card it becomes the card's footnote; long ones fold to their first
+     * sentence + "More ›" (tap to read it all, tap again to fold).
+     */
+    private fun text(s: String) {
+        val inCard = openGroup() != null
+        val short = TextFold.short(s)
+        fun shown(folded: Boolean): CharSequence {
+            if (short == null) return s
+            val tail = if (folded) "  More ›" else "  Less ‹"
+            return android.text.SpannableStringBuilder(if (folded) short else s).append(tail).apply {
+                setSpan(android.text.style.ForegroundColorSpan(Style.TEXT), length - tail.length, length, 0)
+                setSpan(android.text.style.StyleSpan(Typeface.BOLD), length - tail.length, length, 0)
+            }
+        }
+        val tv = TextView(this).apply {
+            text = shown(true); setTextColor(Style.TEXT2); setLineSpacing(dp(3).toFloat(), 1f)
+            textSize = if (inCard) 13f else 14f
+            if (inCard) setPadding(dp(14), dp(10), dp(14), dp(12)) else setPadding(dp(4), dp(6), dp(4), dp(8))
+            if (short != null) {
+                var folded = true
+                minHeight = dp(44)
+                setOnClickListener { folded = !folded; text = shown(folded) }
+            }
+        }
+        if (inCard) addRow(tv) else root.addView(tv)
+    }
+
+
+    /**
+     * The page's main action (accent / danger) is a big button of its own; any other button is a
+     * "label ›" row in the current card.
+     */
     private fun button(label: String, accent: Boolean = false, danger: Boolean = false, enabled: Boolean = true,
-                       onClick: () -> Unit) =
-        root.addView(Button(this).apply {
-        text = label; isAllCaps = false; textSize = 15f
-        isEnabled = enabled; if (!enabled) alpha = 0.55f
-        setTextColor(if (accent || danger) Color.WHITE else Style.TEXT)
-        background = Style.button(
-            when { danger -> Style.DANGER; accent -> Style.PRIMARY; else -> Style.SURFACE2 }, dp(Style.R_CARD).toFloat()
-        )
-        stateListAnimator = null
-        setPadding(dp(18), dp(14), dp(18), dp(14))
-        setOnClickListener { onClick() }
-        Feel.press(this, 0.97f)
-        (layoutParams as? LinearLayout.LayoutParams ?: LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        )).also { it.topMargin = dp(6); layoutParams = it }
-    })
+                       onClick: () -> Unit) {
+        if (!accent && !danger) {
+            addRow(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+                background = Style.button(Color.TRANSPARENT, 0f)
+                setPadding(dp(16), dp(12), dp(14), dp(12)); minimumHeight = dp(52)
+                isEnabled = enabled; if (!enabled) alpha = 0.55f
+                isClickable = true; contentDescription = label
+                setOnClickListener { if (enabled) onClick() }
+                Feel.press(this, 0.98f)
+                addView(TextView(this@MainActivity).apply { text = label; textSize = 15f; setTextColor(Style.TEXT) },
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                addView(TextView(this@MainActivity).apply { text = "›"; textSize = 22f; setTextColor(Style.TEXT2) })
+            })
+            return
+        }
+        addCard(Button(this).apply {
+            text = label; isAllCaps = false; textSize = 15f
+            isEnabled = enabled; if (!enabled) alpha = 0.55f
+            setTextColor(Color.WHITE)
+            background = Style.button(if (danger) Style.DANGER else Style.PRIMARY, dp(Style.R_CARD).toFloat())
+            stateListAnimator = null
+            setPadding(dp(18), dp(14), dp(18), dp(14))
+            setOnClickListener { onClick() }
+            Feel.press(this, 0.97f)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(10) }
+        })
+    }
+
 
     private fun row(vararg views: View) = root.addView(LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -2501,10 +2591,10 @@ class MainActivity : Activity() {
             setOnClickListener { act(); render() }
             Feel.press(this, 0.9f)
         }
-        root.addView(LinearLayout(this).apply {
+        addRow(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
-            background = Style.rounded(Style.SURFACE, dp(Style.R_CARD).toFloat())
+            background = null
             setPadding(dp(16), dp(8), dp(10), dp(8))
             minimumHeight = dp(60)
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also {
@@ -2525,10 +2615,10 @@ class MainActivity : Activity() {
     }
 
     private fun check(label: String, help: String, ok: Boolean, action: String, onClick: () -> Unit) {
-        root.addView(LinearLayout(this).apply {
+        addRow(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.TOP
-            background = Style.rounded(Style.SURFACE, dp(Style.R_CARD).toFloat())
+            background = null
             setPadding(dp(14), dp(12), dp(14), dp(12))
             (LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)).also {
                 it.topMargin = dp(8); layoutParams = it
@@ -2563,9 +2653,9 @@ class MainActivity : Activity() {
         })
     }
 
-    private fun switch(label: String, value: Boolean, onChange: (Boolean) -> Unit) = root.addView(Switch(this).apply {
+    private fun switch(label: String, value: Boolean, onChange: (Boolean) -> Unit) = addRow(Switch(this).apply {
         text = label; textSize = 15f; isChecked = value; setTextColor(Style.TEXT)
-        background = Style.rounded(Style.SURFACE, dp(Style.R_CARD).toFloat())
+        background = null
         setPadding(dp(14), dp(14), dp(14), dp(14))
         thumbTintList = Style.tint(if (value) Style.PRIMARY else Style.TEXT2)
         trackTintList = Style.tint(if (value) Style.primarySoft() else Style.SURFACE2)
