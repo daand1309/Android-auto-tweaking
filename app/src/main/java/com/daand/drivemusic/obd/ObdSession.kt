@@ -57,7 +57,9 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
             if (batching) ", combined questions on" else "")
         discover()
         if (0x51 in supported) fuel = runCatching { Elm327.fuelType(Elm327.lines(link.send("0151", 1_500))) }.getOrNull()
-        catalyst = runCatching { OnBoardTests.catalyst(OnBoardTests.parse(Elm327.lines(link.send("0621", 3_000)))) }.getOrNull()
+        val catAnswer = runCatching { Elm327.lines(link.send("0621", 3_000)) }.getOrNull().orEmpty()
+        catalyst = runCatching { OnBoardTests.catalyst(OnBoardTests.parse(catAnswer)) }.getOrNull()
+        if (catalyst == null) log("OBD: catalytic converter self-test - not completed yet, or not shared (raw: ${catAnswer.joinToString(" ").take(80)})")
         return null
     }
 

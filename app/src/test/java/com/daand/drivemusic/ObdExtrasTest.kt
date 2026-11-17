@@ -56,4 +56,18 @@ class ObdExtrasTest {
         assertTrue(OnBoardTests.parse(listOf("NO DATA")).isEmpty())
         assertTrue("garbage", OnBoardTests.parse(listOf("46 21 80")).isEmpty())
     }
+
+    @Test fun aTestThatHasNotRunYetIsNoResult() {
+        // 17 Nov 18:13 drive: "0% of its limit". A value of exactly 0 (with no lower limit) is the car
+        // saying the test hasn't completed since its memory was cleared - not a perfect catalyst.
+        assertNull(OnBoardTests.catalyst(OnBoardTests.parse(listOf("4621800D000000000080"))))
+        // A real (small) value still counts.
+        assertEquals(0.0078, OnBoardTests.catalyst(OnBoardTests.parse(listOf("4621800D000100000080")))!!.closeness, 0.001)
+    }
+
+    @Test fun anOldZeroInTheSavedHistoryIsSkipped() {
+        // Saved on the phone by 1.247 before the fix above.
+        val log = com.daand.drivemusic.obd.CatalystLog.decode("1700000000000:0.000;1700100000000:0.640")
+        assertEquals(listOf(1700100000000L to 0.64), log)
+    }
 }

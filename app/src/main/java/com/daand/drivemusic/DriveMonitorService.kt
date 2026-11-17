@@ -44,6 +44,8 @@ class DriveMonitorService : NotificationListenerService() {
         private const val SETTLE_MS = 15_000L
         /** A stop this soon after the app started the music is a start bounce, not a real pause (tests set 0). */
         @Volatile var startBounceMs = 6_000L
+        /** See StartRules.DELIBERATE_AFTER_MS; the emulator tests pause on purpose within seconds. */
+        @Volatile var deliberateAfterMs = StartRules.DELIBERATE_AFTER_MS
         const val ANDROID_AUTO = "com.google.android.projection.gearhead"
 
         /** Set while the listener is connected, so the UI can trigger a manual test. */
@@ -116,7 +118,10 @@ class DriveMonitorService : NotificationListenerService() {
     private var carConnectedAt = 0L
     /** When the app last got the music playing, and whether a stop right after was already retried. */
     private var lastStartedAt = 0L
-    private var bounceRetried = false
+    private var bounceRetried = false   // (kept for the bookkeeping below; StartRules decides)
+    /** When the music first started this drive, and how many quick restarts it has had (StartRules). */
+    private var firstStartAt = 0L
+    private var quickRestarts = 0
     private var bounceRetryPending = false
     /** When Android Auto came back after a drop (stall/restart); 0 = not recently. */
     private var reconnectedAt = 0L
@@ -322,6 +327,7 @@ class DriveMonitorService : NotificationListenerService() {
             cancelPendingPause()
             resumeTimes.clear()
             resumeThisDrive = null
+            firstStartAt = 0L; quickRestarts = 0
             lastAutoResumeAt = 0L
             lastPauseClue = ""
             userPausedViaUi = false
@@ -1174,6 +1180,7 @@ class DriveMonitorService : NotificationListenerService() {
                 // A fresh start gets one quick retry; the retry itself must not hand out another one,
                 // or something that keeps stopping the music (or you) would be fought forever.
                 lastStartedAt = SystemClock.elapsedRealtime()
+                if (firstStartAt == 0L) firstStartAt = lastStartedAt
                 if (bounceRetryPending) bounceRetryPending = false else bounceRetried = false
                 cancelStart()
                 onMusicStarted()
@@ -1244,9 +1251,10 @@ class DriveMonitorService : NotificationListenerService() {
         }
         // Seen twice on the ASX: the music stops ~1 s after the app started it (YouTube Music / Android
         // Auto settling). Press play again quickly, once per start - not a real pause.
-        if (lastStartedAt > 0 && SystemClock.elapsedRealtime() - lastStartedAt < startBounceMs && !bounceRetried) {
-            bounceRetried = true; bounceRetryPending = true
-            DriveLog.log("Music stopped right after starting - pressing play again in 1.5s (not counted)")
+        val nowMs = SystemClock.elapsedRealtime()
+        if (lastStartedAt > 0 && StartRules.quickRestart(nowMs - firstStartAt, nowMs - lastStartedAt, quickRestarts, startBounceMs)) {
+            quickRestarts++; bounceRetried = true; bounceRetryPending = true
+            DriveLog.log("Music stopped right after starting - pressing play again in 1.5s (not counted, $quickRestarts of ${StartRules.MAX_QUICK_RESTARTS})")
             scheduleResume(1_500L)
             return
         }
@@ -1263,7 +1271,8 @@ class DriveMonitorService : NotificationListenerService() {
         lastPauseClue = clues.joinToString("; ").ifEmpty { "no clues (pause button / steering wheel / Hey Google?)" }
         DriveLog.log("!!! PAUSE #$pausesThisDrive while driving. Clues: $lastPauseClue")
         val sinceResume = SystemClock.elapsedRealtime() - lastAutoResumeAt
-        if (lastAutoResumeAt > 0 && sinceResume < 60_000 && clues.isEmpty() && !resumeOffThisDrive) {
+        val sinceFirstStart = if (firstStartAt > 0) SystemClock.elapsedRealtime() - firstStartAt else Long.MAX_VALUE
+        if (lastAutoResumeAt > 0 && StartRules.looksDeliberate(sinceResume, clues.isEmpty(), sinceFirstStart, deliberateAfterMs) && !resumeOffThisDrive) {
             resumeOffThisDrive = true
             DriveLog.log("You paused again ${sinceResume / 1000}s after an auto-resume - looks deliberate. Auto-resume OFF until the next drive.")
         }

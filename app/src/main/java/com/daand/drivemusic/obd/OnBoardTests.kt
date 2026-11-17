@@ -38,7 +38,8 @@ object OnBoardTests {
 
     /** The catalytic converter's worst test (bank 1 or 2), or null when the answer has none. */
     fun catalyst(results: List<Result>): Catalyst? {
-        val cat = results.filter { it.mid == CATALYST_BANK1 || it.mid == CATALYST_BANK2 }
+        // Exactly 0 with no lower limit = the test hasn't completed since the car's memory was cleared.
+        val cat = results.filter { (it.mid == CATALYST_BANK1 || it.mid == CATALYST_BANK2) && !(it.value == 0 && it.min == 0) }
         val scored = cat.mapNotNull { r -> r.closeness?.let { it to r.passes } }
         if (scored.isEmpty()) return null
         val worst = scored.maxBy { it.first }
@@ -72,6 +73,6 @@ object CatalystLog {
     fun decode(s: String): List<Pair<Long, Double>> = s.split(';').mapNotNull { e ->
         val (t, c) = e.split(':').takeIf { it.size == 2 } ?: return@mapNotNull null
         val at = t.toLongOrNull() ?: return@mapNotNull null
-        c.toDoubleOrNull()?.takeIf { it.isFinite() && it in 0.0..5.0 }?.let { at to it }
+        c.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 && it <= 5.0 }?.let { at to it }   // 0 = not run (1.247 saved those)
     }
 }

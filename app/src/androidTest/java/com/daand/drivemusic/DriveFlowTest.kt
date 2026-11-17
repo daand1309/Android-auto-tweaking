@@ -65,6 +65,7 @@ class DriveFlowTest {
         // Old tests expect "left the car" right away; the stall test sets its own hold.
         DriveHold.holdWithoutObdMs = 0L
         DriveMonitorService.startBounceMs = 0L   // most tests pause right after starting on purpose
+        DriveMonitorService.deliberateAfterMs = 0L   // ...and pause again right away on purpose (no settle minute)
 
         val component = ComponentName(ctx, DriveMonitorService::class.java)
         shell("cmd notification allow_listener ${component.flattenToString()}")
@@ -553,10 +554,16 @@ class DriveFlowTest {
         waitFor("music started again", 9_000) { currentState == PlaybackState.STATE_PLAYING }
         assertTrue(log().contains("pressing play again"))
         assertTrue("not counted as a pause", !log().contains("PAUSE #"))
-        // Only once per start: a second stop is a normal pause.
+        // While it settles (17 Nov drive: four stops in 30 s): up to 3 quick restarts, then a normal pause.
+        for (n in 2..3) {
+            SystemClock.sleep(500)
+            onMain { setState(PlaybackState.STATE_PAUSED) }
+            waitFor("quick restart $n", 9_000) { currentState == PlaybackState.STATE_PLAYING && log().contains("$n of 3") }
+        }
+        assertTrue("still not counted", !log().contains("PAUSE #"))
         SystemClock.sleep(500)
         onMain { setState(PlaybackState.STATE_PAUSED) }
-        waitFor("the second stop counted as a pause", 8_000) { log().contains("PAUSE #1") }
+        waitFor("the fourth stop counted as a pause", 8_000) { log().contains("PAUSE #1") }
     }
 
     @Test
