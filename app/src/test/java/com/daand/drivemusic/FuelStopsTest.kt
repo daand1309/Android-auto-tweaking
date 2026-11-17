@@ -3,7 +3,9 @@ package com.daand.drivemusic
 import com.daand.drivemusic.FuelPrices.Fuel
 import com.daand.drivemusic.FuelPrices.Station
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FuelStopsTest {
@@ -45,5 +47,28 @@ class FuelStopsTest {
         // Waze first (the owner's navigation), then Google Maps.
         assertEquals("waze://?ll=52.175,5.387&navigate=yes", FuelStops.wazeUri(52.175, 5.387))
         assertEquals("google.navigation:q=52.175,5.387", FuelStops.navUri(52.175, 5.387))
+    }
+
+    @Test fun motorwayStationsAreRecognised() {
+        // Real ANWB entries (around Utrecht): the motorway ones carry the A-road in title and address.
+        assertTrue(FuelStops.onMotorway("AVIA de Knoest (A27 oz)", "Rijksweg A27 Oostzijde"))
+        assertTrue(FuelStops.onMotorway("Shell Haarrijn (A2 wz)", "Rijksweg A2 Westzijde"))
+        assertTrue(FuelStops.onMotorway("Some station", "Rijksweg A12"))
+        // Provincial roads and town addresses are not motorways.
+        assertFalse(FuelStops.onMotorway("Shell (N210 zz)", "Weg der Verenigde Naties 10 (N210 zz)"))
+        assertFalse(FuelStops.onMotorway("Haan Kanaleneiland", "Beneluxlaan 1001"))
+        assertFalse(FuelStops.onMotorway("Pin&GO!", "Ambachtstraat 8a"))
+        assertFalse("a house number is not a road", FuelStops.onMotorway("Esso", "Atoomweg 40"))
+    }
+
+    @Test fun motorwayStationsAreNeverChosen() {
+        // The motorway one is the nearest and (unusually) the cheapest here - still not offered.
+        val stations = listOf(
+            Station("Shell (A27 wz)", "Town", lat + 0.005, lon, mapOf(Fuel.EURO95 to 1.799), street = "Rijksweg A27 Westzijde"),
+            st("In town", 0.03, 1.899),
+        )
+        val c = FuelStops.choose(stations, lat, lon, Fuel.EURO95)!!
+        assertEquals("In town", c.cheapest.station.name)
+        assertEquals("In town", c.nearestGood.station.name)
     }
 }

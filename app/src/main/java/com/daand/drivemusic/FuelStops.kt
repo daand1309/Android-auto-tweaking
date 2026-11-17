@@ -6,7 +6,7 @@ import com.daand.drivemusic.FuelPrices.Station
 /**
  * Drive Mode's "Find fuel": from the stations around you (the ANWB list the fuel price already uses),
  * the cheapest one in range and the nearest one with a good price - within [GOOD_CENTS] a litre of
- * that cheapest. Distances are straight-line from your position, worked out on the phone only.
+ * that cheapest. Motorway stations are left out ([onMotorway]). Distances are straight-line from your position, worked out on the phone only.
  * Pure, unit tested.
  */
 object FuelStops {
@@ -15,10 +15,18 @@ object FuelStops {
     const val GOOD_CENTS = 0.05
 
     data class Stop(val station: Station, val price: Double, val km: Double)
+
+    /**
+     * A motorway station: often 20+ cents a litre dearer, and only reachable from that motorway in that
+     * direction. The ANWB list has no flag for it, but the A-road is in the address ("Rijksweg A27
+     * Oostzijde") and the name ("(A2 wz)"). Provincial N-roads are not motorways.
+     */
+    private val MOTORWAY = Regex("""(?<![\p{L}\p{N}])A\s?\d{1,3}(?![\p{L}\p{N}])""")
+    fun onMotorway(name: String, street: String) = MOTORWAY.containsMatchIn(street) || MOTORWAY.containsMatchIn(name)
     data class Choice(val nearestGood: Stop, val cheapest: Stop)
 
     fun choose(stations: List<Station>, lat: Double, lon: Double, fuel: Fuel, radiusKm: Double = RADIUS_KM): Choice? {
-        val stops = stations.mapNotNull { s ->
+        val stops = stations.filterNot { onMotorway(it.name, it.street) }.mapNotNull { s ->
             val p = s.prices[fuel] ?: return@mapNotNull null
             val km = FuelPrices.distanceKm(lat, lon, s.lat, s.lon)
             if (km > radiusKm) null else Stop(s, p, Math.round(km * 10) / 10.0)

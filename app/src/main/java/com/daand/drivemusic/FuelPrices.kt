@@ -42,6 +42,8 @@ object FuelPrices {
         val lon: Double,
         /** € per litre, null = this station doesn't sell it (or didn't report a believable price). */
         val prices: Map<Fuel, Double> = emptyMap(),
+        /** Street address ("Rijksweg A27 Oostzijde" marks a motorway station). */
+        val street: String = "",
     )
 
     /** The price to work with, and where it came from. */
@@ -84,6 +86,7 @@ object FuelPrices {
             Station(
                 name = o.optString("title").trim().take(48),
                 place = o.optJSONObject("address")?.optString("city")?.trim()?.take(32).orEmpty(),
+                street = o.optJSONObject("address")?.optString("streetAddress")?.trim()?.take(64).orEmpty(),
                 lat = lat, lon = lon,
                 prices = Fuel.values().mapNotNull { f -> byCode[f.code]?.let { f to it } }.toMap(),
             ).takeIf { it.prices.isNotEmpty() }

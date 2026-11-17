@@ -111,7 +111,8 @@ warnings, the setup checklist or the Help page). Back on any page returns to Hom
   fuel use now, this trip (km and L/100), battery, range left, outside and intake temperature.
   Warnings appear on top: amber = get it checked, red = stop or be careful.
   *⛽ Find fuel* (under the numbers): the nearest station with a good price (at most 5 cents a litre
-  above the cheapest) and the cheapest within 15 km, for your fuel type; tap one and Waze (or Google
+  above the cheapest) and the cheapest within 15 km, for your fuel type - motorway stations (often 20+
+  cents dearer, recognised by the A-road in their address) are left out; tap one and Waze (or Google
   Maps) navigates there. Uses the ANWB station prices; your exact position stays on the phone.
 - **The question:** when there's an update (see 5) a big green *Go ahead* / red *No thanks* appears.
 
