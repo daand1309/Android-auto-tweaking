@@ -42,6 +42,16 @@ class WatchListTest {
         assertEquals(WatchList.Level.FAULT, list.first().level)
     }
 
+    @Test fun aGarbledListIsNotAConfirmedFault() {
+        // More codes than one real answer can carry (CarAlerts.MAX_PLAUSIBLE_CODES = 8): they must not
+        // appear as "Confirmed fault" rows, while a code that really keeps coming back still does.
+        val junk = listOf("P0AAA", "P1BBB", "P2CCC", "P3DDD", "U1111", "C2222", "B0123", "P0D4E", "U2F00", "P0A11")
+        assertTrue(WatchList.build(CodeTracker(), CodeTracker(), junk, emptyList(), dutch = false).isEmpty())
+        val stored = tracker(listOf("P0420"), listOf("P0420"), listOf("P0420"))
+        val list = WatchList.build(stored, CodeTracker(), junk, emptyList(), dutch = false)
+        assertEquals(listOf("P0420" to WatchList.Level.FAULT), list.map { it.code to it.level })
+    }
+
     @Test fun aCodeSeenOnceIsNotAnIssueAtAll() {
         // One garbled answer invents codes; the page's own line says "one bad read doesn't count",
         // so a single sighting is not listed - not even as "being checked".

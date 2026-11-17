@@ -18,7 +18,11 @@ object WatchList {
               trends: List<CarTrends.Finding>, dutch: Boolean): List<Issue> {
         fun what(c: String) = TroubleCodes.explanation(c, dutch).what
         val out = mutableListOf<Issue>()
-        val faults = (carReportsNow + stored.codes().filter { stored.confirmed(it) }).distinct()
+        // What the car reports right now is first-hand, but only a believable list counts as confirmed:
+        // one garbled answer can carry six invented codes (CarAlerts.MAX_PLAUSIBLE_CODES). The voice takes
+        // the same line, so the page and the greeting agree about what is real.
+        val believableNow = if (carReportsNow.size <= CarAlerts.MAX_PLAUSIBLE_CODES) carReportsNow else emptyList()
+        val faults = (believableNow + stored.codes().filter { stored.confirmed(it) }).distinct()
         faults.forEach { c ->
             out += Issue(Level.FAULT, c, "$c: ${what(c)}",
                 if (dutch) "Bevestigde storing · ${TroubleCodes.explanation(c, true).advice}"

@@ -309,7 +309,11 @@ class CarAlerts(
         // answer). Otherwise (a garbled answer, or a second control unit answering too) the code must
         // keep showing up: see [CodeTracker.confirmed].
         storedTracker.update(s.storedReadAt, s.codes)
-        val countAgrees = s.codeCount != null && s.codes.size <= s.codeCount
+        // The car's own count is the one independent corroboration a code has, so it must be believable:
+        // PID 01 carries it in seven bits (0-127), and a garbled answer that says 127 "agrees" with any
+        // list at all. Real cars store one to four codes; above MAX_PLAUSIBLE_CODES the count proves
+        // nothing, and the code has to come back in several reads like any other unconfirmed one.
+        val countAgrees = s.codeCount != null && s.codeCount <= MAX_PLAUSIBLE_CODES && s.codes.size <= s.codeCount
         val newCodes = s.codes.filter { it !in reportedCodes && (countAgrees || storedTracker.confirmed(it)) }
         val lightJustCameOn = s.checkEngine == true && !lastCheckEngine
         if (newCodes.isNotEmpty()) {
@@ -425,6 +429,13 @@ class CarAlerts(
         const val MIL = "MIL"
         /** Readings above this are a garbled answer, not a temperature. */
         const val MAX_PLAUSIBLE_C = 150
+
+        /**
+         * The most stored codes one believable answer can carry: the status byte holds 0-127, a real car
+         * has a handful, and a second control unit answering makes the list longer than the count (which
+         * is the case the tracker is for). Used for the count that backs a code, and for a reported list.
+         */
+        const val MAX_PLAUSIBLE_CODES = 8
         /** Known codes are mentioned again after this long (until fixed). */
         const val REMIND_AFTER_MS = 7L * 24 * 60 * 60 * 1000
 
