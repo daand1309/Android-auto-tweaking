@@ -1360,12 +1360,13 @@ class MainActivity : Activity() {
     /** Service has its own page: the reminder works by date without the adapter too. */
     private fun renderService() {
         pageHeader()
-        serviceSection()
+        serviceSection(heading = false)
         if (!prefs.obdEnabled) text("Counting down by km needs the OBD adapter (Car data); by date works without it.")
     }
 
-    private fun serviceSection() {
-        header("Service")
+    /** [heading]: on Car data it needs one; on its own page the page title already says "Service". */
+    private fun serviceSection(heading: Boolean = true) {
+        if (heading) header("Service")
         switch("Remind me in the greeting when it's due", prefs.serviceReminderOn) { prefs.serviceReminderOn = it; render() }
         if (prefs.serviceReminderOn) {
             val trips = com.daand.drivemusic.obd.TripHistory.load(this)

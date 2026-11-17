@@ -117,6 +117,10 @@ class ScreenshotTour {
                 if (tall) { sc.onActivity { it.scrollForTest(true) }; snap("${prefix}main_${p.lowercase()}_2bottom") }
             }
         }
+        // The Logs page is its own activity, outside the pages above - photograph it too (its theme once
+        // came out light, with a white strip behind the status bar, and no screenshot showed it).
+        DriveLog.log("!!! PAUSE #1 while driving. Clues: screenshot tour")
+        ActivityScenario.launch(LogActivity::class.java).use { snap("${prefix}logs") }
     }
 
     private fun driveMode(): DriveModeActivity? {
