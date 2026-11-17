@@ -685,6 +685,7 @@ class MainActivity : Activity() {
         header("What it says")
         stepperLike("Your name: ${prefs.greetingName.ifBlank { "not set" }}", "Change") { askName() }
         stepperLike("Birthday: ${prefs.birthday.ifBlank { "none" }}", "Change") { askBirthday() }
+        switch("Short greeting (about 20 seconds)", prefs.greetingShort) { prefs.greetingShort = it; render() }
         switch("Say which song plays first", prefs.announceSong) { prefs.announceSong = it }
 
         header("Weather")

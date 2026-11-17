@@ -361,6 +361,11 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putBoolean("road_conditions", v).apply()
 
     /** Say which song is about to play. */
+    /** The greeting in about 20 seconds (one joke, the weather in one sentence...); off = the long one. */
+    var greetingShort: Boolean
+        get() = sp.getBoolean("greeting_short", true)
+        set(v) = sp.edit().putBoolean("greeting_short", v).apply()
+
     var announceSong: Boolean
         get() = sp.getBoolean("announce_song", true)
         set(v) = sp.edit().putBoolean("announce_song", v).apply()

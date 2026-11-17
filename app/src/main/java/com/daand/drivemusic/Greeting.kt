@@ -51,6 +51,12 @@ object GreetingText {
         reminder: String? = null,
         /** The very first greeting: "welcome", not "welcome back". */
         firstDrive: Boolean = false,
+        /**
+         * About 20 seconds instead of ~40: one joke instead of two, the weather in one sentence, the
+         * roads only when they're not fine, a short sign-off. Safety (late night, slippery or wet
+         * roads, lights), birthdays and the service reminder stay.
+         */
+        short: Boolean = false,
     ): String {
         val hour = cal.get(Calendar.HOUR_OF_DAY)
         val day = cal.get(Calendar.DAY_OF_WEEK)
@@ -59,6 +65,8 @@ object GreetingText {
         val who = SpeechText.spokenName(name, dutch)
         parts += if (who.isEmpty()) timeGreeting(hour, dutch) + "." else "${timeGreeting(hour, dutch)}, $who."
         parts += when {
+            short && butler && dutch -> if (firstDrive) "Welkom aan boord, meneer." else "Welkom terug, meneer."
+            short && butler -> if (firstDrive) "Welcome aboard, sir." else "Welcome back, sir."
             firstDrive && butler && dutch -> "Welkom aan boord, meneer. Alles staat voor u klaar."
             firstDrive && butler -> "Welcome aboard, sir. Everything is in order."
             firstDrive && dutch -> "Welkom."
@@ -72,28 +80,34 @@ object GreetingText {
         // A special-occasion line takes the place of one random line when it applies.
         val occasion = occasionLine(cal, birthday, dutch)
         if (occasion != null) parts += occasion
-        dayLine(day, hour, dutch)?.let { parts += it }
+        // Short: only the day line that matters for safety (late at night).
+        dayLine(day, hour, dutch)?.takeIf { !short || hour >= 23 || hour < 5 }?.let { parts += it }
         val pool = when {
             butler && dutch -> BUTLER_NL
             butler -> BUTLER_EN
             dutch -> LINES_NL
             else -> LINES_EN
         }
-        val count = if (occasion != null) 1 else 2
+        val count = when { short && occasion != null -> 0; short -> 1; occasion != null -> 1; else -> 2 }
+        // Short: only the jokes that are short themselves.
+        val candidates = if (short) pool.filter { it.split(' ').size <= 10 } else pool
         if (butler) {
             // At most one "sir" line: with the welcome and goodbye that's 2-3 per greeting, which is
             // how often a real butler says it.
             val sirWord = if (dutch) "meneer" else "sir"
             var sirUsed = false
-            pool.shuffled(random).filter { line ->
+            candidates.shuffled(random).filter { line ->
                 val hasSir = Regex("""\b$sirWord\b""").containsMatchIn(line)
                 if (hasSir && sirUsed) false else { if (hasSir) sirUsed = true; true }
             }.take(count).forEach { parts += it }
         } else {
-            pool.shuffled(random).take(count).forEach { parts += it }
+            candidates.shuffled(random).take(count).forEach { parts += it }
         }
 
-        if (weather != null) {
+        if (weather != null && short) {
+            parts += shortWeatherSentence(weather, dutch)
+            if (roads) roadNote(weather, dutch)?.let { parts += it }
+        } else if (weather != null) {
             if (butler) parts += if (dutch) "Dan het weer." else "A word on the weather."
             parts += weatherSentence(weather, place, dutch, withAdvice = !roads)
             if (roads) parts += roadSentence(weather, dutch)
@@ -101,6 +115,10 @@ object GreetingText {
         if (song != null) parts += songSentence(song, dutch, upFirst = true)
         if (reminder != null) parts += reminder
         parts += when {
+            short && butler && dutch -> "Muziek aan. Rijdt u voorzichtig, meneer."
+            short && butler -> "Music on. Drive carefully, sir."
+            short && dutch -> "Muziek aan. Goede reis!"
+            short -> "Music on. Have a great drive!"
             butler && dutch -> "Ik zet uw muziek aan. Rijdt u voorzichtig, meneer."
             butler -> "I'll start your music now. Do drive carefully, sir."
             dutch -> "Ik zet je muziek aan. Goede reis!"
@@ -219,6 +237,26 @@ object GreetingText {
         }
         return if (dutch) (if (upFirst) "Als eerste: $what." else "Nu speelt: $what.")
         else (if (upFirst) "Up first: $what." else "Now playing: $what.")
+    }
+
+    /** The weather in one sentence: "5 degrees with light rain, 100 percent chance of rain." */
+    fun shortWeatherSentence(w: WeatherNow, dutch: Boolean): String {
+        val now = SpeechText.number(w.tempNow.roundToInt(), dutch)
+        // Already raining: "light rain, 100 percent chance of rain" says it twice. Not yet: only when likely.
+        val fallingNow = w.code in 51..67 || w.code in 71..86 || w.code in 95..99
+        val later = when {
+            fallingNow || w.rainChance < 60 -> ""
+            dutch -> ", en regen is waarschijnlijk"
+            else -> ", and rain is likely"
+        }
+        return if (dutch) "Het is $now graden met ${describe(w.code, true)}$later." else "It's $now degrees with ${describe(w.code, false)}$later."
+    }
+
+    /** The road sentence only when there is something to say (not "dry with good visibility"). */
+    fun roadNote(w: WeatherNow, dutch: Boolean): String? {
+        val full = roadSentence(w, dutch)
+        val good = if (dutch) "Wegcondities: droog en goed zicht." else "Road conditions look good: dry with good visibility."
+        return full.removePrefix(good).trim().ifEmpty { null }
     }
 
     /** Road conditions derived from live weather: ice, snow, fog, heavy rain, gusts and daylight. */
@@ -1145,7 +1183,7 @@ object WelcomeAnnouncer {
             val text = GreetingText.build(
                 p.namePronunciation.ifBlank { p.greetingName }, p.greetingDutch, Calendar.getInstance(), weather, p.weatherPlace,
                 roads = p.roadConditionsEnabled, song = song.takeIf { p.announceSong }, birthday = p.birthday,
-                butler = p.butler, firstDrive = p.lastGreetingAt == 0L,
+                butler = p.butler, firstDrive = p.lastGreetingAt == 0L, short = p.greetingShort,
                 reminder = listOfNotNull(earlyWarningToSay(ctx, p, recordAsGreeted), serviceReminderIfDue(ctx, p, recordAsGreeted))
                     .joinToString(" ").ifEmpty { null },
             )

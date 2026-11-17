@@ -217,4 +217,36 @@ class GreetingTest {
         assertEquals(150, GreetingText.cleanMeta("x".repeat(10_000)).length)
         assertEquals("Freedom", GreetingText.cleanMeta("  Freedom \t "))
     }
+
+    // ---- the short greeting (about 20 seconds, the default)
+
+    private val wetDark = GreetingText.WeatherNow(tempNow = 5.0, code = 61, windKmh = 15.0, tempMin = 3.0, tempMax = 12.0,
+        rainChance = 100, precipMm = 0.6, isDay = false)
+    private fun words(t: String) = t.split(Regex("""\s+""")).count { it.isNotBlank() }
+
+    @Test fun theShortGreetingFitsInAboutTwentySeconds() {
+        val song = GreetingText.Song("Amerie - 1 Thing Full (Sheppard's piano version)", "Turk")
+        for (butler in listOf(true, false)) for (dutch in listOf(false, true)) for (seed in 1..40) {
+            val t = GreetingText.build("Dan", dutch, at(17, Calendar.SATURDAY), wetDark, "Noordwijk", Random(seed),
+                roads = true, song = song, butler = butler, short = true)
+            // ~2.6 spoken words a second: 55 words is about 20 seconds.
+            assertTrue("${words(t)} words: $t", words(t) <= 55)
+            assertTrue(t, t.contains("Sheppard") || t.contains("1 Thing"))   // the song is still announced
+        }
+    }
+
+    @Test fun theShortGreetingKeepsWhatMatters() {
+        val t = GreetingText.build("Dan", false, at(23), wetDark, "Noordwijk", Random(3), roads = true, butler = true, short = true,
+            reminder = "A small reminder, sir: the car is due its annual service.")
+        assertTrue("late-night safety line", t.contains("drive extra carefully"))
+        assertTrue("wet roads are still said", t.contains("wet"))
+        assertTrue("lights in the dark", t.contains("lights on"))
+        assertTrue("the service reminder", t.contains("service"))
+        assertTrue("one weather sentence, no 'A word on the weather'", !t.contains("A word on the weather"))
+    }
+
+    @Test fun goodRoadsAreNotMentionedInTheShortGreeting() {
+        val t = GreetingText.build("Dan", false, at(10), sunny, "Noordwijk", Random(1), roads = true, butler = true, short = true)
+        assertFalse(t, t.contains("Road conditions"))
+    }
 }
