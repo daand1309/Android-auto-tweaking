@@ -1673,33 +1673,51 @@ class MainActivity : Activity() {
             }
         })
 
-        // While driving: the song, with its own controls.
+        // While driving: the song (cover + title on one line, full width), its controls on a line of
+        // their own underneath - side by side, the three buttons squeezed the title to a letter or two.
         val song = svc?.currentSong()
         if (driving && svc != null) column.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.VERTICAL
             background = Style.rounded(Style.SURFACE2, dp(12).toFloat())
-            setPadding(dp(8), dp(4), dp(4), dp(4))
+            setPadding(dp(8), dp(8), dp(8), dp(2))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 .apply { setMargins(dp(12), 0, dp(12), dp(8)) }
-            // The cover, as the music app gives it (nothing is downloaded).
-            svc.currentArt()?.let { art ->
-                addView(android.widget.ImageView(this@MainActivity).apply {
-                    setImageBitmap(art); scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-                    background = Style.rounded(Style.SURFACE, dp(8).toFloat()); clipToOutline = true
-                    contentDescription = "Cover"
-                }, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(10) })
-            }
-            addView(TextView(this@MainActivity).apply {
-                text = song?.let { if (it.artist.isNotBlank()) "${it.title}\n${it.artist}" else it.title } ?: "Nothing playing"
-                textSize = 13f; setTextColor(Style.TEXT); setOnClickListener { openMusicApp() }
-            }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            listOf("⏮" to { svc.skipPrevious() }, "⏯" to { svc.playPause() }, "⏭" to { svc.skipNext() }).forEach { (sym, act) ->
-                addView(TextView(this@MainActivity).apply {
-                    text = sym; textSize = 20f; setTextColor(Style.TEXT); gravity = android.view.Gravity.CENTER
-                    contentDescription = when (sym) { "⏮" -> "Previous"; "⏯" -> "Play or pause"; else -> "Next" }
-                    setOnClickListener { act(); handler.postDelayed({ refreshIfOn(Page.HOME) }, 600) }
-                }, LinearLayout.LayoutParams(dp(48), dp(48)))
-            }
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+                isClickable = true; setOnClickListener { openMusicApp() }
+                // The cover, as the music app gives it (nothing is downloaded).
+                svc.currentArt()?.let { art ->
+                    addView(android.widget.ImageView(this@MainActivity).apply {
+                        setImageBitmap(art); scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                        background = Style.rounded(Style.SURFACE, dp(8).toFloat()); clipToOutline = true
+                        contentDescription = "Cover"
+                    }, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(10) })
+                }
+                addView(LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(TextView(this@MainActivity).apply {
+                        text = song?.title ?: "Nothing playing"; textSize = 14f; setTextColor(Style.TEXT)
+                        setTypeface(typeface, Typeface.BOLD); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                    })
+                    song?.artist?.takeIf { it.isNotBlank() }?.let { artist ->
+                        addView(TextView(this@MainActivity).apply {
+                            text = artist; textSize = 13f; setTextColor(Style.TEXT2); maxLines = 1
+                            ellipsize = android.text.TextUtils.TruncateAt.END
+                        })
+                    }
+                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            })
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                listOf("⏮" to { svc.skipPrevious() }, "⏯" to { svc.playPause() }, "⏭" to { svc.skipNext() }).forEach { (sym, act) ->
+                    addView(TextView(this@MainActivity).apply {
+                        text = sym; textSize = 22f; setTextColor(Style.TEXT); gravity = android.view.Gravity.CENTER
+                        background = Style.button(android.graphics.Color.TRANSPARENT, dp(10).toFloat())
+                        contentDescription = when (sym) { "⏮" -> "Previous"; "⏯" -> "Play or pause"; else -> "Next" }
+                        setOnClickListener { act(); handler.postDelayed({ refreshIfOn(Page.HOME) }, 600) }
+                    }, LinearLayout.LayoutParams(0, dp(48), 1f))
+                }
+            })
         })
 
         // Quick buttons: start the music now, hear the greeting (or stop it), find the car.
