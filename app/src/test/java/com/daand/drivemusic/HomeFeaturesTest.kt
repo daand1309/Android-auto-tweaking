@@ -40,7 +40,7 @@ class HomeFeaturesTest {
         assertEquals("Your car", HomeFeatures.sectionFor("fuel price", f("car_data")))
         assertEquals("Battery", HomeFeatures.sectionFor("accu", f("car_data")))
         assertEquals("Adapter", HomeFeatures.sectionFor("Bluetooth", f("car_data")))
-        assertEquals("Service", HomeFeatures.sectionFor("onderhoud", f("service")))
+        assertEquals("Service has its own page now", null, HomeFeatures.sectionFor("onderhoud", f("service")))
         assertEquals("Delivery", HomeFeatures.sectionFor("pitch", f("voice")))
         assertEquals(null, HomeFeatures.sectionFor("trips", f("trips")))
         assertEquals(null, HomeFeatures.sectionFor("", f("car_data")))

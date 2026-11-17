@@ -39,7 +39,7 @@ class TextFoldTest {
     @Test fun forPageMapsEveryPage() {
         val m = mapOf("MUSIC" to "music", "OBD" to "car_data", "TRIPS" to "trips", "CAR" to "car_screen",
             "THEMES" to "themes", "SETUP" to "setup", "HELP" to "help", "GREETING" to "greeting", "VOICE" to "voice",
-            "DRIVE_MODE" to "drive_mode", "UPDATES" to "updates", "BACKUP" to "backup")
+            "DRIVE_MODE" to "drive_mode", "UPDATES" to "updates", "BACKUP" to "backup", "SERVICE" to "service")
         m.forEach { (page, id) -> assertEquals(page, id, HomeFeatures.forPage(page)?.id) }
         assertNull(HomeFeatures.forPage("HOME"))
     }

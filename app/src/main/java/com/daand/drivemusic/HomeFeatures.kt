@@ -69,7 +69,6 @@ object HomeFeatures {
 
     /** The heading to scroll to for [query] on [feature]'s page, or null for the top. */
     fun sectionFor(query: String, feature: Feature): String? {
-        if (feature.id == "service") return "Service"   // service lives on the Car data page
         val q = query.trim().lowercase()
         if (q.length < 3) return null   // "a" would match "battery": too little to jump anywhere
         return sections[feature.id]?.firstOrNull { (_, words) -> words.any { it.contains(q) || q.contains(it) } }?.first
@@ -79,7 +78,7 @@ object HomeFeatures {
     fun forPage(page: String): Feature? = when (page) {
         "MUSIC" -> "music"; "GREETING" -> "greeting"; "VOICE" -> "voice"; "DRIVE_MODE" -> "drive_mode"
         "OBD" -> "car_data"; "TRIPS" -> "trips"; "CAR" -> "car_screen"; "THEMES" -> "themes"
-        "SETUP" -> "setup"; "UPDATES" -> "updates"; "BACKUP" -> "backup"; "HELP" -> "help"
+        "SETUP" -> "setup"; "UPDATES" -> "updates"; "BACKUP" -> "backup"; "HELP" -> "help"; "SERVICE" -> "service"
         else -> null
     }?.let { id -> all.firstOrNull { it.id == id } }
 }

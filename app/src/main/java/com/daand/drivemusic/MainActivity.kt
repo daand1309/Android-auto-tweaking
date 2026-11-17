@@ -95,6 +95,7 @@ class MainActivity : Activity() {
             // into view (home search results sat hidden behind the keyboard).
             val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime()).bottom
             root.setPadding(dp(16) + bars.left, dp(16) + bars.top, dp(16) + bars.right, dp(40) + maxOf(bars.bottom, ime))
+            if (ime > 0 && searchField?.hasFocus() == true) { scroll.removeCallbacks(searchToTop); scroll.post(searchToTop) }
             insets
         }
     }
@@ -124,7 +125,7 @@ class MainActivity : Activity() {
     private enum class Page(val title: String) {
         HOME("Drive Music"), SETUP("Setup"), MUSIC("Music & driving"), GREETING("Welcome greeting"),
         VOICE("Voice"), DRIVE_MODE("Drive Mode"), UPDATES("Updates"), HELP("Help & privacy"),
-        CAR("Car screen"), BACKUP("Backup & restore"), OBD("Car data (OBD)"), TRIPS("Trips & costs"), THEMES("Themes")
+        CAR("Car screen"), BACKUP("Backup & restore"), OBD("Car data (OBD)"), TRIPS("Trips & costs"), THEMES("Themes"), SERVICE("Service")
     }
 
     private var page = Page.HOME
@@ -266,6 +267,7 @@ class MainActivity : Activity() {
         if (page != Page.VOICE) releaseVoiceEngine()
         val y = scroll.scrollY  // keep scroll position when re-drawing after a button tap
         root.removeAllViews()
+        if (page != Page.HOME) searchField = null
         when (page) {
             Page.HOME -> renderHome()
             Page.SETUP -> renderSetup()
@@ -280,6 +282,7 @@ class MainActivity : Activity() {
             Page.CAR -> renderCar()
             Page.BACKUP -> renderBackup()
             Page.THEMES -> renderThemes()
+            Page.SERVICE -> renderService()
         }
         when (animateNext) { ENTER -> Motion.enter(root); BACK -> Motion.fadeIn(root) }
         animateNext = 0
@@ -372,6 +375,20 @@ class MainActivity : Activity() {
         root.addView(card)
     }
 
+    /** The home search box, while Home is shown (for [searchToTop]). */
+    private var searchField: View? = null
+
+    /**
+     * Puts the search box at the top of the screen. One runnable, so typing doesn't queue one scroll
+     * per letter; run again when the keyboard has finished opening (the first try can be clamped
+     * because the room for the keyboard isn't there yet). Works without that room too (Android 13/14,
+     * where the page doesn't get the keyboard's height): the box is near the top of the page anyway.
+     */
+    private val searchToTop = Runnable {
+        val f = searchField ?: return@Runnable
+        if (page == Page.HOME && f.isAttachedToWindow) scroll.smoothScrollTo(0, (f.top - dp(8)).coerceAtLeast(0))
+    }
+
     /** The search box above the grid: typing swaps the grid for the matching pages. */
     private fun searchBox(grid: LinearLayout, results: LinearLayout) {
         root.addView(android.widget.EditText(this).apply {
@@ -385,7 +402,8 @@ class MainActivity : Activity() {
             setText(homeQuery)
             // Typing a search: put the box at the top of the screen, so the results show under it and
             // above the keyboard.
-            val toTop = { scroll.postDelayed({ scroll.smoothScrollTo(0, (top - dp(8)).coerceAtLeast(0)) }, 250) }
+            searchField = this
+            val toTop = { scroll.removeCallbacks(searchToTop); scroll.postDelayed(searchToTop, 250) }
             setOnFocusChangeListener { _, has -> if (has) toTop() }
             addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -475,7 +493,7 @@ class MainActivity : Activity() {
     private fun openFeature(id: String) {
         val section = HomeFeatures.all.firstOrNull { it.id == id }?.let { HomeFeatures.sectionFor(homeQuery, it) }
         homeQuery = ""
-        if (section != null && id in setOf("car_data", "service")) { go(Page.OBD, section = section); return }
+        if (section != null && id == "car_data") { go(Page.OBD, section = section); return }
         if (section != null && id == "voice") { go(Page.VOICE, section = section); return }
         when (id) {
             "music" -> go(Page.MUSIC)
@@ -484,7 +502,7 @@ class MainActivity : Activity() {
             "drive_mode" -> go(Page.DRIVE_MODE)
             "car_data" -> go(Page.OBD)
             "trips" -> go(Page.TRIPS)
-            "service" -> go(Page.OBD)
+            "service" -> go(Page.SERVICE)
             "car_screen" -> go(Page.CAR)
             "themes" -> go(Page.THEMES)
             "setup" -> go(Page.SETUP)
@@ -835,31 +853,7 @@ class MainActivity : Activity() {
             }
         }
         fuelPriceSection()
-        header("Service")
-        switch("Remind me in the greeting when it's due", prefs.serviceReminderOn) { prefs.serviceReminderOn = it; render() }
-        if (prefs.serviceReminderOn) {
-            val trips = com.daand.drivemusic.obd.TripHistory.load(this)
-            val synced = prefs.serviceSyncAt > 0 && prefs.serviceSyncAt >= prefs.serviceDate
-            val left = if (synced) com.daand.drivemusic.obd.CarAlerts.serviceLeft(prefs.serviceSyncAt, prefs.serviceSyncKm, prefs.serviceSyncDays,
-                com.daand.drivemusic.obd.TripHistory.kmSince(trips, prefs.serviceSyncAt), System.currentTimeMillis()) else null
-            stepperLike("Same as the car's dashboard: " + when {
-                left == null -> "not synced"
-                left.first <= 0 || left.second <= 0 -> "service due now"
-                else -> "≈ %,d km · %d days left".format(java.util.Locale.ROOT, left.first, left.second)
-            }, "Sync") { syncServiceWithCar() }
-            text("The ASX keeps its own service reminder in the instrument cluster, which an OBD adapter can't read " +
-                "(and the app never writes to the car). Type in what the dashboard shows and the app counts down " +
-                "with your drives, so both remind you at the same time. After a service, sync again.")
-            val svc = if (prefs.serviceDate > 0) java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(prefs.serviceDate)) else "not set"
-            stepperLike("Or by date - last service: $svc", "Change") { pickServiceDate() }
-            if (prefs.serviceDate > 0 && !synced) {
-                val km = com.daand.drivemusic.obd.TripHistory.kmSince(trips, prefs.serviceDate)
-                stepper("Service every", "%,d km".format(java.util.Locale.ROOT, prefs.serviceKm),
-                    { prefs.serviceKm = (prefs.serviceKm - 1000).coerceAtLeast(1000) },
-                    { prefs.serviceKm = (prefs.serviceKm + 1000).coerceAtMost(60000) })
-                text("Driven since: %,d km (counted from your drives with the adapter).".format(java.util.Locale.ROOT, Math.round(km)))
-            }
-        }
+        serviceSection()
         batterySection()
 
         header("Early warnings")
@@ -1296,6 +1290,41 @@ class MainActivity : Activity() {
             prefs.animations = it; Motion.enabled = it; render()
         }
         text("The Drive Mode intro has its own switch under Drive Mode.")
+    }
+
+    /** Service has its own page: the reminder works by date without the adapter too. */
+    private fun renderService() {
+        pageHeader()
+        serviceSection()
+        if (!prefs.obdEnabled) text("Counting down by km needs the OBD adapter (Car data); by date works without it.")
+    }
+
+    private fun serviceSection() {
+        header("Service")
+        switch("Remind me in the greeting when it's due", prefs.serviceReminderOn) { prefs.serviceReminderOn = it; render() }
+        if (prefs.serviceReminderOn) {
+            val trips = com.daand.drivemusic.obd.TripHistory.load(this)
+            val synced = prefs.serviceSyncAt > 0 && prefs.serviceSyncAt >= prefs.serviceDate
+            val left = if (synced) com.daand.drivemusic.obd.CarAlerts.serviceLeft(prefs.serviceSyncAt, prefs.serviceSyncKm, prefs.serviceSyncDays,
+                com.daand.drivemusic.obd.TripHistory.kmSince(trips, prefs.serviceSyncAt), System.currentTimeMillis()) else null
+            stepperLike("Same as the car's dashboard: " + when {
+                left == null -> "not synced"
+                left.first <= 0 || left.second <= 0 -> "service due now"
+                else -> "≈ %,d km · %d days left".format(java.util.Locale.ROOT, left.first, left.second)
+            }, "Sync") { syncServiceWithCar() }
+            text("The ASX keeps its own service reminder in the instrument cluster, which an OBD adapter can't read " +
+                "(and the app never writes to the car). Type in what the dashboard shows and the app counts down " +
+                "with your drives, so both remind you at the same time. After a service, sync again.")
+            val svc = if (prefs.serviceDate > 0) java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(prefs.serviceDate)) else "not set"
+            stepperLike("Or by date - last service: $svc", "Change") { pickServiceDate() }
+            if (prefs.serviceDate > 0 && !synced) {
+                val km = com.daand.drivemusic.obd.TripHistory.kmSince(trips, prefs.serviceDate)
+                stepper("Service every", "%,d km".format(java.util.Locale.ROOT, prefs.serviceKm),
+                    { prefs.serviceKm = (prefs.serviceKm - 1000).coerceAtLeast(1000) },
+                    { prefs.serviceKm = (prefs.serviceKm + 1000).coerceAtMost(60000) })
+                text("Driven since: %,d km (counted from your drives with the adapter).".format(java.util.Locale.ROOT, Math.round(km)))
+            }
+        }
     }
 
     private fun renderUpdates() {
