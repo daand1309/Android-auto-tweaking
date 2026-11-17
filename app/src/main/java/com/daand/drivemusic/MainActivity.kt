@@ -1437,7 +1437,7 @@ class MainActivity : Activity() {
         navRow("Car screen setup", "Show Drive Music in Android Auto") { go(Page.CAR) }
 
         header("Privacy")
-        text("• Internet only for update checks (GitHub), weather (Open-Meteo, location rounded to ~10 km), fuel prices " +
+        text("• Internet only for update checks (GitHub), weather (Open-Meteo, location rounded to ~10 km; in NL/BE also the Buienradar rain radar, rounded to ~5 km), fuel prices " +
             "(ANWB's station database: a box of about 15 km around a position rounded to ~1 km) and, if on, " +
             "drive news (NU.nl, NOS, NL Times and regional newsrooms; Google News is searched for your town name).\n" +
             "• Notifications are never read. Logs stay on the phone unless you share them.\n" +

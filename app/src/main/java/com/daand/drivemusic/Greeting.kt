@@ -814,7 +814,23 @@ object Weather {
         rainIn to dryIn
     } catch (e: Exception) { null to null }
 
-    fun fetch(lat: Double, lon: Double): GreetingText.WeatherNow = parse(httpGet(url(lat, lon)))
+    /**
+     * Open-Meteo first; when it doesn't answer (it returned HTTP 503 once on a real drive - greeting
+     * without weather), Buienradar's national feed. In the Netherlands and Belgium the rain radar then
+     * decides "rain in X minutes" / "dry in X minutes": real radar beats a 15-minute model forecast.
+     */
+    fun fetch(lat: Double, lon: Double): GreetingText.WeatherNow {
+        val w = try {
+            parse(httpGet(url(lat, lon)))
+        } catch (e: Exception) {
+            DriveLog.log("WEATHER: Open-Meteo didn't answer (${e.message}) - trying Buienradar")
+            runCatching { Buienradar.current(lat, lon) }.getOrNull()?.also { DriveLog.log("WEATHER: from Buienradar instead") } ?: throw e
+        }
+        val radar = try { Buienradar.rain(lat, lon) } catch (e: Exception) {
+            DriveLog.log("WEATHER: rain radar didn't answer (${e.javaClass.simpleName}) - using the forecast"); null
+        }
+        return if (radar != null) w.copy(rainInMin = radar.first, dryInMin = radar.second) else w
+    }
 
     data class Place(val name: String, val lat: Double, val lon: Double)
 
