@@ -816,15 +816,24 @@ object Weather {
 
     /**
      * Open-Meteo first; when it doesn't answer (it returned HTTP 503 once on a real drive - greeting
-     * without weather), Buienradar's national feed. In the Netherlands and Belgium the rain radar then
+     * without weather), Buienradar's national feed (NL/BE), then MET Norway, then wttr.in. In the Netherlands and Belgium the rain radar then
      * decides "rain in X minutes" / "dry in X minutes": real radar beats a 15-minute model forecast.
      */
     fun fetch(lat: Double, lon: Double): GreetingText.WeatherNow {
         val w = try {
             parse(httpGet(url(lat, lon)))
         } catch (e: Exception) {
-            DriveLog.log("WEATHER: Open-Meteo didn't answer (${e.message}) - trying Buienradar")
-            runCatching { Buienradar.current(lat, lon) }.getOrNull()?.also { DriveLog.log("WEATHER: from Buienradar instead") } ?: throw e
+            // The next source, and the next: Buienradar (NL/BE, sends no position), MET Norway, wttr.in.
+            DriveLog.log("WEATHER: Open-Meteo didn't answer (${e.message}) - trying the next source")
+            val backups = listOf<Pair<String, () -> GreetingText.WeatherNow?>>(
+                "Buienradar" to { Buienradar.current(lat, lon) },
+                "MET Norway" to { MetNorway.fetch(lat, lon) },
+                "wttr.in" to { Wttr.fetch(lat, lon) },
+            )
+            backups.firstNotNullOfOrNull { (name, get) ->
+                runCatching { get() }.onFailure { DriveLog.log("WEATHER: $name didn't answer (${it.message})") }
+                    .getOrNull()?.also { DriveLog.log("WEATHER: from $name instead") }
+            } ?: throw e
         }
         val radar = try { Buienradar.rain(lat, lon) } catch (e: Exception) {
             DriveLog.log("WEATHER: rain radar didn't answer (${e.javaClass.simpleName}) - using the forecast"); null

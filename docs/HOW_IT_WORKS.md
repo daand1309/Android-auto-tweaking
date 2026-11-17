@@ -199,7 +199,8 @@ with your drives, so both remind you together. Or set the last service date and 
 ## 8. Privacy and safety
 
 - Internet is used only for: update checks (GitHub), weather (Open-Meteo, location rounded to ~10 km;
-  in NL/BE also the Buienradar rain radar at ~5 km, and its national feed - no position - when Open-Meteo is down),
+  in NL/BE also the Buienradar rain radar at ~5 km, and its national feed - no position - when Open-Meteo is down;
+  then MET Norway (told the app's name and GitHub page, as its terms require) and wttr.in, both at ~10 km),
   and – if on – news (Dutch newsrooms; Google News is searched for your town name only).
 - Logs, trips, photos and your parking spot stay on the phone unless you share them.
 - No ads, no tracking, no accessibility or overlay permissions, no access to contacts or SMS.
