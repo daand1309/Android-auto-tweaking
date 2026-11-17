@@ -54,7 +54,8 @@ object UpdatePrompt {
     fun answer(ctx: Context, yes: Boolean) {
         if (question == null || answer != null) return
         answer = yes
-        DriveLog.log("UPDATE: you tapped ${if (yes) "GO AHEAD" else "NOT INTERESTED"}")
+        // Shared by the news updates and the weather question: say which one was answered.
+        DriveLog.log("QUESTION: you tapped ${if (yes) "YES (green)" else "NO (red)"} - \"${question?.take(60)}\"")
         close(ctx)
         waiting?.let { cb -> waiting = null; cb(yes) }
     }

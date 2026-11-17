@@ -649,6 +649,7 @@ class DriveMonitorService : NotificationListenerService() {
         }
         val text = com.daand.drivemusic.obd.CarAlerts.message(alert, prefs.greetingDutch, prefs.butler)
         DriveLog.log("OBD: \"$text\"")
+        ownSpeechStarts()
         suppressPauseUntil = SystemClock.elapsedRealtime() + 60_000L
         if (alert.urgent) {
             val token = Briefing.start(this, if (prefs.greetingDutch) "Auto" else "Car", text)
@@ -692,6 +693,7 @@ class DriveMonitorService : NotificationListenerService() {
         }
         val dutch = prefs.greetingDutch
         val butler = prefs.butler
+        ownSpeechStarts()
         suppressPauseUntil = SystemClock.elapsedRealtime() + 90_000L  // a brief duck/pause isn't "a pause"
         if (!prefs.askBeforeUpdates) {
             speakUpdate(DriveUpdates.compose(found.weather, found.news, dutch, butler, prefs.greetingName,
@@ -726,6 +728,10 @@ class DriveMonitorService : NotificationListenerService() {
      * after "Now playing" and "Ready to drive"). So look once more: if the music the app started is
      * still not playing, treat that like any other stop (grace, then auto-resume).
      */
+    /** The music was playing when we started talking - only then may [checkAfterOwnSpeech] put it back. */
+    private var playingBeforeOwnSpeech = false
+    private fun ownSpeechStarts() { playingBeforeOwnSpeech = isPlaying() }
+
     private fun ownSpeechDone(what: String) {
         suppressPauseUntil = 0L
         postOwnSpeechCheck(what, 1_500L)
@@ -748,6 +754,8 @@ class DriveMonitorService : NotificationListenerService() {
 
     private fun checkAfterOwnSpeech(what: String, gen: Int) {
         if (!carConnected || gen != connectGen || !musicStartedThisDrive || userPausedViaUi) return
+        // Paused (by you, or never playing) before we started talking: not ours to restart.
+        if (!playingBeforeOwnSpeech) return
         if (SystemClock.elapsedRealtime() < suppressPauseUntil) return   // something else is speaking now
         if (pendingPauseRunnable != null || resumeRunnable != null || startRunnable != null) return
         val state = (ytm?.takeIf { isMusic(it) } ?: findYtm())?.playbackState?.state ?: return
@@ -842,6 +850,7 @@ class DriveMonitorService : NotificationListenerService() {
             val song = currentSong()
             if (song != null && carConnected && gen == connectGen) {
                 suppressPauseUntil = SystemClock.elapsedRealtime() + 15_000
+                playingBeforeOwnSpeech = true   // the music has just started: this is what we announce
                 postOwnSpeechCheck("song announcement", 16_000L)   // fallback, if "done" never comes
                 SongAnnouncer.announce(this@DriveMonitorService, song, prefs.greetingDutch) {
                     handler.post { if (gen == connectGen) ownSpeechDone("song announcement") }
@@ -1124,7 +1133,12 @@ class DriveMonitorService : NotificationListenerService() {
     }
 
     /** The current song's cover, if the music app gives one (see [CoverArt]). */
-    fun currentArt(): android.graphics.Bitmap? = CoverArt.from((ytm?.takeIf { isMusic(it) } ?: findYtm())?.metadata)
+    fun currentArt(): android.graphics.Bitmap? {
+        val md = (ytm?.takeIf { isMusic(it) } ?: findYtm())?.metadata
+        val song = md?.let { (it.getString(android.media.MediaMetadata.METADATA_KEY_TITLE) ?: "") + "|" + (it.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST) ?: "") }
+        return coverCache.get(song?.takeIf { it != "|" }) { CoverArt.from(md) }
+    }
+    private val coverCache = CoverArt.Cache()
 
     private fun findYtm(): MediaController? = try {
         sessions.getActiveSessions(listenerComponent)

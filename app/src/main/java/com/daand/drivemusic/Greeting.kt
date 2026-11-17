@@ -1001,6 +1001,9 @@ class Greeter(private val context: Context) {
     private var startedSpeaking = false
     /** [stop] was called while the voice was still being prepared: don't start talking at all. */
     @Volatile private var stopped = false
+
+    /** You cut it short (Stop / Skip): whatever was going to be said after it should not be. */
+    val cutShort: Boolean get() = stopped
     private var focus: AudioFocusRequest? = null
     private var onDone: () -> Unit = {}
     // Kept for the premium-voice fallback (when its audio can't be played, the phone speaks instead).
@@ -1219,15 +1222,19 @@ object WelcomeAnnouncer {
                 val (title, body) = Briefing.split(shown)
                 val shownToken = Briefing.start(ctx, title, body)
                 val askWeather = weather != null && p.weatherAsk
-                Greeter(ctx).speak(text, p.greetingDutch, pauseOthers = true) {
-                    if (!askWeather) { Briefing.end(ctx, shownToken); then(); return@speak }
+                val greeter = Greeter(ctx)
+                greeter.speak(text, p.greetingDutch, pauseOthers = true) {
+                    // Stopped: that means quiet - no weather question after it.
+                    if (!askWeather || greeter.cutShort) { Briefing.end(ctx, shownToken); then(); return@speak }
                     // "Would you care for the weather forecast, sir?" - green / red (Drive Mode, phone,
                     // car screen). No answer: no forecast, the music sooner.
                     main.post {
                         val q = GreetingText.weatherQuestion(p.greetingDutch, p.butler)
                         DriveLog.log("GREETING: asking - \"$q\"")
                         UpdatePrompt.open(ctx, if (p.greetingDutch) "Weer" else "Weather", q)
-                        Greeter(ctx).speak(q, p.greetingDutch, pauseOthers = true) {
+                        val asker = Greeter(ctx)
+                        asker.speak(q, p.greetingDutch, pauseOthers = true) {
+                            if (asker.cutShort) { UpdatePrompt.cancel(ctx); Briefing.end(ctx, shownToken); then(); return@speak }
                             main.post {
                                 UpdatePrompt.awaitAnswer(ctx, onTimeout = false) { yes ->
                                     val rest = (if (yes) GreetingText.forecast(weather!!, p.weatherPlace, p.greetingDutch) + " " else "") +

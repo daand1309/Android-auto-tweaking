@@ -2,6 +2,7 @@ package com.daand.drivemusic
 
 import android.graphics.Bitmap
 import android.media.MediaMetadata
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
@@ -30,5 +31,26 @@ class CoverArtTest {
         assertNull(CoverArt.from(null))
         assertNull(CoverArt.from(MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE, "x").build()))
         assertNull(CoverArt.from(MediaMetadata.Builder().putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, bmp(1)).build()))
+    }
+
+    @Test fun theSameSongKeepsTheSameCover() {
+        // Android hands over a fresh copy of the picture on every request: without a cache, the screens
+        // saw a "new" cover every 3 s (Drive Mode faded it in again and again).
+        val cache = CoverArt.Cache()
+        var fetches = 0
+        val first = cache.get("Mr. Brightside|The Killers") { fetches++; bmp() }
+        val again = cache.get("Mr. Brightside|The Killers") { fetches++; bmp() }
+        assertSame(first, again)
+        assertEquals(1, fetches)
+    }
+
+    @Test fun aNewSongOrAMissingCoverIsFetchedAgain() {
+        val cache = CoverArt.Cache()
+        assertNull(cache.get("A|x") { null })              // cover not published yet
+        val late = bmp()
+        assertSame("it arrives a moment after the title", late, cache.get("A|x") { late })
+        val other = bmp()
+        assertSame(other, cache.get("B|y") { other })
+        assertNull("no song, no cover", cache.get(null) { bmp() })
     }
 }
