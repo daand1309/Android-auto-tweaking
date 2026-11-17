@@ -57,6 +57,11 @@ object GreetingText {
          * roads, lights), birthdays and the service reminder stay.
          */
         short: Boolean = false,
+        /**
+         * The forecast is offered as a question after the greeting (see [weatherQuestion]): leave it
+         * out here, and the sign-off too - that comes after the answer. Road safety stays in.
+         */
+        askWeather: Boolean = false,
     ): String {
         val hour = cal.get(Calendar.HOUR_OF_DAY)
         val day = cal.get(Calendar.DAY_OF_WEEK)
@@ -104,7 +109,9 @@ object GreetingText {
             candidates.shuffled(random).take(count).forEach { parts += it }
         }
 
-        if (weather != null && short) {
+        if (weather != null && askWeather) {
+            if (roads) roadNote(weather, dutch)?.let { parts += it }
+        } else if (weather != null && short) {
             parts += shortWeatherSentence(weather, dutch)
             if (roads) roadNote(weather, dutch)?.let { parts += it }
         } else if (weather != null) {
@@ -114,7 +121,12 @@ object GreetingText {
         }
         if (song != null) parts += songSentence(song, dutch, upFirst = true)
         if (reminder != null) parts += reminder
-        parts += when {
+        if (!(askWeather && weather != null)) parts += signOff(dutch, butler, short)
+        return parts.joinToString(" ")
+    }
+
+    /** The last line before the music. */
+    fun signOff(dutch: Boolean, butler: Boolean, short: Boolean): String = when {
             short && butler && dutch -> "Muziek aan. Rijdt u voorzichtig, meneer."
             short && butler -> "Music on. Drive carefully, sir."
             short && dutch -> "Muziek aan. Goede reis!"
@@ -123,9 +135,18 @@ object GreetingText {
             butler -> "I'll start your music now. Do drive carefully, sir."
             dutch -> "Ik zet je muziek aan. Goede reis!"
             else -> "Starting your music. Have a great drive!"
-        }
-        return parts.joinToString(" ")
     }
+
+    /** Asked after the greeting (green / red buttons); see [forecast]. */
+    fun weatherQuestion(dutch: Boolean, butler: Boolean): String = when {
+        butler && dutch -> "Wilt u de weersverwachting horen, meneer?"
+        butler -> "Would you care for the weather forecast, sir?"
+        dutch -> "Wil je de weersverwachting?"
+        else -> "Want the weather forecast?"
+    }
+
+    /** The forecast, when you said yes: place, now, today's low and high, chance of rain, advice. */
+    fun forecast(w: WeatherNow, place: String, dutch: Boolean): String = weatherSentence(w, place, dutch, withAdvice = true)
 
     /** A festive line for a birthday ("MM-DD") or a known holiday, or null. */
     fun occasionLine(cal: Calendar, birthday: String, dutch: Boolean): String? {
@@ -1184,6 +1205,7 @@ object WelcomeAnnouncer {
                 p.namePronunciation.ifBlank { p.greetingName }, p.greetingDutch, Calendar.getInstance(), weather, p.weatherPlace,
                 roads = p.roadConditionsEnabled, song = song.takeIf { p.announceSong }, birthday = p.birthday,
                 butler = p.butler, firstDrive = p.lastGreetingAt == 0L, short = p.greetingShort,
+                askWeather = weather != null && p.weatherAsk,
                 reminder = listOfNotNull(earlyWarningToSay(ctx, p, recordAsGreeted), serviceReminderIfDue(ctx, p, recordAsGreeted))
                     .joinToString(" ").ifEmpty { null },
             )
@@ -1196,9 +1218,29 @@ object WelcomeAnnouncer {
                 DriveLog.log("GREETING: \"$text\"")
                 val (title, body) = Briefing.split(shown)
                 val shownToken = Briefing.start(ctx, title, body)
+                val askWeather = weather != null && p.weatherAsk
                 Greeter(ctx).speak(text, p.greetingDutch, pauseOthers = true) {
-                    Briefing.end(ctx, shownToken)
-                    then()
+                    if (!askWeather) { Briefing.end(ctx, shownToken); then(); return@speak }
+                    // "Would you care for the weather forecast, sir?" - green / red (Drive Mode, phone,
+                    // car screen). No answer: no forecast, the music sooner.
+                    main.post {
+                        val q = GreetingText.weatherQuestion(p.greetingDutch, p.butler)
+                        DriveLog.log("GREETING: asking - \"$q\"")
+                        UpdatePrompt.open(ctx, if (p.greetingDutch) "Weer" else "Weather", q)
+                        Greeter(ctx).speak(q, p.greetingDutch, pauseOthers = true) {
+                            main.post {
+                                UpdatePrompt.awaitAnswer(ctx, onTimeout = false) { yes ->
+                                    val rest = (if (yes) GreetingText.forecast(weather!!, p.weatherPlace, p.greetingDutch) + " " else "") +
+                                        GreetingText.signOff(p.greetingDutch, p.butler, p.greetingShort)
+                                    DriveLog.log("GREETING: forecast ${if (yes) "wanted" else "skipped"} - \"$rest\"")
+                                    Greeter(ctx).speak(rest, p.greetingDutch, pauseOthers = true) {
+                                        Briefing.end(ctx, shownToken)
+                                        then()
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
               } catch (e: Exception) {
                 DriveLog.log("GREETING: couldn't speak (${e.message}) - skipping it")

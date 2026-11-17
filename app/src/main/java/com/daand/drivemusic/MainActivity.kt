@@ -690,6 +690,7 @@ class MainActivity : Activity() {
 
         header("Weather")
         switch("Weather in the greeting", prefs.weatherEnabled) { prefs.weatherEnabled = it; render() }
+        if (prefs.weatherEnabled) switch("Ask before the forecast (green / red)", prefs.weatherAsk) { prefs.weatherAsk = it }
         if (prefs.weatherEnabled) {
             switch("Road conditions too", prefs.roadConditionsEnabled) { prefs.roadConditionsEnabled = it }
             val place = when {

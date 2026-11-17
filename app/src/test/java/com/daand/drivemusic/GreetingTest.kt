@@ -249,4 +249,22 @@ class GreetingTest {
         val t = GreetingText.build("Dan", false, at(10), sunny, "Noordwijk", Random(1), roads = true, butler = true, short = true)
         assertFalse(t, t.contains("Road conditions"))
     }
+
+    // ---- asking before the weather forecast
+
+    @Test fun whenAskingTheGreetingLeavesTheForecastAndTheSignOffForLater() {
+        val t = GreetingText.build("Dan", false, at(17), wetDark, "Noordwijk", Random(2), roads = true, butler = true,
+            short = true, askWeather = true)
+        assertFalse("no forecast yet: $t", t.contains("degrees"))
+        assertFalse("no sign-off yet - the question comes first: $t", t.contains("Music on"))
+        assertTrue("road safety is not a forecast: still said", t.contains("wet") && t.contains("lights on"))
+    }
+
+    @Test fun theForecastAndTheQuestion() {
+        val f = GreetingText.forecast(wetDark, "Noordwijk", dutch = false)
+        assertTrue(f, f.contains("Noordwijk") && f.contains("chance of rain"))
+        assertEquals("Would you care for the weather forecast, sir?", GreetingText.weatherQuestion(dutch = false, butler = true))
+        assertEquals("Wil je de weersverwachting?", GreetingText.weatherQuestion(dutch = true, butler = false))
+        assertEquals("Music on. Drive carefully, sir.", GreetingText.signOff(dutch = false, butler = true, short = true))
+    }
 }

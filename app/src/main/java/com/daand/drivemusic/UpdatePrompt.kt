@@ -61,19 +61,20 @@ object UpdatePrompt {
 
     /**
      * Calls [onAnswer] with your answer - straight away if you already tapped, else when you tap, or
-     * with `true` after [ANSWER_TIMEOUT_MS] without an answer.
+     * with [onTimeout] after [ANSWER_TIMEOUT_MS] without an answer (updates: go ahead; the weather
+     * forecast before the music: skip it).
      */
-    fun awaitAnswer(ctx: Context, onAnswer: (Boolean) -> Unit) {
+    fun awaitAnswer(ctx: Context, onTimeout: Boolean = true, onAnswer: (Boolean) -> Unit) {
         answer?.let { onAnswer(it); return }
-        if (question == null) { onAnswer(true); return }
+        if (question == null) { onAnswer(onTimeout); return }
         waiting = onAnswer
         val id = askId
         main.postDelayed({
             if (id == askId && answer == null && question != null) {
-                DriveLog.log("UPDATE: no answer - going ahead")
-                answer = true
+                DriveLog.log(if (onTimeout) "UPDATE: no answer - going ahead" else "QUESTION: no answer - skipping it")
+                answer = onTimeout
                 close(ctx)
-                waiting?.let { cb -> waiting = null; cb(true) }
+                waiting?.let { cb -> waiting = null; cb(onTimeout) }
             }
         }, ANSWER_TIMEOUT_MS)
     }

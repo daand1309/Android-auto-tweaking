@@ -49,6 +49,15 @@ class UpdatePromptTest {
         assertNull(UpdatePrompt.question)
     }
 
+    @Test fun theWeatherQuestionSkipsWhenNotAnswered() {
+        // The forecast before the music: no answer means no (less talk, music sooner).
+        UpdatePrompt.open(ctx, "Weather", "Would you care for the weather forecast, sir?")
+        var got: Boolean? = null
+        UpdatePrompt.awaitAnswer(ctx, onTimeout = false) { got = it }
+        shadowOf(Looper.getMainLooper()).idleFor(11, TimeUnit.SECONDS)
+        assertEquals(false, got)
+    }
+
     @Test fun anOldTimeoutCannotAnswerANewQuestion() {
         val looper = shadowOf(Looper.getMainLooper())
         UpdatePrompt.open(ctx, "News", "first")
