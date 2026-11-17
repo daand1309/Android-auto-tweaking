@@ -45,7 +45,7 @@ class LogActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(10), 0, dp(10), dp(6))
             addView(btn("Refresh") { load() })
-            filterBtn = btn("Problems only") {
+            filterBtn = btn("Problems only", weight = 1.4f) {
                 problemsOnly = !problemsOnly
                 filterBtn.text = if (problemsOnly) "Show all lines" else "Problems only"
                 load()
@@ -98,12 +98,20 @@ class LogActivity : Activity() {
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
-    private fun btn(label: String, danger: Boolean = false, onClick: () -> Unit) = Button(this).apply {
-        text = label; isAllCaps = false; textSize = 14f
+    /**
+     * Four buttons share one row: labels shrink a little before they wrap, and only ever wrap between
+     * words ("Refres/h" and "Proble/ms only" on a normal phone), all four the same height.
+     */
+    private fun btn(label: String, danger: Boolean = false, weight: Float = 1f, onClick: () -> Unit) = Button(this).apply {
+        text = label; isAllCaps = false
         setTextColor(if (danger) Color.WHITE else Style.TEXT)
         background = Style.button(if (danger) Style.DANGER else Style.SURFACE2, dp(12).toFloat()); stateListAnimator = null
-        setPadding(dp(14), dp(10), dp(14), dp(10))
-        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(6) }
+        setPadding(dp(6), dp(10), dp(6), dp(10)); minHeight = dp(48); minimumHeight = dp(48)
+        maxLines = 2
+        breakStrategy = android.graphics.text.LineBreaker.BREAK_STRATEGY_SIMPLE
+        hyphenationFrequency = android.text.Layout.HYPHENATION_FREQUENCY_NONE
+        setAutoSizeTextTypeUniformWithConfiguration(11, 14, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
+        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, weight).apply { marginEnd = dp(6) }
         setOnClickListener { onClick() }
     }
 
