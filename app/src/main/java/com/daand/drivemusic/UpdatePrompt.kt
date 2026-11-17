@@ -96,12 +96,12 @@ object UpdatePrompt {
     private fun postButtons(ctx: Context, title: String, text: String) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         // Heads-up so the buttons are right there; silent because the question is already spoken.
-        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Update questions", NotificationManager.IMPORTANCE_HIGH).apply {
+        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Questions", NotificationManager.IMPORTANCE_HIGH).apply {
             setSound(null, null); enableVibration(false)
         })
         // When Drive Mode is on the phone screen it already shows big buttons; a phone pop-up
         // would only cover them. The car screen still gets its own heads-up (CarAppExtender).
-        nm.createNotificationChannel(NotificationChannel(CHANNEL_QUIET, "Update questions (Drive Mode open)", NotificationManager.IMPORTANCE_LOW).apply {
+        nm.createNotificationChannel(NotificationChannel(CHANNEL_QUIET, "Questions (Drive Mode open)", NotificationManager.IMPORTANCE_LOW).apply {
             setSound(null, null); enableVibration(false)
         })
         val quiet = DriveModeActivity.onScreen

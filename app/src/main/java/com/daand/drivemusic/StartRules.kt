@@ -8,6 +8,7 @@ package com.daand.drivemusic
 object StartRules {
     /** How long after the first start the music counts as "still settling". */
     const val SETTLE_WINDOW_MS = 45_000L
+    /** DriveFlowTest.musicStoppingRightAfterItStartedIsStartedAgainQuickly asserts "n of 3": change both. */
     const val MAX_QUICK_RESTARTS = 3
     /** Paused again right after an auto-resume only "looks deliberate" once this far into the music. */
     const val DELIBERATE_AFTER_MS = 60_000L

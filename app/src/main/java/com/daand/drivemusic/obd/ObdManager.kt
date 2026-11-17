@@ -282,7 +282,6 @@ object ObdManager {
             val full = n % FULL_EVERY == 0
             val codesDue = full && System.currentTimeMillis() - lastCodes > CODES_EVERY_MS
             val snap = session.read(latest, full, readCodes = codesDue)
-            session.freeze?.let { f -> appCtx?.let { c -> saveFreeze(c, f) } }
             if (codesDue) lastCodes = System.currentTimeMillis()
             // The catalyst test only completes mid-drive (warm engine, steady cruise): ask again now and then.
             if (session.catalyst == null && catalystChecks < CATALYST_CHECKS && (snap.coolantC ?: 0) >= 70 &&
@@ -326,6 +325,8 @@ object ObdManager {
                 }
                 onAlert(a)
             }
+            // After the code was announced: what the car saved when it set it.
+            if (session.readFreezeIfDue()) session.freeze?.let { f -> appCtx?.let { c -> runCatching { saveFreeze(c, f) } } }
             if (codesDue) {
                 // How often each code showed up is kept across drives (short drives add up).
                 appCtx?.let { c ->

@@ -45,7 +45,7 @@ class DriveMonitorService : NotificationListenerService() {
         /** A stop this soon after the app started the music is a start bounce, not a real pause (tests set 0). */
         @Volatile var startBounceMs = 6_000L
         /** See StartRules.DELIBERATE_AFTER_MS; the emulator tests pause on purpose within seconds. */
-        @Volatile var deliberateAfterMs = StartRules.DELIBERATE_AFTER_MS
+        @androidx.annotation.VisibleForTesting @Volatile var deliberateAfterMs = StartRules.DELIBERATE_AFTER_MS
         const val ANDROID_AUTO = "com.google.android.projection.gearhead"
 
         /** Set while the listener is connected, so the UI can trigger a manual test. */

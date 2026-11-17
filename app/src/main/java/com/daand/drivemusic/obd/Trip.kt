@@ -134,6 +134,8 @@ class Trip {
     ).joinToString(", ")
 
     companion object {
+        /** Bump when the scoring rules change, so old and new scores are never mixed (TripRecord.scoreVersion). */
+        const val SCORE_VERSION = 2
         // The ASX's 1.6 MIVEC (4A92) has little pull low down - peak torque at 4,000 rpm, power at
         // 6,000 - so an active style (revving to ~4,000-4,500 to pull away or merge) is how it's meant to
         // be driven, not bad driving. Only caning it towards the red line counts.

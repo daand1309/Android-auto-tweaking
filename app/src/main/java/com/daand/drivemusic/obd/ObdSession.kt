@@ -15,6 +15,8 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
     /** Mode 02: what the car saved when the stored fault code was set (read once, when there is one). */
     var freeze: FreezeFrame? = null; private set
     private var freezeTried = false
+    /** A stored code was just read: the freeze frame is fetched after the alert, see [readFreezeIfDue]. */
+    private var freezeDue = false
     /** Adapter's own identification ("ELM327 v2.3"). */
     var adapter: String = ""; private set
     /** Ask for up to 6 values per question (CAN cars like the ASX); switched off if the car can't. */
@@ -78,11 +80,23 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
     /** The values worth knowing from the moment a fault code was stored. */
     private val FREEZE_PIDS = listOf(0x0D, 0x0C, 0x05, 0x04, 0x11, 0x0B, 0x0F)
 
+    /**
+     * Once per connection, after a stored code was found and announced: what the car saved at that
+     * moment. Kept out of [read] so the code alert and the live values don't wait for ~8 extra questions.
+     * True when a frame was read.
+     */
+    fun readFreezeIfDue(): Boolean {
+        if (!freezeDue) return false
+        freezeDue = false
+        freeze = runCatching { readFreeze() }.getOrNull() ?: freeze
+        return freeze != null
+    }
+
     private fun readFreeze(): FreezeFrame? {
-        val code = Elm327.freezeCode(Elm327.lines(link.send("020200", 2_000))) ?: return null
+        val code = Elm327.freezeCode(Elm327.lines(link.send("020200", 1_200))) ?: return null
         val values = FREEZE_PIDS.mapNotNull { pid ->
             val info = Pids.ALL.firstOrNull { it.pid == pid } ?: return@mapNotNull null
-            val d = runCatching { Elm327.freezeData(Elm327.lines(link.send("02%02X00".format(pid), 1_500)), pid) }.getOrNull()
+            val d = runCatching { Elm327.freezeData(Elm327.lines(link.send("02%02X00".format(pid), 800)), pid) }.getOrNull()
             d?.let { info.read(it) }?.let { pid to it }
         }.toMap()
         return FreezeFrame(code, values)
@@ -198,7 +212,7 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
                 if (readCodes || (st != null && st.second > 0 && codes.isEmpty())) {
                     codes("03", 0x43)?.let { codes = it; storedReadAt = now }
                     // A stored code: once per connection, ask what the car saved at that moment.
-                    if (codes.isNotEmpty() && !freezeTried) { freezeTried = true; freeze = runCatching { readFreeze() }.getOrNull() }
+                    if (codes.isNotEmpty() && !freezeTried) { freezeTried = true; freezeDue = true }
                 }
                 if (st?.first == false && st.second == 0) codes = emptyList()
             }

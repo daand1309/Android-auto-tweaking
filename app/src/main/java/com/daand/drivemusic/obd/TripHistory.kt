@@ -12,6 +12,9 @@ data class TripRecord(
     val health: HealthSample? = null,
     /** What a litre cost when this drive happened (0 = an older record, priced with today's price). */
     val price: Double = 0.0,
+    /** Which scoring rules [score] was made with (1 = before 17 Nov 2026: hard moments only). Scores of
+     *  different versions aren't comparable - see [TripHistory.averageScore]. */
+    val scoreVersion: Int = Trip.SCORE_VERSION,
 ) {
     val per100: Double? get() = if (km >= 1 && litres > 0) litres / km * 100 else null
 
@@ -34,7 +37,7 @@ object TripHistory {
         list.takeLast(MAX).forEach { t ->
             put(JSONObject().put("at", t.at).put("min", t.minutes).put("km", t.km).put("l", t.litres)
                 .put("score", t.score ?: -1).put("maxC", t.maxCoolant ?: -999).put("codes", t.codes.joinToString(","))
-                .put("p", t.price)
+                .put("p", t.price).put("sv", t.scoreVersion)
                 .apply { t.health?.takeIf { !it.isEmpty }?.let { put("h", it.toJson()) } })
         }
     }.toString()
@@ -47,9 +50,14 @@ object TripHistory {
                 o.optDouble("l", 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0,
                 o.optInt("score", -1).takeIf { it in 0..100 }, o.optInt("maxC", -999).takeIf { it > -100 },
                 o.optString("codes").split(',').filter { it.isNotBlank() }, HealthSample.fromJson(o.optJSONObject("h")),
-                o.optDouble("p", 0.0).takeIf { it.isFinite() && it in 0.0..20.0 } ?: 0.0)
+                o.optDouble("p", 0.0).takeIf { it.isFinite() && it in 0.0..20.0 } ?: 0.0,
+                o.optInt("sv", 1))
         }
     } catch (e: Exception) { emptyList() }
+
+    /** Average driving score over drives scored with today's rules only (older scores used another ruler). */
+    fun averageScore(list: List<TripRecord>): Int? =
+        list.filter { it.scoreVersion == Trip.SCORE_VERSION }.mapNotNull { it.score }.takeIf { it.isNotEmpty() }?.average()?.let { Math.round(it).toInt() }
 
     private fun file(ctx: Context) = File(ctx.filesDir, FILE)
 
@@ -80,7 +88,7 @@ object TripHistory {
             val tmp = File(ctx.filesDir, "$DRAFT.tmp")
             tmp.writeText(JSONObject().put("at", t.at).put("min", t.minutes).put("km", t.km).put("l", t.litres)
                 .put("score", t.score ?: -1).put("maxC", t.maxCoolant ?: -999)
-                .put("codes", t.codes.joinToString(",")).put("p", t.price).put("upd", now).toString())
+                .put("codes", t.codes.joinToString(",")).put("p", t.price).put("sv", t.scoreVersion).put("upd", now).toString())
             tmp.renameTo(draftFile(ctx))
         }
     }
@@ -105,7 +113,7 @@ object TripHistory {
                 o.optDouble("l", 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0,
                 o.optInt("score", -1).takeIf { it in 0..100 }, o.optInt("maxC", -999).takeIf { it > -100 },
                 o.optString("codes").split(',').filter { it.isNotBlank() }, null,
-                o.optDouble("p", 0.0).takeIf { it.isFinite() && it in 0.0..20.0 } ?: 0.0)
+                o.optDouble("p", 0.0).takeIf { it.isFinite() && it in 0.0..20.0 } ?: 0.0, o.optInt("sv", 1))
         } catch (e: Exception) {
             clearDraft(ctx); return null
         }
