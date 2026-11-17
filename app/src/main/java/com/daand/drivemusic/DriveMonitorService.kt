@@ -154,6 +154,8 @@ class DriveMonitorService : NotificationListenerService() {
     private var lastAutoResumeAt = 0L
     /** Set when you pause again right after an auto-resume: we take the hint for the rest of the drive. */
     var resumeOffThisDrive = false
+    /** In the car right now (connected, or holding the drive through an Android Auto restart). */
+    val inDrive get() = carConnected || holdingSince > 0
     private var firstCarEvent = true
     /** Announce "Now playing ..." once music starts (when the song wasn't known before the greeting). */
     private var announceSongAfterStart = false

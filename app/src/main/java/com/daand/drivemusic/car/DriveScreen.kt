@@ -1,5 +1,6 @@
 package com.daand.drivemusic.car
 
+import com.daand.drivemusic.ResumeToggle
 import android.os.Handler
 import android.os.Looper
 import androidx.car.app.CarContext
@@ -68,7 +69,7 @@ class DriveScreen(carContext: CarContext) : Screen(carContext), DefaultLifecycle
             nowPlaying = song?.let { "${it.title}${if (it.artist.isNotBlank()) " — ${it.artist}" else ""}" }
                 ?: "Nothing playing yet",
             playing = svc?.isPlaying() == true,
-            autoResume = prefs.autoResume,
+            autoResume = ResumeToggle.isOnNow(carContext),
             infoTitle = if (showWeather) "Weather" else "Status",
             infoText = when {
                 showWeather -> prefs.lastWeatherSummary
@@ -97,8 +98,7 @@ class DriveScreen(carContext: CarContext) : Screen(carContext), DefaultLifecycle
                 onPlayPause = { DriveMonitorService.instance?.playPause(); invalidate() },
                 onNext = { DriveMonitorService.instance?.skipNext(); invalidate() },
                 onToggleResume = {
-                    prefs.autoResume = !prefs.autoResume
-                    if (prefs.autoResume) DriveMonitorService.instance?.resumeOffThisDrive = false
+                    ResumeToggle.tapNow(carContext, "Car screen")   // for this drive only
                     invalidate()
                 },
                 onWelcome = {

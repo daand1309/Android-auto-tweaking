@@ -417,13 +417,7 @@ class DriveModeActivity : Activity() {
             updateDynamic()
         }.also { welcomeBtn = it }, hLp(1f))
         resumeBtn = smallButton(R.drawable.ic_repeat, "") {
-            val p = Prefs(this)
-            val svc = svc()
-            // For this drive only (see ResumeToggle); without the monitor there is no "this drive".
-            val next = ResumeToggle.tap(ResumeToggle.State(p.autoResume, svc?.resumeOffThisDrive == true))
-            if (svc == null) p.autoResume = !p.autoResume
-            else { p.autoResume = next.setting; svc.resumeOffThisDrive = next.offThisDrive }
-            DriveLog.log("Drive Mode: auto-resume " + if (ResumeToggle.isOn(p.autoResume, svc?.resumeOffThisDrive == true)) "on" else "off for this drive")
+            ResumeToggle.tapNow(this, "Drive Mode")   // for this drive only (see ResumeToggle)
             updateDynamic()
         }
         bottom.addView(resumeBtn, hLp(1f))
@@ -480,7 +474,7 @@ class DriveModeActivity : Activity() {
             else -> prefs.lastCarState
         }
         val playing = s?.isPlaying() == true
-        val resumeOn = ResumeToggle.isOn(prefs.autoResume, s?.resumeOffThisDrive == true)
+        val resumeOn = ResumeToggle.isOnNow(this)
         val speaking = Voice.speaking
         val key = "$songText|$statusText|$playing|$resumeOn|$speaking"
         if (key == lastShown) return

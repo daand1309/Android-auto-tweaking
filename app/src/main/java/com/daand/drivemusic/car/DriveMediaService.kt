@@ -1,5 +1,6 @@
 package com.daand.drivemusic.car
 
+import com.daand.drivemusic.ResumeToggle
 import android.media.MediaDescription
 import android.media.MediaMetadata
 import android.media.browse.MediaBrowser
@@ -75,7 +76,7 @@ class DriveMediaService : MediaBrowserService() {
         val p = Prefs(this)
         val items = MediaMenu.items(
             monitorRunning = DriveMonitorService.instance != null,
-            autoResume = p.autoResume,
+            autoResume = ResumeToggle.isOnNow(this),
             weather = p.lastWeatherSummary.takeIf { System.currentTimeMillis() - p.lastWeatherAt < 3 * 60 * 60 * 1000L },
             butler = p.butler,
             car = if (p.obdEnabled) com.daand.drivemusic.obd.ObdManager.live()?.let { com.daand.drivemusic.obd.CarStatusText.describe(it, p.greetingDutch).replace("\n", " · ") } ?: "No data yet" else null,
@@ -118,9 +119,7 @@ class DriveMediaService : MediaBrowserService() {
         when (id) {
             MediaMenu.WELCOME -> WelcomeAnnouncer.run(this, monitor()?.currentSong(), recordAsGreeted = false)
             MediaMenu.RESUME -> {
-                p.autoResume = !p.autoResume
-                if (p.autoResume) monitor()?.resumeOffThisDrive = false
-                DriveLog.log("Car media: auto-resume = ${p.autoResume}")
+                ResumeToggle.tapNow(this, "Car media")   // for this drive only
                 notifyChildrenChanged(MediaMenu.ROOT)
                 publishState()
             }
@@ -200,8 +199,8 @@ class DriveMediaService : MediaBrowserService() {
             )
             .addCustomAction(PlaybackState.CustomAction.Builder(MediaMenu.WELCOME, "Welcome briefing", R.drawable.ic_stat_note).build())
             .addCustomAction(PlaybackState.CustomAction.Builder(MediaMenu.RESUME,
-                if (p.autoResume) "Auto-resume: on" else "Auto-resume: off",
-                if (p.autoResume) R.drawable.ic_answer_yes else R.drawable.ic_answer_no).build())
+                if (ResumeToggle.isOnNow(this)) "Auto-resume: on" else "Auto-resume: off",
+                if (ResumeToggle.isOnNow(this)) R.drawable.ic_answer_yes else R.drawable.ic_answer_no).build())
             .build()
         session.setPlaybackState(state)
     }
