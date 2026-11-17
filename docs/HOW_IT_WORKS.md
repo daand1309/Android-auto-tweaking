@@ -175,8 +175,10 @@ A faulty reading can't trigger a warning: values must make physical sense and ho
 fault codes must agree with the car's own count or keep coming back over several reads.
 
 **Trips & costs.** Every drive with the adapter is saved on the phone: distance, fuel, L/100,
-costs, duration and a **driving score** (0–100, just for fun: only hard acceleration/braking, revving
-hard and long idling cost points – not the motorway, traffic or the warm-up). After parking a quiet
+costs, duration and a **driving score** (0–100: every pull-away and stop is graded – braking
+stays strict, but the 1.6 MIVEC's active style of revving to ~4,500 is free; only near-flat-out
+starts, revs towards the red line and long idling cost points – not the motorway, traffic or the
+warm-up. The summary says what cost points). After parking a quiet
 notification sums it up. The *Trips & costs* page shows this week, month and all time.
 
 **Early warnings.** The app learns what's normal for your car and warns when something slowly changes,

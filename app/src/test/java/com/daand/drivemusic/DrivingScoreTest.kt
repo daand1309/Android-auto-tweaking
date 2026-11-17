@@ -98,7 +98,7 @@ class DrivingScoreTest {
     @Test fun aFewBriskMomentsInACalmDriveCostAFewPoints() {
         val d = Drive()
         repeat(12) { d.townBlock() }
-        repeat(3) { d.ramp(6, 50.0, 3000).hold(40, 50.0, 1900).ramp(7, 0.0, 1200).hold(20, 0.0, 800) }   // brisk away (~2.3 m/s²)
+        repeat(3) { d.ramp(5, 50.0, 4500).hold(40, 50.0, 1900).ramp(7, 0.0, 1200).hold(20, 0.0, 800) }   // brisk away (~2.8 m/s²)
         repeat(2) { d.ramp(8, 50.0, 2500).hold(40, 50.0, 1900).ramp(5, 0.0, 1200).hold(20, 0.0, 800) }   // firm stop (~2.8 m/s²)
         val s = d.score()
         assertTrue("calm with a few brisk moments: $s", s in 80..96)
@@ -106,14 +106,23 @@ class DrivingScoreTest {
 
     @Test fun briskEveryTimeIsNotSmooth() {
         val d = Drive()
-        repeat(12) { d.ramp(6, 50.0, 3000).hold(40, 50.0, 1900).ramp(5, 0.0, 1200).hold(20, 0.0, 800) }
+        repeat(12) { d.ramp(5, 50.0, 4500).hold(40, 50.0, 1900).ramp(5, 0.0, 1200).hold(20, 0.0, 800) }
         val s = d.score()
         assertTrue("every start brisk, every stop firm: $s", s in 45..75)
     }
 
-    @Test fun revvingPast3500WhileSpeedingUpCosts() {
+    @Test fun anActiveMivecStyleIsNotMarkedDown() {
+        // The 1.6 MIVEC wants revs: 0-50 in 6 s up to 4,300 rpm and merging at 4,500, with calm stops.
+        val d = Drive()
+        repeat(12) { d.ramp(6, 50.0, 4300).hold(40, 50.0, 1900).ramp(8, 0.0, 1200).hold(20, 0.0, 800) }
+        d.ramp(10, 100.0, 4500).hold(5 * 60, 100.0, 2800).ramp(15, 0.0, 1200)
+        val s = d.score()
+        assertTrue("active MIVEC driving: $s", s >= 88)
+    }
+
+    @Test fun canningItTowardsTheRedLineCosts() {
         val calm = Drive().also { d -> repeat(10) { d.ramp(12, 70.0, 2800).hold(60, 70.0, 2200).ramp(10, 0.0, 1200).hold(20, 0.0, 800) } }.score()
-        val revvy = Drive().also { d -> repeat(10) { d.ramp(12, 70.0, 3900).hold(60, 70.0, 2200).ramp(10, 0.0, 1200).hold(20, 0.0, 800) } }.score()
+        val revvy = Drive().also { d -> repeat(10) { d.ramp(12, 70.0, 5300).hold(60, 70.0, 2200).ramp(10, 0.0, 1200).hold(20, 0.0, 800) } }.score()
         assertTrue("calm $calm vs revvy $revvy", revvy <= calm - 5)
     }
 }

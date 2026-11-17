@@ -134,10 +134,15 @@ class Trip {
     ).joinToString(", ")
 
     companion object {
-        const val HIGH_REV_RPM = 3500   // a 1.6 petrol driven normally changes up around 2,500-3,000
-        // Over the >= 3 s windows below (the ASX 1.6 flat out: 0-100 in ~11.5 s, ~2.4 m/s² average).
-        const val BRISK_ACCEL = 1.9     // m/s²: 0-50 in ~7 s
-        const val HARD_ACCEL = 2.6      // m/s²: 0-50 in ~5 s - the car's limit
+        // The ASX's 1.6 MIVEC (4A92) has little pull low down - peak torque at 4,000 rpm, power at
+        // 6,000 - so an active style (revving to ~4,000-4,500 to pull away or merge) is how it's meant to
+        // be driven, not bad driving. Only caning it towards the red line counts.
+        const val HIGH_REV_RPM = 4700
+        // Over the >= 3 s windows below (the ASX 1.6 flat out: 0-100 in ~11.5 s, more in 1st/2nd gear).
+        // Pulling away eagerly is free; only near-flat-out starts count. Braking is about looking ahead,
+        // whatever the engine, so it stays strict.
+        const val BRISK_ACCEL = 2.5     // m/s²: 0-50 in ~5.5 s - working the MIVEC hard
+        const val HARD_ACCEL = 3.1      // m/s²: 0-50 in ~4.5 s - flat out in 1st/2nd
         const val FIRM_BRAKE = 2.4      // m/s²: 50-0 in ~6 s; a calm stop takes 7-8 s
         const val HARD_BRAKE = 3.4      // m/s²: 50-0 in ~4 s
         const val EPISODE_START = 0.6   // m/s²: speeding up / slowing down on purpose
