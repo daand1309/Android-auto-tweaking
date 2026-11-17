@@ -484,7 +484,8 @@ class DriveModeActivity : Activity() {
             welcomeBtn.text = if (speaking) "Skip" else "Welcome"
             val d = getDrawable(if (speaking) R.drawable.ic_answer_no else R.drawable.ic_volume)!!.mutate()
                 .apply { setBounds(0, 0, dp(26), dp(26)) }
-            welcomeBtn.setCompoundDrawablesRelative(null, d, null, null)
+            // Same place as when it was built: beside the label in landscape, above it in portrait.
+            if (wide) welcomeBtn.setCompoundDrawablesRelative(d, null, null, null) else welcomeBtn.setCompoundDrawablesRelative(null, d, null, null)
             welcomeBtn.contentDescription = if (speaking) "Skip the voice" else "Play the welcome"
         }
         Motion.swapText(nowPlaying, songText)
@@ -525,7 +526,8 @@ class DriveModeActivity : Activity() {
         // Landscape rows are short: icon beside the label (not above it), so the label can stay readable.
         // One line, shrinking to fit: with two lines allowed, auto-size happily broke a word in half
         // ("Welcom/e", "Auto-resu/me on" in the screenshots).
-        fitText(9, 17, 1); setPadding(dp(6), dp(6), dp(6), dp(6))
+        // Landscape caps the size lower, so the three labels come out (nearly) the same size.
+        fitText(9, if (wide) 14 else 17, 1); setPadding(dp(6), dp(6), dp(6), dp(6))
         val d = getDrawable(icon)!!.mutate().apply { setBounds(0, 0, dp(26), dp(26)) }
         if (wide) setCompoundDrawablesRelative(d, null, null, null) else setCompoundDrawablesRelative(null, d, null, null)
         compoundDrawablePadding = dp(if (wide) 8 else 2)
