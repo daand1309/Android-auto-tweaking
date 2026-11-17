@@ -381,6 +381,11 @@ class DriveModeActivity : Activity() {
     /** Turn-by-turn in Waze (shows on the car screen too); Google Maps, then any maps app, if it isn't there. */
     private fun navigateTo(stop: FuelStops.Stop, why: String) {
         val lat = stop.station.lat; val lon = stop.station.lon
+        // Best: Android Auto opens your navigation app (Waze) on the car screen; the phone stays here.
+        if (com.daand.drivemusic.car.CarLink.navigate(lat, lon)) {
+            DriveLog.log("FUEL: navigating to ${stop.station.name} on the car screen ($why, €%.3f, %.1f km)".format(java.util.Locale.ROOT, stop.price, stop.km))
+            return
+        }
         val tries = listOf(
             "Waze" to android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(FuelStops.wazeUri(lat, lon))).setPackage("com.waze"),
             "Google Maps" to android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(FuelStops.navUri(lat, lon))).setPackage("com.google.android.apps.maps"),
@@ -389,7 +394,11 @@ class DriveModeActivity : Activity() {
         for ((app, intent) in tries) {
             try {
                 startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-                DriveLog.log("FUEL: navigating to ${stop.station.name} with $app ($why, €%.3f, %.1f km)".format(java.util.Locale.ROOT, stop.price, stop.km))
+                // The route reaches Waze (also on the car screen when it runs there); Drive Mode goes straight
+                // back on top of the phone - same moment, while we're still in front (that's what allows it).
+                startActivity(android.content.Intent(this, DriveModeActivity::class.java)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+                DriveLog.log("FUEL: navigating to ${stop.station.name} with $app, Drive Mode kept in front ($why, €%.3f, %.1f km)".format(java.util.Locale.ROOT, stop.price, stop.km))
                 return
             } catch (e: android.content.ActivityNotFoundException) { /* next one */ }
         }

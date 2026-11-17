@@ -38,6 +38,9 @@ object FuelStops {
         return if (nearestGood.price <= cheapest.price) Choice(cheapest, cheapest) else Choice(nearestGood, cheapest)
     }
 
+    /** For Android Auto itself (CarContext.ACTION_NAVIGATE): it opens your chosen navigation app on the car screen. */
+    fun carNavUri(lat: Double, lon: Double) = "geo:$lat,$lon"
+
     /** Waze turn-by-turn to a position (it shows on the Android Auto screen too). */
     fun wazeUri(lat: Double, lon: Double) = "waze://?ll=$lat,$lon&navigate=yes"
 

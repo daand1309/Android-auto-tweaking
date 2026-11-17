@@ -71,4 +71,9 @@ class FuelStopsTest {
         assertEquals("In town", c.cheapest.station.name)
         assertEquals("In town", c.nearestGood.station.name)
     }
+
+    @Test fun androidAutoGetsThePlaceToNavigateTo() {
+        // CarContext.ACTION_NAVIGATE: Android Auto opens your navigation app (Waze) on the car screen.
+        assertEquals("geo:52.175,5.387", FuelStops.carNavUri(52.175, 5.387))
+    }
 }
