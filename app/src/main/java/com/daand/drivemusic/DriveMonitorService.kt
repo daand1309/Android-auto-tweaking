@@ -566,6 +566,7 @@ class DriveMonitorService : NotificationListenerService() {
     private fun endDrive(reason: String) {
         val alreadyEnded = driveEnded
         driveEnded = true
+        resumeThisDrive = null   // this drive's auto-resume choice ends with it
         runCatching { musicBrowser?.disconnect() }; musicBrowser = null
         handler.removeCallbacks(ownSpeechCheck)   // nothing from this drive may fire into the next one
         driveModeOffered = false      // a new drive gets its own pop-up

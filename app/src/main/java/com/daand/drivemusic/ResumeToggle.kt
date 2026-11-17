@@ -24,7 +24,14 @@ object ResumeToggle {
         return State(s.setting, if (next == s.setting) null else next)
     }
 
-    fun isOnNow(ctx: Context) = isOn(Prefs(ctx).autoResume, DriveMonitorService.instance?.resumeThisDrive)
+    /** What a button shows: this drive's choice only counts during a drive - parked, a left-over
+     *  choice from the last drive must not hide the setting (the tile looked stuck). */
+    fun shown(setting: Boolean, inDrive: Boolean, thisDrive: Boolean?) = if (inDrive) isOn(setting, thisDrive) else setting
+
+    fun isOnNow(ctx: Context): Boolean {
+        val svc = DriveMonitorService.instance
+        return shown(Prefs(ctx).autoResume, svc?.inDrive == true, svc?.resumeThisDrive)
+    }
 
     /** A tap on any auto-resume button; [source] goes in the log. Returns the new on/off. */
     fun tapNow(ctx: Context, source: String): Boolean {

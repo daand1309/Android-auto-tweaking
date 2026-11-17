@@ -174,6 +174,8 @@ class DriveModeActivity : Activity() {
     private val carLabels = HashMap<String, TextView>()
     private lateinit var carWarning: TextView
     private lateinit var carStatus: TextView
+    /** The tile rows: hidden while the adapter isn't set up (eight empty "—" tiles said nothing). */
+    private val tileRows = mutableListOf<View>()
 
     private fun buildCarPage(): View {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Style.BG); setPadding(dp(14), dp(8), dp(14), dp(14)) }
@@ -193,6 +195,7 @@ class DriveModeActivity : Activity() {
             val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             for ((key, label) in row) r.addView(carTile(key, label), hLp(1f))
             root.addView(r, vLp(weight = 1f))
+            tileRows += r
         }
         carStatus = TextView(this).apply { setTextColor(Style.TEXT2); textSize = 14f; gravity = Gravity.CENTER; setPadding(0, dp(6), 0, 0) }
         root.addView(carStatus, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
@@ -273,6 +276,16 @@ class DriveModeActivity : Activity() {
         }
         if (carStatus.text != statusText) carStatus.text = statusText
         carStatus.visibility = if (statusText.isEmpty()) View.GONE else View.VISIBLE
+        // Not set up: the explanation takes the tiles' place (Find fuel works without the adapter).
+        val tilesVis = if (p.obdEnabled) View.VISIBLE else View.GONE
+        tileRows.forEach { if (it.visibility != tilesVis) it.visibility = tilesVis }
+        val statusLp = carStatus.layoutParams as LinearLayout.LayoutParams
+        val wantWeight = if (p.obdEnabled) 0f else 1f
+        if (statusLp.weight != wantWeight) {
+            statusLp.weight = wantWeight; statusLp.height = if (p.obdEnabled) LinearLayout.LayoutParams.WRAP_CONTENT else 0
+            carStatus.textSize = if (p.obdEnabled) 14f else 20f
+            carStatus.layoutParams = statusLp
+        }
     }
 
     // ---------------------------------------------------------------- find fuel

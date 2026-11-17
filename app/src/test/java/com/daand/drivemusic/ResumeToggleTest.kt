@@ -31,4 +31,12 @@ class ResumeToggleTest {
         assertEquals(State(setting = false, thisDrive = null), ResumeToggle.tap(State(true, null), inDrive = false))
         assertEquals(State(setting = true, thisDrive = null), ResumeToggle.tap(State(false, null), inDrive = false))
     }
+
+    @Test fun aStalePerDriveChoiceIsIgnoredWhileParked() {
+        // Setting off, tapped on in the car, drive over: parked, the tile must show the setting (off),
+        // and a tap there must then switch the setting on - not look like it did nothing.
+        assertFalse(ResumeToggle.shown(setting = false, inDrive = false, thisDrive = true))
+        assertTrue(ResumeToggle.shown(setting = false, inDrive = true, thisDrive = true))
+        assertEquals(State(setting = true, thisDrive = null), ResumeToggle.tap(State(false, true), inDrive = false))
+    }
 }

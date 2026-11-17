@@ -691,7 +691,9 @@ class DriveFlowTest {
         com.daand.drivemusic.obd.ObdManager.setLiveForTest(com.daand.drivemusic.obd.CarSnapshot(System.currentTimeMillis(),
             coolantC = 104, rpm = 6750, speedKmh = 188, volts = 14.35, ambientC = -12, litresPerHour = 12.4,
             codes = listOf("P0420", "P0171"), checkEngine = true, extra = mapOf(0x11 to 100.0, 0x04 to 100.0, 0x0F to -8.0)), trip)
-        SystemClock.sleep(3_500)
+        // The tiles are hidden while OBD is off and come back on the next refresh (every 3 s without
+        // live data): give that refresh plus a layout pass time before measuring.
+        SystemClock.sleep(5_000)
         val problems = mutableListOf<String>()
         var tiles = 0
         onMain {
