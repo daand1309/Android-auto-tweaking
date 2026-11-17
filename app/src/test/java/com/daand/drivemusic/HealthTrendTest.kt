@@ -123,6 +123,33 @@ class HealthTrendTest {
             .any { it.kind == CarAlerts.Kind.CHECK_ENGINE })
     }
 
+    @Test fun aLoadedIdleAndTheFirstMinutesNeverBecomeTheChargingNumber() {
+        // The real ASX: 12.3 V while standing with the lights, fan and A/C on (8 min here), and 12.3 V
+        // for the first minutes after a cold start; 13.3 V once driving. Before this was excluded, the
+        // 96 idle readings against 36 driving ones put the drive's median at 12.3 V and the CHARGING
+        // trend fired on a healthy alternator.
+        fun measure(readings: List<CarSnapshot>): HealthSample {
+            val hs = HealthStats(); var t = 0L
+            for (s in readings) { hs.add(s.copy(at = t), 5.0); t += 5_000 }
+            return hs.sample()
+        }
+        val loadedIdle = List(96) { CarSnapshot(0, coolantC = 88, rpm = 1300, speedKmh = 0, volts = 12.3) } +
+            List(36) { CarSnapshot(0, coolantC = 90, rpm = 2000, speedKmh = 80, volts = 13.3) }
+        assertEquals("only the driving readings count", 13.3, measure(loadedIdle).chargeV!!, 0.01)
+        // Ten normal drives plus this one: no CHARGING finding.
+        assertTrue(CarTrends.findings(List(10) { drive() } + measure(loadedIdle)).none { it.kind == CarTrends.Kind.CHARGING })
+        // A cold start that idles high at 12.3 V for four minutes, then drives at 13.3 V: same answer.
+        val coldHighIdle = List(48) { CarSnapshot(0, coolantC = 20, rpm = 1400, speedKmh = 0, volts = 12.3) } +
+            List(72) { CarSnapshot(0, coolantC = 88, rpm = 2400, speedKmh = 100, volts = 13.3) }
+        assertEquals(13.3, measure(coldHighIdle).chargeV!!, 0.01)
+        // But a car that is low WHILE DRIVING is still caught: 12.6 V on the road is a real finding.
+        val weakOnTheRoad = measure(List(120) { CarSnapshot(0, coolantC = 88, rpm = 2400, speedKmh = 100, volts = 12.6) })
+        assertEquals(12.6, weakOnTheRoad.chargeV!!, 0.01)
+        // Three of the last five drives, like every other trend: one low drive isn't a trend.
+        assertEquals(listOf(CarTrends.Kind.CHARGING),
+            CarTrends.findings(List(10) { drive() } + List(4) { weakOnTheRoad }).map { it.kind })
+    }
+
     @Test fun badReadingsDontCreateFakeTrends() {
         // A corrupt low coolant byte on a warm engine must not look like a 0-minute "cold start".
         val h = HealthStats()

@@ -60,6 +60,7 @@ class HealthStats {
     private val cruise = ArrayList<Double>()
     private var ambient: Int? = null
     private var prevCoolant: Int? = null
+    private var ranSeconds = 0.0          // engine running, this drive (for the post-start recovery)
     private var startC: Int? = null          // confirmed by two readings in a row
     private var startDecided = false
     private var warmRunSeconds = 0.0
@@ -85,7 +86,15 @@ class HealthStats {
         // Fuel trim means something in closed loop (fuel system mode 2); unknown mode: as before.
         val closedLoop = s.extra[0x03]?.let { it == 2.0 } ?: true
         if (warm && closedLoop && lastLtftAt.let { it == null || s.at - it >= LTFT_GAP_MS }) s.extra[0x07]?.takeIf { it in -40.0..40.0 }?.let { ltft += it; lastLtftAt = s.at }
-        if (rpm in 1200..3500) s.volts?.takeIf { it in 10.0..16.0 }?.let { charge += it }
+        // Charging is a driving number, taken only once the battery has recovered from the start. The
+        // real ASX reads ~12.3 V for the first minutes of a cold start and ~12.3 V again at a standstill
+        // with the lights, fan and A/C on; counting either dragged the median down until a healthy
+        // alternator looked like a sagging one (a 96-reading loaded idle against 36 driving readings put
+        // the median at 12.3 V). Same numbers, same rule as the WEAK_CHARGING alert.
+        if (dt in 0.0..15.0) ranSeconds += dt
+        val recoveredMs = if (startC != null && startC!! <= COLD_START_C) CarAlerts.COLD_POST_START_CHARGING_MS else CarAlerts.POST_START_CHARGING_MS
+        if (ranSeconds * 1000 >= recoveredMs && rpm in 1200..3500 && (speed ?: 0) >= CarAlerts.MOVING_KMH)
+            s.volts?.takeIf { it in 10.0..16.0 }?.let { charge += it }
         val idling = warm && speed == 0 && rpm in 500..1300
         if (idling) {
             idleRevs += rpm.toDouble()
