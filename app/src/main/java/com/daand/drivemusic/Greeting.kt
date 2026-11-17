@@ -1226,9 +1226,10 @@ object WelcomeAnnouncer {
 
 /** Short "Now playing: X by Y" announcement (used when the song wasn't known before the music started). */
 object SongAnnouncer {
-    fun announce(context: Context, song: GreetingText.Song, dutch: Boolean) {
+    /** [onDone] runs when it has been said (or couldn't be). */
+    fun announce(context: Context, song: GreetingText.Song, dutch: Boolean, onDone: () -> Unit = {}) {
         val text = GreetingText.songSentence(song, dutch, upFirst = false)
         DriveLog.log("GREETING: \"$text\"")
-        Greeter(context.applicationContext).speak(text, dutch) {}
+        Greeter(context.applicationContext).speak(text, dutch) { onDone() }
     }
 }

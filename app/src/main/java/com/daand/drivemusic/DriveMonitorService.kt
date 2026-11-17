@@ -566,6 +566,7 @@ class DriveMonitorService : NotificationListenerService() {
     private fun endDrive(reason: String) {
         val alreadyEnded = driveEnded
         driveEnded = true
+        DriveModeActivity.closeBecauseDriveEnded()   // even when it's in the background (it used to wait until you unlocked)
         resumeThisDrive = null   // this drive's auto-resume choice ends with it
         runCatching { musicBrowser?.disconnect() }; musicBrowser = null
         handler.removeCallbacks(ownSpeechCheck)   // nothing from this drive may fire into the next one
@@ -751,8 +752,12 @@ class DriveMonitorService : NotificationListenerService() {
         if (pendingPauseRunnable != null || resumeRunnable != null || startRunnable != null) return
         val state = (ytm?.takeIf { isMusic(it) } ?: findYtm())?.playbackState?.state ?: return
         if (state == PlaybackState.STATE_PAUSED || state == PlaybackState.STATE_STOPPED || state == PlaybackState.STATE_ERROR) {
-            DriveLog.log("Music still stopped after our own $what - treating it as a pause")
-            schedulePendingPause(state)
+            // It stopped while the app itself was talking - almost always the stop YouTube Music makes
+            // ~1 s after every start (normally caught by the start bounce, but stops are ignored while
+            // we speak). That is never you pausing: back on in 1.5 s, not counted. Real drive (11:17):
+            // counted as "PAUSE #1, no clues" and 28 s of silence before it came back.
+            DriveLog.log("Music stopped while we were speaking ($what) - putting it back on (not counted)")
+            scheduleResume(1_500L)
         }
     }
 
@@ -837,8 +842,10 @@ class DriveMonitorService : NotificationListenerService() {
             val song = currentSong()
             if (song != null && carConnected && gen == connectGen) {
                 suppressPauseUntil = SystemClock.elapsedRealtime() + 15_000
-                SongAnnouncer.announce(this@DriveMonitorService, song, prefs.greetingDutch)
-                postOwnSpeechCheck("song announcement", 16_000L)
+                postOwnSpeechCheck("song announcement", 16_000L)   // fallback, if "done" never comes
+                SongAnnouncer.announce(this@DriveMonitorService, song, prefs.greetingDutch) {
+                    handler.post { if (gen == connectGen) ownSpeechDone("song announcement") }
+                }
             }
         }, 2_500)
     }

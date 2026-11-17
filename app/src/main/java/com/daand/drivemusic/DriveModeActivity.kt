@@ -49,6 +49,7 @@ class DriveModeActivity : Activity() {
     }
 
     override fun onDestroy() {
+        if (open?.get() === this) open = null
         UpdatePrompt.removeListener(promptChanged)
         super.onDestroy()
     }
@@ -414,6 +415,10 @@ class DriveModeActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        open = java.lang.ref.WeakReference(this)
+        // Opened for a drive (the car is already connected): that counts as having seen the car, so
+        // the end of the drive closes it even if it never got a refresh in front.
+        if (Prefs(this).lastCarState.let { it == "Android Auto connected" || it == "Android Automotive" || it == DriveHold.STATE }) sawCarConnected = true
         Motion.enabled = Prefs(this).animations
         DriveLog.init(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -601,6 +606,20 @@ class DriveModeActivity : Activity() {
     companion object {
         /** True while Drive Mode is in front - phone pop-ups would only cover its own buttons. */
         @Volatile var onScreen = false
+        @Volatile private var open: java.lang.ref.WeakReference<DriveModeActivity>? = null
+
+        /**
+         * The drive ended: close Drive Mode now, even when it isn't in front. It only checked while on
+         * screen, so after a drive it waited in the background and flashed up hours later when the
+         * phone was unlocked. Opened by hand while parked (no car seen yet): left alone.
+         */
+        fun closeBecauseDriveEnded() {
+            val a = open?.get() ?: return
+            a.runOnUiThread {
+                if (a.isFinishing || a.isDestroyed) return@runOnUiThread
+                if (a.sawCarConnected) { DriveLog.log("Drive Mode: closed - you left the car"); a.finish() }
+            }
+        }
         private const val TAB_MUSIC = 0
         private const val TAB_CAR = 1
     }
