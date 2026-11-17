@@ -671,6 +671,10 @@ class CodeTracker(saved: String = "") {
 
     fun hits(code: String) = entries[code]?.hits ?: 0
 
+    /** Every code being tracked, most often seen first (for the "Possible issues" page). */
+    fun codes(): List<String> = entries.entries.sortedWith(
+        compareByDescending<Map.Entry<String, Entry>> { it.value.hits }.thenByDescending { it.value.lastAt }).map { it.key }
+
     fun save(): String = "$reads|" + entries.entries.joinToString(";") { (c, e) -> "$c:${e.first}:${e.hits}:${e.lastAt}" }
 
     companion object {

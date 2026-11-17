@@ -125,7 +125,7 @@ class MainActivity : Activity() {
     private enum class Page(val title: String) {
         HOME("Drive Music"), SETUP("Setup"), MUSIC("Music & driving"), GREETING("Welcome greeting"),
         VOICE("Voice"), DRIVE_MODE("Drive Mode"), UPDATES("Updates"), HELP("Help & privacy"),
-        CAR("Car screen"), BACKUP("Backup & restore"), OBD("Car data (OBD)"), TRIPS("Trips & costs"), THEMES("Themes"), SERVICE("Service")
+        CAR("Car screen"), BACKUP("Backup & restore"), OBD("Car data (OBD)"), TRIPS("Trips & costs"), THEMES("Themes"), SERVICE("Service"), ISSUES("Possible issues")
     }
 
     private var page = Page.HOME
@@ -283,6 +283,7 @@ class MainActivity : Activity() {
             Page.BACKUP -> renderBackup()
             Page.THEMES -> renderThemes()
             Page.SERVICE -> renderService()
+            Page.ISSUES -> renderIssues()
         }
         when (animateNext) { ENTER -> Motion.enter(root); BACK -> Motion.fadeIn(root) }
         animateNext = 0
@@ -310,6 +311,17 @@ class MainActivity : Activity() {
         featureGrid(grid, NeedsYou.dotted(needs))
         showSearch(grid, results)
         carOffLine()
+    }
+
+    /** The Fault box: the first confirmed code, else how many things are being watched. */
+    private fun faultBox(): String {
+        val issues = watchIssues()
+        issues.firstOrNull { it.level == com.daand.drivemusic.obd.WatchList.Level.FAULT }?.code?.let { return it }
+        return when {
+            issues.isNotEmpty() -> "${issues.size} to watch"
+            !prefs.obdEnabled -> "–"
+            else -> "None"
+        }
     }
 
     private fun needsState(): NeedsYou.State {
@@ -368,7 +380,7 @@ class MainActivity : Activity() {
                 })
                 NeedsYou.Kind.MUSIC_APP -> card.addView(line(item.text) { pickMusicApp() })
                 NeedsYou.Kind.SETUP -> card.addView(line(item.text) { go(Page.SETUP) })
-                NeedsYou.Kind.FAULT -> card.addView(line(item.text) { go(Page.OBD) })
+                NeedsYou.Kind.FAULT -> card.addView(line(item.text) { go(Page.ISSUES) })
                 NeedsYou.Kind.UPDATE -> card.addView(line(item.text) { go(Page.UPDATES) })
             }
         }
@@ -1292,6 +1304,55 @@ class MainActivity : Activity() {
         text("The Drive Mode intro has its own switch under Drive Mode.")
     }
 
+    /** Everything the app keeps an eye on: confirmed codes, codes being checked, early codes, trends. */
+    private fun watchIssues(): List<com.daand.drivemusic.obd.WatchList.Issue> = com.daand.drivemusic.obd.WatchList.build(
+        com.daand.drivemusic.obd.CodeTracker(prefs.storedCodeLog), com.daand.drivemusic.obd.CodeTracker(prefs.pendingCodeLog),
+        (if (prefs.obdEnabled) com.daand.drivemusic.obd.ObdManager.live()?.codes else null).orEmpty(),
+        com.daand.drivemusic.obd.CarTrends.findings(com.daand.drivemusic.obd.TripHistory.load(this).mapNotNull { it.health }),
+        prefs.greetingDutch)
+
+    /** "Possible issues": opened from the Fault box on Home. */
+    private fun renderIssues() {
+        val issues = watchIssues()
+        val faults = issues.count { it.level == com.daand.drivemusic.obd.WatchList.Level.FAULT }
+        pageHeader(icon = "⚠", state = when {
+            issues.isEmpty() -> "Nothing to report"
+            faults > 0 -> "$faults ${if (faults == 1) "fault" else "faults"} · ${issues.size} tracked"
+            else -> "${issues.size} being watched"
+        })
+        if (issues.isEmpty()) {
+            text(if (!prefs.obdEnabled) "Switch on Car data (OBD adapter) and the app starts watching your car."
+                else "Nothing to report. The app watches for fault codes (each one is checked on several reads before it " +
+                    "counts), early codes the car isn't sure about yet, and slow changes over your drives - fuel mixture, " +
+                    "charging, idle, warm-up and running temperature.")
+        }
+        val names = mapOf(
+            com.daand.drivemusic.obd.WatchList.Level.FAULT to "Faults",
+            com.daand.drivemusic.obd.WatchList.Level.CHECKING to "Being checked",
+            com.daand.drivemusic.obd.WatchList.Level.EARLY to "Early warnings",
+            com.daand.drivemusic.obd.WatchList.Level.TREND to "Slow changes",
+        )
+        issues.groupBy { it.level }.forEach { (level, list) ->
+            header(names.getValue(level))
+            list.forEach { i ->
+                addRow(LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(16), dp(12), dp(14), dp(12)); minimumHeight = dp(56)
+                    addView(TextView(this@MainActivity).apply {
+                        text = i.title; textSize = 15f; setTypeface(typeface, Typeface.BOLD)
+                        setTextColor(if (level == com.daand.drivemusic.obd.WatchList.Level.FAULT) Style.AMBER else Style.TEXT)
+                    })
+                    addView(TextView(this@MainActivity).apply {
+                        text = i.detail; textSize = 13f; setTextColor(Style.TEXT2); setPadding(0, dp(3), 0, 0)
+                    })
+                })
+            }
+        }
+        if (issues.isNotEmpty()) text("Codes are only read, never cleared - clearing hides a problem instead of fixing it. " +
+            "Live values and the full diagnostics are on Car data.")
+        if (prefs.obdEnabled) button("Open Car data") { go(Page.OBD) }
+    }
+
     /** Service has its own page: the reminder works by date without the adapter too. */
     private fun renderService() {
         pageHeader()
@@ -1584,7 +1645,7 @@ class MainActivity : Activity() {
         ) else listOf(
             Triple("Last drive", when (lastMins) { null -> "–"; "0" -> "< 1 min"; else -> "$lastMins min" }) { lastDriveDetails() },
             Triple("Battery", v(car?.volts, "%.1f V")) { go(Page.OBD) },
-            Triple("Fault", if (car == null) "–" else car.codes.firstOrNull() ?: "None") { go(Page.OBD) },
+            Triple("Fault", faultBox()) { go(Page.ISSUES) },
         )
         column.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; setPadding(dp(8), 0, dp(8), dp(8))
@@ -1594,7 +1655,7 @@ class MainActivity : Activity() {
                     background = Style.button(Style.SURFACE2, dp(12).toFloat()); setPadding(dp(4), dp(8), dp(4), dp(8))
                     minimumHeight = dp(56)
                     if (action != null) { isClickable = true; setOnClickListener { action() }; Feel.press(this, 0.96f) }
-                    val warn = label == "Fault" && value != "None" && value != "–"
+                    val warn = label == "Fault" && Regex("""^[PCBU]\d""").containsMatchIn(value)
                     addView(TextView(this@MainActivity).apply {
                         text = value; textSize = 17f; setTypeface(typeface, Typeface.BOLD); fontFeatureSettings = Style.TABULAR
                         setTextColor(if (warn) Style.AMBER else Style.TEXT); gravity = android.view.Gravity.CENTER
@@ -1757,9 +1818,9 @@ class MainActivity : Activity() {
 
     /** Title row for a sub-page with a back arrow. */
     /** The page's header: the home icon grown up - back, icon, name and the same state line as on Home. */
-    private fun pageHeader(back: Page = Page.HOME) {
+    private fun pageHeader(back: Page = Page.HOME, icon: String? = null, state: String? = null) {
         group = null
-        val f = HomeFeatures.forPage(page.name)
+        val f = HomeFeatures.forPage(page.name) ?: icon?.let { Feature("", FeatureGroup.CAR, page.title, it, emptyList()) }
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
             setPadding(0, dp(2), 0, dp(12))
@@ -1777,7 +1838,7 @@ class MainActivity : Activity() {
                     text = page.title; textSize = 22f; setTypeface(typeface, Typeface.BOLD); setTextColor(Style.TEXT)
                 })
                 if (f != null) addView(TextView(this@MainActivity).apply {
-                    text = featureState(f.id); textSize = 13f; setTextColor(Style.TEXT2)
+                    text = state ?: featureState(f.id); textSize = 13f; setTextColor(Style.TEXT2)
                 })
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         })
