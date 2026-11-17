@@ -17,13 +17,18 @@ class Trip {
     var highRevSeconds = 0.0; private set
     var hardAccelerations = 0; private set
     var hardBrakes = 0; private set
+    /** Every pull-away and every stop, graded by its strongest moment (see [score]). */
+    var accelEpisodes = 0; private set
+    var briskAccelerations = 0; private set
+    var brakeEpisodes = 0; private set
+    var firmBrakes = 0; private set
+    private var accelPeak = 0.0
+    private var brakePeak = 0.0
     /** Idling beyond the first [IDLE_FREE_S] of each stop: waiting with the engine running. */
     var longIdleSeconds = 0.0; private set
     /** Early-warning numbers for this drive (see [HealthStats]). */
     val health = HealthStats()
     private var last: CarSnapshot? = null
-    private var inHardAccel = false
-    private var inHardBrake = false
     // The last three speed readings: each is judged with its neighbours (see smoothSpeed).
     private val recent = ArrayDeque<Pair<Long, Int>>()
     private val history = ArrayDeque<Pair<Long, Double>>()   // smoothed speeds of the last 15 s
@@ -54,7 +59,10 @@ class Trip {
         }
         // High revs only count while speeding up (revving hard through the gears) - not cruising on
         // the motorway (the ASX 1.6 turns ~3,600 rpm at 130 km/h) or engine braking downhill.
-        if ((s.rpm ?: 0) >= HIGH_REV_RPM && accelerating) highRevSeconds += dt
+        // "Speeding up" from the smoothed speed lags a reading; the plain rise since the last one doesn't.
+        // (Clearly speeding up: at least 0.5 m/s² - not cruising at 3,600 rpm with the speed creeping.)
+        val rising = ((s.speedKmh ?: 0) - (prev.speedKmh ?: 0)) / 3.6 / dt >= 0.5
+        if ((s.rpm ?: 0) >= HIGH_REV_RPM && (accelerating || rising)) highRevSeconds += dt
         s.speedKmh?.let { smoothSpeed(s.at, it) }
     }
 
@@ -79,8 +87,21 @@ class Trip {
         val accel = (v - ref.second) / 3.6 / ((mAt - ref.first) / 1000.0)
         if (Math.abs(accel) > IMPOSSIBLE) return
         accelerating = accel > 0.3
-        if (accel >= HARD_ACCEL) { if (!inHardAccel) hardAccelerations++; inHardAccel = true } else inHardAccel = false
-        if (accel <= -HARD_BRAKE) { if (!inHardBrake) hardBrakes++; inHardBrake = true } else inHardBrake = false
+        // One pull-away / one stop = one episode, graded at its end by its strongest moment.
+        if (accel >= EPISODE_START) accelPeak = maxOf(accelPeak, accel) else if (accel < EPISODE_END && accelPeak > 0) closeAccel()
+        if (accel <= -EPISODE_START) brakePeak = maxOf(brakePeak, -accel) else if (accel > -EPISODE_END && brakePeak > 0) closeBrake()
+    }
+
+    private fun closeAccel() {
+        accelEpisodes++
+        when { accelPeak >= HARD_ACCEL -> hardAccelerations++; accelPeak >= BRISK_ACCEL -> briskAccelerations++ }
+        accelPeak = 0.0
+    }
+
+    private fun closeBrake() {
+        brakeEpisodes++
+        when { brakePeak >= HARD_BRAKE -> hardBrakes++; brakePeak >= FIRM_BRAKE -> firmBrakes++ }
+        brakePeak = 0.0
     }
 
     /**
@@ -91,15 +112,38 @@ class Trip {
     fun score(): Int? {
         val total = drivingSeconds + idleSeconds
         if (total < 120 || km < 0.5) return null
-        val events = (hardAccelerations + hardBrakes) / maxOf(km, 5.0) * 10   // per 10 km (short trips not over-punished)
-        val penalty = events * 5 + highRevSeconds / total * 100 * 1.5 + longIdleSeconds / total * 100 * 0.6
+        // A stop or pull-away still going on at the end counts too.
+        if (accelPeak > 0) closeAccel()
+        if (brakePeak > 0) closeBrake()
+        // The share of pull-aways / stops that were brisk, firm or hard - so a few in a long drive cost
+        // a little and every one of them costs a lot. (+3: one firm stop on a short trip isn't 100%.)
+        fun share(n: Int, of: Int) = n.toDouble() / (of + 3)
+        val manner = BRISK_POINTS * (share(briskAccelerations, accelEpisodes) + share(firmBrakes, brakeEpisodes)) +
+            HARD_POINTS * (share(hardAccelerations, accelEpisodes) + share(hardBrakes, brakeEpisodes))
+        val penalty = manner + highRevSeconds / total * 100 * 1.5 + longIdleSeconds / total * 100 * 0.6
         return (100 - penalty).toInt().coerceIn(0, 100)
     }
 
+    /** "brisk starts 3, firm stops 2" - why the score isn't 100 (empty when nothing). */
+    fun scoreReasons(dutch: Boolean = false): String = listOfNotNull(
+        briskAccelerations.takeIf { it > 0 }?.let { if (dutch) "vlot weg $it" else "brisk starts $it" },
+        hardAccelerations.takeIf { it > 0 }?.let { if (dutch) "hard weg $it" else "hard starts $it" },
+        firmBrakes.takeIf { it > 0 }?.let { if (dutch) "stevig geremd $it" else "firm stops $it" },
+        hardBrakes.takeIf { it > 0 }?.let { if (dutch) "hard geremd $it" else "hard stops $it" },
+        highRevSeconds.takeIf { it >= 5 }?.let { if (dutch) "hoge toeren ${it.toInt()} s" else "high revs ${it.toInt()} s" },
+    ).joinToString(", ")
+
     companion object {
-        const val HIGH_REV_RPM = 4000
-        const val HARD_ACCEL = 3.0     // m/s²: the ASX 1.6 flat out does 0-100 in ~11.5 s (~2.4 m/s² average)
-        const val HARD_BRAKE = 4.0     // m/s²: a normal stop is 2-3, an emergency stop 8+
+        const val HIGH_REV_RPM = 3500   // a 1.6 petrol driven normally changes up around 2,500-3,000
+        // Over the >= 3 s windows below (the ASX 1.6 flat out: 0-100 in ~11.5 s, ~2.4 m/s² average).
+        const val BRISK_ACCEL = 1.9     // m/s²: 0-50 in ~7 s
+        const val HARD_ACCEL = 2.6      // m/s²: 0-50 in ~5 s - the car's limit
+        const val FIRM_BRAKE = 2.4      // m/s²: 50-0 in ~6 s; a calm stop takes 7-8 s
+        const val HARD_BRAKE = 3.4      // m/s²: 50-0 in ~4 s
+        const val EPISODE_START = 0.6   // m/s²: speeding up / slowing down on purpose
+        const val EPISODE_END = 0.3
+        const val BRISK_POINTS = 25.0
+        const val HARD_POINTS = 45.0
         const val IMPOSSIBLE = 10.0    // m/s²: no car changes speed faster - a garbled reading
         const val WINDOW_S = 3.0
         const val IDLE_FREE_S = 120.0
@@ -123,6 +167,7 @@ class Trip {
         if (idleSeconds >= 60) (if (dutch) "stationair " else "idle ") + "${Math.round(idleSeconds / 60)} min" else null,
         if (maxSpeed > 0) "max $maxSpeed km/h" else null,
         maxCoolant?.let { (if (dutch) "max motor " else "max engine ") + "$it °C" },
-        score()?.let { (if (dutch) "rijstijl " else "driving ") + "${scoreWord(it, dutch)} $it/100" },
+        score()?.let { (if (dutch) "rijstijl " else "driving ") + "${scoreWord(it, dutch)} $it/100" +
+            scoreReasons(dutch).let { r -> if (r.isEmpty()) "" else " ($r)" } },
     ).joinToString(" · ")
 }

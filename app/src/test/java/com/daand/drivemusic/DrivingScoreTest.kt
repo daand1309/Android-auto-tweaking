@@ -92,4 +92,28 @@ class DrivingScoreTest {
         val s = d.score()
         assertTrue("idle-wait $s", s in 60..90)
     }
+
+    // ---- not too soft: 100/100 on every real drive (17 Nov) said nothing
+
+    @Test fun aFewBriskMomentsInACalmDriveCostAFewPoints() {
+        val d = Drive()
+        repeat(12) { d.townBlock() }
+        repeat(3) { d.ramp(6, 50.0, 3000).hold(40, 50.0, 1900).ramp(7, 0.0, 1200).hold(20, 0.0, 800) }   // brisk away (~2.3 m/s²)
+        repeat(2) { d.ramp(8, 50.0, 2500).hold(40, 50.0, 1900).ramp(5, 0.0, 1200).hold(20, 0.0, 800) }   // firm stop (~2.8 m/s²)
+        val s = d.score()
+        assertTrue("calm with a few brisk moments: $s", s in 80..96)
+    }
+
+    @Test fun briskEveryTimeIsNotSmooth() {
+        val d = Drive()
+        repeat(12) { d.ramp(6, 50.0, 3000).hold(40, 50.0, 1900).ramp(5, 0.0, 1200).hold(20, 0.0, 800) }
+        val s = d.score()
+        assertTrue("every start brisk, every stop firm: $s", s in 45..75)
+    }
+
+    @Test fun revvingPast3500WhileSpeedingUpCosts() {
+        val calm = Drive().also { d -> repeat(10) { d.ramp(12, 70.0, 2800).hold(60, 70.0, 2200).ramp(10, 0.0, 1200).hold(20, 0.0, 800) } }.score()
+        val revvy = Drive().also { d -> repeat(10) { d.ramp(12, 70.0, 3900).hold(60, 70.0, 2200).ramp(10, 0.0, 1200).hold(20, 0.0, 800) } }.score()
+        assertTrue("calm $calm vs revvy $revvy", revvy <= calm - 5)
+    }
 }
