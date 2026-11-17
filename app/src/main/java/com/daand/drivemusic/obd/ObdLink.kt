@@ -22,7 +22,9 @@ interface ObdLink : Closeable {
  * here, at the lowest level, whatever code above asks for it. Pure, unit tested.
  */
 object ReadOnly {
-    private val ALLOWED = Regex("""^(01(?:[0-9A-F]{2}){1,6}|03|07|0A|0902|AT(?:Z|E0|L0|S0|H0|AT1|SP0|DP|I|RV))$""")
+    // 01 live values, 02 freeze frame (pid + frame), 03/07/0A fault codes, 06 on-board test results,
+    // 0902 VIN - all questions. Never 04 (clear codes), 08 (control), or anything that writes.
+    private val ALLOWED = Regex("""^(01(?:[0-9A-F]{2}){1,6}|02[0-9A-F]{2}00|03|06[0-9A-F]{2}|07|0A|0902|AT(?:Z|E0|L0|S0|H0|AT1|SP0|DP|I|RV))$""")
     fun allowed(cmd: String) = ALLOWED.matches(cmd)
 }
 

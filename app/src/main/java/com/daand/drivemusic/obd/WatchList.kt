@@ -14,9 +14,14 @@ object WatchList {
 
     data class Issue(val level: Level, val code: String?, val title: String, val detail: String)
 
+    /** The catalyst test this close to its limit is worth a line. */
+    const val CATALYST_NEAR = 0.85
+
     /** [carCount] = how many codes the car itself says it has stored (PID 01), null if unknown. */
     fun build(stored: CodeTracker, pending: CodeTracker, carReportsNow: List<String>, carCount: Int?,
-              trends: List<CarTrends.Finding>, dutch: Boolean): List<Issue> {
+              trends: List<CarTrends.Finding>, dutch: Boolean,
+              /** The catalytic converter's own self-test (mode 06), latest result. */
+              catalyst: OnBoardTests.Catalyst? = null): List<Issue> {
         fun what(c: String) = TroubleCodes.explanation(c, dutch).what
         val out = mutableListOf<Issue>()
         // What the car reports right now is first-hand, but only a believable list counts as confirmed:
@@ -50,6 +55,19 @@ object WatchList {
             out += Issue(Level.EARLY, c, "$c: ${what(c)}",
                 if (dutch) "Vroege waarschuwing: de auto twijfelt nog (nog geen lampje)"
                 else "Early warning: the car isn't sure yet (no warning light)")
+        }
+        // The car's own catalyst test, close to its limit (or over it): long before - or after - a P0420.
+        catalyst?.takeIf { !it.passes || it.closeness >= CATALYST_NEAR }?.let { c ->
+            val pct = Math.round(c.closeness * 100)
+            out += Issue(Level.EARLY, null,
+                when {
+                    !c.passes && dutch -> "Katalysator: de eigen test van de auto faalt ($pct% van de grens)"
+                    !c.passes -> "Catalytic converter: the car's own test fails ($pct% of its limit)"
+                    dutch -> "Katalysator: de eigen test van de auto zit op $pct% van de grens"
+                    else -> "Catalytic converter: the car's own test is at $pct% of its limit"
+                },
+                if (dutch) "Boven 100% slaat de auto P0420 op. Laat hem bij de volgende beurt bekijken."
+                else "Above 100% the car stores P0420. Worth a look at the next service.")
         }
         trends.forEach { t ->
             out += Issue(Level.TREND, null, CarTrends.message(t, dutch, butler = false),

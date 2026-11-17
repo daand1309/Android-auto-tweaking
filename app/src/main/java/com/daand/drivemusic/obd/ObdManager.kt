@@ -80,6 +80,33 @@ object ObdManager {
     @Volatile private var batteryLogged = false
     @Volatile private var restingMax: Double? = null
 
+    /** Once per connection: the fuel type (01-51) and the catalyst's self-test (mode 06). */
+    private fun afterConnect(ctx: Context, s: ObdSession) {
+        val p = Prefs(ctx)
+        s.fuel?.let { f ->
+            if (!p.fuelTypeSetByUser && p.fuelType != f.code) {
+                p.fuelType = f.code
+                DriveLog.log("OBD: the car runs on ${f.en} - fuel type set to match (pick another in Car data to overrule)")
+            }
+        }
+        s.catalyst?.let { c ->
+            p.catalystLog = CatalystLog.add(p.catalystLog, System.currentTimeMillis(), c.closeness)
+            DriveLog.log("OBD: catalytic converter self-test - %d%% of its limit (%s)".format(java.util.Locale.ROOT,
+                Math.round(c.closeness * 100), if (c.passes) "passes" else "FAILS"))
+        }
+    }
+
+    /** The freeze frame, kept so the pages can show it while you're parked (logged once per change). */
+    private fun saveFreeze(ctx: Context, f: FreezeFrame) {
+        val p = Prefs(ctx)
+        val enc = f.encode()
+        if (p.freezeFrame == enc) return
+        p.freezeFrame = enc
+        DriveLog.log("OBD: freeze frame for ${f.code} - " + f.values.entries.joinToString(", ") { (pid, v) ->
+            (Pids.ALL.firstOrNull { it.pid == pid }?.en ?: "%02X".format(pid)) + " " + Pids.format(pid, v)
+        })
+    }
+
     fun hasPermission(ctx: Context) = Build.VERSION.SDK_INT < 31 ||
         ctx.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
 
@@ -200,6 +227,7 @@ object ObdManager {
                 // Only tell the monitor on the first link of this drive, not on every reconnect after a stall.
                 if (!linkedTold) { linkedTold = true; runCatching { onLinked?.invoke() } }
                 vin = session.vin ?: vin
+                runCatching { afterConnect(ctx, session) }
                 supportedCount = session.supported.size
                 lastEcuAnswerAt = System.currentTimeMillis()  // it just answered "0100"
                 poll(session, myGen, onAlert)
@@ -246,6 +274,7 @@ object ObdManager {
             val full = n % FULL_EVERY == 0
             val codesDue = full && System.currentTimeMillis() - lastCodes > CODES_EVERY_MS
             val snap = session.read(latest, full, readCodes = codesDue)
+            session.freeze?.let { f -> appCtx?.let { c -> saveFreeze(c, f) } }
             if (codesDue) lastCodes = System.currentTimeMillis()
             latest = snap
             val answered = snap.coolantC != null || snap.rpm != null || snap.speedKmh != null

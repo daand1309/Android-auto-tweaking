@@ -41,6 +41,9 @@ class ScreenshotTour {
         shell("settings put secure immersive_mode_confirmations confirmed")
         Prefs(ctx).apply {
             greetingEnabled = true; greetingName = "Mr. Dickhoff"; greetingStyle = "butler"; carName = "ASX"
+            // What the car would have saved with the P0420 shown elsewhere in the tour, and its catalyst test over drives.
+            freezeFrame = com.daand.drivemusic.obd.FreezeFrame("P0420", mapOf(0x0D to 72.0, 0x0C to 2350.0, 0x05 to 88.0, 0x04 to 34.0)).encode()
+            catalystLog = "1731500000000:0.780;1731600000000:0.840;1731700000000:0.910"
             obdEnabled = true; obdDeviceName = "Android-Vlink"; obdDevice = "00:11:22:33:44:55"
             weatherPlace = "Noordwijk"; lastWeatherSummary = "6° · light rain · 70% rain"; lastWeatherAt = System.currentTimeMillis()
             lastDrive = "Thu 12 Nov 17:40 - 23 min, 1 pause(s), 1 auto-resume(s)\nCar: 18.4 km · 6.3 L/100km · 1.16 L used"

@@ -174,6 +174,27 @@ object Elm327 {
             .map { (a, b) -> code(a, b) }.distinct()
     }
 
+    /** 01-51, the fuel the car runs on, as the fuel the price lookup asks for; null if it isn't pump fuel. */
+    fun fuelType(lines: List<String>): com.daand.drivemusic.FuelPrices.Fuel? = when (pidData(lines, 0x51)?.firstOrNull()) {
+        0x01, 0x09 -> com.daand.drivemusic.FuelPrices.Fuel.EURO95      // petrol (also bi-fuel running on petrol)
+        0x04, 0x13 -> com.daand.drivemusic.FuelPrices.Fuel.DIESEL
+        0x05, 0x0C -> com.daand.drivemusic.FuelPrices.Fuel.LPG
+        else -> null
+    }
+
+    /** Mode 02 data for [pid] from freeze frame 0 (after "42 <pid> 00"). */
+    fun freezeData(lines: List<String>, pid: Int): List<Int>? {
+        for (line in lines) {
+            val b = bytes(line)
+            if (b.size >= 4 && b[0] == 0x42 && b[1] == pid && b[2] == 0x00) return b.drop(3)
+        }
+        return null
+    }
+
+    /** The fault code that stored the freeze frame (02 02 00), or null when there is none. */
+    fun freezeCode(lines: List<String>): String? =
+        freezeData(lines, 0x02)?.takeIf { it.size >= 2 && (it[0] != 0 || it[1] != 0) }?.let { code(it[0], it[1]) }
+
     /** Two bytes -> "P0420" (first two bits pick P/C/B/U). */
     fun code(a: Int, b: Int): String {
         val letter = "PCBU"[(a shr 6) and 0x3]

@@ -195,6 +195,21 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putBoolean("fuel_price_auto", v).apply()
 
     /** Which fuel this car takes (see FuelPrices.Fuel: EURO95 / DIESEL / AUTOGAS). */
+    /** You picked the fuel type yourself: the car's own answer (01-51) doesn't overrule it. */
+    var fuelTypeSetByUser: Boolean
+        get() = sp.getBoolean("fuel_type_by_user", false)
+        set(v) = sp.edit().putBoolean("fuel_type_by_user", v).apply()
+
+    /** The catalytic converter's self-test over time: "time:closeness;..." (see OnBoardTests). */
+    var catalystLog: String
+        get() = sp.getString("catalyst_log", "") ?: ""
+        set(v) = sp.edit().putString("catalyst_log", v).apply()
+
+    /** The last freeze frame: "P0420|pid=value,pid=value" (what the car saved when the code was stored). */
+    var freezeFrame: String
+        get() = sp.getString("freeze_frame", "") ?: ""
+        set(v) = sp.edit().putString("freeze_frame", v).apply()
+
     var fuelType: String
         get() = sp.getString("fuel_type", FuelPrices.Fuel.EURO95.code) ?: FuelPrices.Fuel.EURO95.code
         set(v) = sp.edit().putString("fuel_type", v).apply()
@@ -475,6 +490,7 @@ class Prefs(context: Context) {
         "last_update_check", "notified_update", "update_status", "last_seen_music_app", "last_music_change_at",
         "parked_spot", "told_news", "follow_topic", "follow_until", "obd_told",
         "service_reminded", "battery_log", "battery_warned", "trend_told", "trend_say", "code_log_stored", "code_log_pending", "battery_events", "last_drive_end", "adapter_parked",
+        "catalyst_log", "freeze_frame",
         // The Azure key never leaves the phone; the usage count must not be reset by restoring an old backup.
         "azure_key", "cloud_voice_chars", "cloud_voice_month",
         // Questions that were open on the old phone, and a fuel price quoted for the old phone's area

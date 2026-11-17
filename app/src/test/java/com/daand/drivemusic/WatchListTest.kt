@@ -91,4 +91,15 @@ class WatchListTest {
         assertEquals("a count smaller than the list doesn't back it", 0, faults(2))
         assertEquals("the car's own matching count does", 6, faults(6))
     }
+
+    @Test fun theCatalystsOwnTestNearItsLimitIsAnEarlyWarning() {
+        fun issues(c: com.daand.drivemusic.obd.OnBoardTests.Catalyst?) = WatchList.build(CodeTracker(), CodeTracker(), emptyList(),
+            carCount = null, trends = emptyList(), dutch = false, catalyst = c)
+        assertTrue("comfortably within its limit: nothing to say", issues(com.daand.drivemusic.obd.OnBoardTests.Catalyst(0.5, true)).isEmpty())
+        val near = issues(com.daand.drivemusic.obd.OnBoardTests.Catalyst(0.92, true)).single()
+        assertEquals(WatchList.Level.EARLY, near.level)
+        assertTrue(near.title, near.title.contains("92%"))
+        val failing = issues(com.daand.drivemusic.obd.OnBoardTests.Catalyst(1.1, false)).single()
+        assertTrue(failing.title, failing.title.contains("fails"))
+    }
 }

@@ -45,10 +45,14 @@ class AdapterLinkTest {
 
     @Test fun onlyQuestionsCanEverBeSent() {
         for (ok in listOf("ATZ", "ATE0", "ATL0", "ATS0", "ATH0", "ATAT1", "ATSP0", "ATDP", "ATI", "ATRV",
-            "0100", "010C", "010C0D05", "010C0D050F112F", "03", "07", "0A", "0902")) assertTrue(ok, ReadOnly.allowed(ok))
+            "0100", "010C", "010C0D05", "010C0D050F112F", "03", "07", "0A", "0902",
+            // Read-only too: freeze frame (mode 02: pid + frame 00) and on-board test results (mode 06).
+            "020200", "020C00", "0600", "0621")) assertTrue(ok, ReadOnly.allowed(ok))
         // 04 clears fault codes; 08 controls systems; 2E/31/3B write and run routines (UDS); AT MA floods the bus.
         for (no in listOf("04", "0400", "08", "0801", "2E", "31", "3B", "1101", "27", "AT MA", "ATMA", "ATPP", "ATWS",
-            "ATSH7E0", "ATCRA", "01", "010C0D050F112F33", "0C", "", "0100\r04", "010c")) assertFalse("'$no'", ReadOnly.allowed(no))
+            "ATSH7E0", "ATCRA", "01", "010C0D050F112F33", "0C", "", "0100\r04", "010c",
+            // Only the exact read shapes of modes 02 and 06.
+            "02", "0202", "02020001", "06", "062100", "0621\r04")) assertFalse("'$no'", ReadOnly.allowed(no))
         val a = Adapter { listOf(0L to "OK\r\r>") }
         try { a.link().send("04", 500); fail("must refuse") } catch (e: IllegalArgumentException) { }
         assertTrue("nothing reached the adapter", a.sent.isEmpty())

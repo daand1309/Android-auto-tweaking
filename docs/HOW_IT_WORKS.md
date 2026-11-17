@@ -110,6 +110,11 @@ warnings, the setup checklist or the Help page). Back on any page returns to Hom
 - **Car tab** (with the OBD adapter): speed, RPM, engine temperature (blue cold / green good / red hot),
   fuel use now, this trip (km and L/100), battery, range left, outside and intake temperature.
   Warnings appear on top: amber = get it checked, red = stop or be careful.
+  Besides the live values the app reads, once per connection: the **fuel type** the car reports (sets
+  Euro 95 / diesel / LPG for prices unless you picked one), the **catalytic converter's own self-test**
+  (mode 06: how close it is to its limit - shown in *Possible issues* from 85%, with its trend over drives),
+  and, when a fault code is stored, the **freeze frame** (mode 02: speed, rpm, temperature… at that moment).
+  All read-only.
   *⛽ Find fuel* (under the numbers): the nearest station with a good price (at most 5 cents a litre
   above the cheapest) and the cheapest within 15 km, for your fuel type - motorway stations (often 20+
   cents dearer, recognised by the A-road in their address) are left out; tap one and Waze (or Google

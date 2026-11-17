@@ -1314,8 +1314,14 @@ class MainActivity : Activity() {
         com.daand.drivemusic.obd.CodeTracker(prefs.storedCodeLog), com.daand.drivemusic.obd.CodeTracker(prefs.pendingCodeLog),
         live?.codes.orEmpty(), live?.codeCount,
         com.daand.drivemusic.obd.CarTrends.findings(com.daand.drivemusic.obd.TripHistory.load(this).mapNotNull { it.health }),
-        prefs.greetingDutch)
+        prefs.greetingDutch,
+        catalyst = latestCatalyst())
     }
+
+    /** The catalyst self-test's latest result (saved per drive, see ObdManager). */
+    private fun latestCatalyst(): com.daand.drivemusic.obd.OnBoardTests.Catalyst? =
+        com.daand.drivemusic.obd.CatalystLog.decode(prefs.catalystLog).lastOrNull()?.second
+            ?.let { com.daand.drivemusic.obd.OnBoardTests.Catalyst(it, it <= 1.0) }
 
     /** "Possible issues": opened from the Fault box on Home. */
     private fun renderIssues() {
@@ -1353,6 +1359,24 @@ class MainActivity : Activity() {
                     })
                 })
             }
+        }
+        // What the car saved when the code was stored (mode 02), and its own catalyst test (mode 06).
+        com.daand.drivemusic.obd.FreezeFrame.decode(prefs.freezeFrame)?.let { f ->
+            header("When ${f.code} was stored")
+            f.values.forEach { (pid, v) ->
+                statRow(com.daand.drivemusic.obd.Pids.ALL.firstOrNull { it.pid == pid }?.let { if (prefs.greetingDutch) it.nl else it.en } ?: "%02X".format(pid),
+                    com.daand.drivemusic.obd.Pids.format(pid, v))
+            }
+            text("The car saves this snapshot at the moment it stores a fault code - it helps a garage see what was going on.")
+        }
+        com.daand.drivemusic.obd.CatalystLog.decode(prefs.catalystLog).let { log ->
+            if (log.isEmpty()) return@let
+            header("Catalytic converter self-test")
+            val now = log.last().second
+            statRow("Latest", "%d%% of its limit %s".format(java.util.Locale.ROOT, Math.round(now * 100), if (now <= 1.0) "✓" else "✗"))
+            if (log.size >= 3) statRow("Over ${log.size} drives", "%d%% → %d%%".format(java.util.Locale.ROOT,
+                Math.round(log.first().second * 100), Math.round(now * 100)))
+            text("The car tests its own catalytic converter while driving; above 100% it stores P0420.")
         }
         if (issues.isNotEmpty()) text("Codes are only read, never cleared - clearing hides a problem instead of fixing it. " +
             "Live values and the full diagnostics are on Car data.")
@@ -2100,6 +2124,7 @@ class MainActivity : Activity() {
                 android.app.AlertDialog.Builder(this).setTitle("Which fuel does the car take?")
                     .setItems(FuelPrices.Fuel.values().map { it.en }.toTypedArray()) { _, i ->
                         prefs.fuelType = FuelPrices.Fuel.values()[i].code
+                        prefs.fuelTypeSetByUser = true
                         refreshFuelPrice("you changed the fuel type"); render()
                     }.show()
             }
