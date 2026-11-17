@@ -81,6 +81,8 @@ object AdapterReminder {
 
     /** The check itself (no delay), so a test can call it directly. Writes a line only when it's missing. */
     internal fun verifyNow(ctx: Context) {
+        // Answered (or a new drive cleared it) before this late check: gone on purpose, not a problem.
+        if (!Prefs(ctx).adapterPromptPending) return
         val why = visibility(ctx, ctx.getSystemService(NotificationManager::class.java))
         if (why.startsWith("NOT")) DriveLog.log("OBD: adapter reminder $why")
     }

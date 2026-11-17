@@ -56,6 +56,16 @@ class AdapterReminderTest {
         assertEquals(com.daand.drivemusic.obd.BatteryLog.ADAPTER_UNKNOWN, Prefs(ctx).adapterWhileParked)
     }
 
+    /** The visibility check runs 1.2 s after posting: answered by then, it's gone on purpose - no "NOT shown". */
+    @Test fun aLateCheckAfterAnAnswerIsNotAProblem() {
+        DriveLog.init(ctx)
+        DriveLog.clear()
+        AdapterReminder.post(ctx)
+        AdapterReminderReceiver().onReceive(ctx, Intent(AdapterReminder.ACTION_TAKEN_OUT))   // answered quickly
+        AdapterReminder.verifyNow(ctx)                                                         // the late check
+        assertFalse(DriveLog.readAll(), DriveLog.readAll().contains("NOT shown"))
+    }
+
     /** The same question is shown inside the app (home screen / Car data), so it can be answered later. */
     @Test fun alsoPendingInTheAppUntilAnswered() {
         DriveLog.init(ctx)
