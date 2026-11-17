@@ -11,27 +11,29 @@ import android.content.Context
  * The decision is pure and unit tested; [isOnNow] / [tapNow] wire it to the app.
  */
 object ResumeToggle {
-    data class State(val setting: Boolean, val offThisDrive: Boolean)
+    /** [thisDrive]: this drive's own choice - on, off, or null = follow the setting. */
+    data class State(val setting: Boolean, val thisDrive: Boolean?)
 
-    fun isOn(setting: Boolean, offThisDrive: Boolean) = setting && !offThisDrive
+    fun isOn(setting: Boolean, thisDrive: Boolean?) = thisDrive ?: setting
 
-    fun tap(s: State, inDrive: Boolean): State = when {
-        !inDrive -> State(setting = !s.setting, offThisDrive = false)
-        !s.setting -> State(setting = true, offThisDrive = false)        // you clearly want it: switch it on
-        s.offThisDrive -> State(setting = true, offThisDrive = false)    // back on for this drive
-        else -> State(setting = true, offThisDrive = true)               // off, for this drive only
+    /** In a drive: flip this drive's choice (back to null when it matches the setting); the setting
+     *  itself is untouched in both directions. Parked: flip the setting. */
+    fun tap(s: State, inDrive: Boolean): State {
+        if (!inDrive) return State(setting = !s.setting, thisDrive = null)
+        val next = !isOn(s.setting, s.thisDrive)
+        return State(s.setting, if (next == s.setting) null else next)
     }
 
-    fun isOnNow(ctx: Context) = isOn(Prefs(ctx).autoResume, DriveMonitorService.instance?.resumeOffThisDrive == true)
+    fun isOnNow(ctx: Context) = isOn(Prefs(ctx).autoResume, DriveMonitorService.instance?.resumeThisDrive)
 
     /** A tap on any auto-resume button; [source] goes in the log. Returns the new on/off. */
     fun tapNow(ctx: Context, source: String): Boolean {
         val p = Prefs(ctx)
         val svc = DriveMonitorService.instance
         val inDrive = svc?.inDrive == true
-        val next = tap(State(p.autoResume, svc?.resumeOffThisDrive == true), inDrive)
+        val next = tap(State(p.autoResume, svc?.resumeThisDrive), inDrive)
         p.autoResume = next.setting
-        svc?.resumeOffThisDrive = next.offThisDrive
+        svc?.resumeThisDrive = next.thisDrive
         val on = isOnNow(ctx)
         DriveLog.log("$source: auto-resume " + when {
             !inDrive -> if (on) "setting on" else "setting off"

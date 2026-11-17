@@ -81,6 +81,7 @@ class NewUserJourney {
     @Test
     fun aNewUserSetsUpAndDrives() {
         shell("mkdir -p $dir"); shell("sh -c 'rm -f $dir/j*.png $dir/journey.txt'")
+        shell("settings put secure immersive_mode_confirmations confirmed")   // no "Viewing full screen" tip over Drive Mode
         // ---- A clean install: no settings, no permissions, no history.
         ctx.getSharedPreferences("drive_music", 0).edit().clear().commit()
         File(ctx.filesDir, "trips.json").delete()

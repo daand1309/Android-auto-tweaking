@@ -1,6 +1,5 @@
 package com.daand.drivemusic.car
 
-import com.daand.drivemusic.ResumeToggle
 import android.media.MediaDescription
 import android.media.MediaMetadata
 import android.media.browse.MediaBrowser
@@ -19,6 +18,7 @@ import com.daand.drivemusic.Greeter
 import com.daand.drivemusic.News
 import com.daand.drivemusic.Prefs
 import com.daand.drivemusic.R
+import com.daand.drivemusic.ResumeToggle
 import com.daand.drivemusic.WelcomeAnnouncer
 
 /**
@@ -188,6 +188,7 @@ class DriveMediaService : MediaBrowserService() {
     private fun publishState() {
         val src = mirrored?.playbackState
         val p = Prefs(this)
+        val resumeOn = ResumeToggle.isOnNow(this)
         val state = PlaybackState.Builder()
             // Keep YouTube Music's own timestamp, or the car's progress bar drifts by however old the update is.
             .setState(src?.state ?: PlaybackState.STATE_PAUSED, src?.position ?: 0L, src?.playbackSpeed ?: 0f,
@@ -199,8 +200,8 @@ class DriveMediaService : MediaBrowserService() {
             )
             .addCustomAction(PlaybackState.CustomAction.Builder(MediaMenu.WELCOME, "Welcome briefing", R.drawable.ic_stat_note).build())
             .addCustomAction(PlaybackState.CustomAction.Builder(MediaMenu.RESUME,
-                if (ResumeToggle.isOnNow(this)) "Auto-resume: on" else "Auto-resume: off",
-                if (ResumeToggle.isOnNow(this)) R.drawable.ic_answer_yes else R.drawable.ic_answer_no).build())
+                if (resumeOn) "Auto-resume: on" else "Auto-resume: off",
+                if (resumeOn) R.drawable.ic_answer_yes else R.drawable.ic_answer_no).build())
             .build()
         session.setPlaybackState(state)
     }

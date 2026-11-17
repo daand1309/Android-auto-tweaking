@@ -1,6 +1,5 @@
 package com.daand.drivemusic.car
 
-import com.daand.drivemusic.ResumeToggle
 import android.os.Handler
 import android.os.Looper
 import androidx.car.app.CarContext
@@ -11,6 +10,7 @@ import androidx.lifecycle.LifecycleOwner
 import com.daand.drivemusic.Briefing
 import com.daand.drivemusic.DriveMonitorService
 import com.daand.drivemusic.Prefs
+import com.daand.drivemusic.ResumeToggle
 import com.daand.drivemusic.WelcomeAnnouncer
 
 /** The Drive Music screen on the car display: now-playing, media controls and a few settings. */

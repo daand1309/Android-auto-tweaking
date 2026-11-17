@@ -36,6 +36,9 @@ class ScreenshotTour {
     }
 
     private fun setUpRealisticState() {
+        // Drive Mode hides the system bars, and on a fresh emulator Android then shows its one-time
+        // "Viewing full screen / Got it" tip across the middle - over every Drive Mode screenshot.
+        shell("settings put secure immersive_mode_confirmations confirmed")
         Prefs(ctx).apply {
             greetingEnabled = true; greetingName = "Mr. Dickhoff"; greetingStyle = "butler"; carName = "ASX"
             obdEnabled = true; obdDeviceName = "Android-Vlink"; obdDevice = "00:11:22:33:44:55"

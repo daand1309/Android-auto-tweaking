@@ -153,7 +153,14 @@ class DriveMonitorService : NotificationListenerService() {
     private var lastPauseClue = ""
     private var lastAutoResumeAt = 0L
     /** Set when you pause again right after an auto-resume: we take the hint for the rest of the drive. */
-    var resumeOffThisDrive = false
+    /** This drive's own auto-resume choice (a button in the car, or the app when your pauses look
+     *  deliberate): on, off, or null = follow the setting. Cleared when a drive starts. */
+    var resumeThisDrive: Boolean? = null
+    var resumeOffThisDrive: Boolean
+        get() = resumeThisDrive == false
+        set(v) { resumeThisDrive = if (v) false else null }
+    /** Will a pause be resumed right now? This drive's choice first, else the setting. */
+    private val autoResumeNow get() = ResumeToggle.isOn(prefs.autoResume, resumeThisDrive)
     /** In the car right now (connected, or holding the drive through an Android Auto restart). */
     val inDrive get() = carConnected || holdingSince > 0
     private var firstCarEvent = true
@@ -314,7 +321,7 @@ class DriveMonitorService : NotificationListenerService() {
             lastNotableAudio = ""
             cancelPendingPause()
             resumeTimes.clear()
-            resumeOffThisDrive = false
+            resumeThisDrive = null
             lastAutoResumeAt = 0L
             lastPauseClue = ""
             userPausedViaUi = false
@@ -1249,12 +1256,9 @@ class DriveMonitorService : NotificationListenerService() {
     // ---------------------------------------------------------------- auto resume
 
     private fun scheduleResume(delayOverrideMs: Long? = null) {
-        if (!prefs.autoResume) {
-            DriveLog.log("Auto-resume is off - leaving it paused")
-            return
-        }
-        if (resumeOffThisDrive) {
-            DriveLog.log("Auto-resume paused for this drive - leaving it paused")
+        if (!autoResumeNow) {
+            DriveLog.log(if (resumeThisDrive == false) "Auto-resume paused for this drive - leaving it paused"
+                else "Auto-resume is off - leaving it paused")
             return
         }
         cancelResume()
@@ -1262,7 +1266,7 @@ class DriveMonitorService : NotificationListenerService() {
         var waits = 0
         val r = object : Runnable {
             override fun run() {
-                if (!carConnected || !prefs.autoResume || resumeOffThisDrive) { resumeRunnable = null; return }
+                if (!carConnected || !autoResumeNow) { resumeRunnable = null; return }
                 val c = findYtm()
                 if (c?.playbackState?.state == PlaybackState.STATE_PLAYING) { resumeRunnable = null; return }
 
