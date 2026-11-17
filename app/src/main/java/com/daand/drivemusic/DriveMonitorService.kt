@@ -1108,6 +1108,9 @@ class DriveMonitorService : NotificationListenerService() {
         return GreetingText.songFromMeta(t, GreetingText.cleanMeta(artist).removeSuffix(" - Topic"))
     }
 
+    /** The current song's cover, if the music app gives one (see [CoverArt]). */
+    fun currentArt(): android.graphics.Bitmap? = CoverArt.from((ytm?.takeIf { isMusic(it) } ?: findYtm())?.metadata)
+
     private fun findYtm(): MediaController? = try {
         sessions.getActiveSessions(listenerComponent)
             .firstOrNull { isMusic(it) }

@@ -26,6 +26,9 @@ class DriveModeActivity : Activity() {
 
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var nowPlaying: TextView
+    /** The song's cover (from the music app itself - see CoverArt); hidden when it has none. */
+    private lateinit var cover: android.widget.ImageView
+    private var coverShown: android.graphics.Bitmap? = null
     private lateinit var status: TextView
     private lateinit var playBtn: android.widget.ImageButton
     private lateinit var resumeBtn: Button
@@ -397,6 +400,11 @@ class DriveModeActivity : Activity() {
             setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD)
             gravity = Gravity.CENTER; fitText(16, 30, 4)
         }
+        cover = SquareImage(this, if (wide) 1f else 0.42f).apply {
+            scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+            background = Style.rounded(Style.SURFACE, dp(Style.R_BIG).toFloat()); clipToOutline = true
+            contentDescription = "Cover"; visibility = View.GONE
+        }
         status = TextView(this).apply {
             setTextColor(Style.TEXT2); textSize = 15f; gravity = Gravity.CENTER; maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -431,6 +439,8 @@ class DriveModeActivity : Activity() {
                 setBackgroundColor(Style.BG); setPadding(pad, pad, pad, pad)
             }
             val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
+            left.addView(cover, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, 0, 1.3f).apply {
+                gravity = Gravity.CENTER_HORIZONTAL; setMargins(dp(6), dp(6), dp(6), dp(2)) })
             left.addView(nowPlaying, vLp(weight = 1f))
             left.addView(status, vLp())
             val right = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -445,7 +455,12 @@ class DriveModeActivity : Activity() {
             setBackgroundColor(Style.BG)
             setPadding(pad, pad, pad, pad)
         }
-        root.addView(nowPlaying, vLp(weight = 2f))
+        // Portrait: the cover beside the song (it hides itself when the music app gives none).
+        val songRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        songRow.addView(cover, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.MATCH_PARENT)
+            .apply { marginEnd = dp(14) })
+        songRow.addView(nowPlaying, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
+        root.addView(songRow, vLp(weight = 2f))
         root.addView(status, vLp())
         root.addView(controls, vLp(weight = 3f))
         root.addView(bottom, vLp(weight = 1.4f))
@@ -476,7 +491,8 @@ class DriveModeActivity : Activity() {
         val playing = s?.isPlaying() == true
         val resumeOn = ResumeToggle.isOnNow(this)
         val speaking = Voice.speaking
-        val key = "$songText|$statusText|$playing|$resumeOn|$speaking"
+        val art = s?.currentArt()
+        val key = "$songText|$statusText|$playing|$resumeOn|$speaking|${System.identityHashCode(art)}"
         if (key == lastShown) return
         lastShown = key
         // While something is being said, this button cuts it short rather than starting another one.
@@ -489,6 +505,12 @@ class DriveModeActivity : Activity() {
             welcomeBtn.contentDescription = if (speaking) "Skip the voice" else "Play the welcome"
         }
         Motion.swapText(nowPlaying, songText)
+        if (art !== coverShown) {
+            coverShown = art
+            cover.setImageBitmap(art)
+            cover.visibility = if (art == null) View.GONE else View.VISIBLE
+            if (art != null) Motion.fadeIn(cover)
+        }
         status.text = statusText
         val icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play
         if (playBtn.tag != icon) { if (playBtn.tag != null) Motion.pop(playBtn); playBtn.tag = icon }
@@ -535,6 +557,18 @@ class DriveModeActivity : Activity() {
         setTextColor(Style.TEXT); background = Style.button(Style.SURFACE2, dp(Style.R_CARD).toFloat()); stateListAnimator = null
         setOnClickListener { onClick() }
         Feel.press(this)
+    }
+
+    /**
+     * A square picture: as tall as its row in portrait (but at most [maxShare] of the width, so the
+     * song text keeps room), as large as its column allows in landscape.
+     */
+    private class SquareImage(ctx: android.content.Context, private val maxShare: Float) : android.widget.ImageView(ctx) {
+        override fun onMeasure(widthSpec: Int, heightSpec: Int) {
+            val w = MeasureSpec.getSize(widthSpec); val h = MeasureSpec.getSize(heightSpec)
+            val side = minOf(if (h > 0) h else w, (w * maxShare).toInt()).coerceAtLeast(0)
+            setMeasuredDimension(side, side)
+        }
     }
 
     /** Vertical child: full width, weighted height (0 so the weight controls it). */

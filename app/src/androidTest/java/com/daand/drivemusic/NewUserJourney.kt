@@ -148,7 +148,10 @@ class NewUserJourney {
                 }, main)
                 setMetadata(android.media.MediaMetadata.Builder()
                     .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, "Mr. Brightside")
-                    .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, "The Killers").build())
+                    .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, "The Killers")
+                    // A cover, like the music app gives one, so the screenshots show where it goes.
+                    .putBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART, android.graphics.Bitmap.createBitmap(300, 300,
+                        android.graphics.Bitmap.Config.ARGB_8888).apply { eraseColor(0xFF3B5BA5.toInt()) }).build())
                 isActive = true
             }
             setState(PlaybackState.STATE_PAUSED)

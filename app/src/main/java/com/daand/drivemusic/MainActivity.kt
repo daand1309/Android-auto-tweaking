@@ -1581,7 +1581,8 @@ class MainActivity : Activity() {
     private fun homeSignature(): String {
         val svc = DriveMonitorService.instance
         val weatherFresh = System.currentTimeMillis() - prefs.lastWeatherAt < 3 * 60 * 60 * 1000L
-        return listOf(svc != null, prefs.lastCarState, svc?.currentSong(), prefs.lastWeatherSummary, weatherFresh,
+        return listOf(svc != null, prefs.lastCarState, svc?.currentSong(), svc?.currentArt()?.let { System.identityHashCode(it) },
+            prefs.lastWeatherSummary, weatherFresh,
             prefs.lastDrive, prefs.parkedSpot, availableUpdate?.versionName,
             // The adapter question and "the car is off": show up (and go away) without a manual refresh.
             prefs.adapterPromptPending, com.daand.drivemusic.obd.ObdManager.carOffForMs() / 60_000L,
@@ -1677,9 +1678,17 @@ class MainActivity : Activity() {
         if (driving && svc != null) column.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
             background = Style.rounded(Style.SURFACE2, dp(12).toFloat())
-            setPadding(dp(12), dp(4), dp(4), dp(4))
+            setPadding(dp(8), dp(4), dp(4), dp(4))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 .apply { setMargins(dp(12), 0, dp(12), dp(8)) }
+            // The cover, as the music app gives it (nothing is downloaded).
+            svc.currentArt()?.let { art ->
+                addView(android.widget.ImageView(this@MainActivity).apply {
+                    setImageBitmap(art); scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                    background = Style.rounded(Style.SURFACE, dp(8).toFloat()); clipToOutline = true
+                    contentDescription = "Cover"
+                }, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(10) })
+            }
             addView(TextView(this@MainActivity).apply {
                 text = song?.let { if (it.artist.isNotBlank()) "${it.title}\n${it.artist}" else it.title } ?: "Nothing playing"
                 textSize = 13f; setTextColor(Style.TEXT); setOnClickListener { openMusicApp() }
