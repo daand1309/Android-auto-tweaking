@@ -467,8 +467,13 @@ class CarAlerts(
         /** "Moving" for the charging check: creeping in a queue still idles the alternator. */
         const val MOVING_KMH = 10
 
-        /** Off idle, or actually moving: the two conditions in which a low voltage does mean something. */
-        fun chargingCounts(s: CarSnapshot) = (s.rpm ?: 0) >= WEAK_CHARGE_MIN_RPM || (s.speedKmh ?: 0) >= MOVING_KMH
+        /**
+         * Actually moving: then a low voltage means something. Standing still it doesn't, even off idle -
+         * the ASX's cold fast idle is ~1300 rpm with the same loads and the same ~12.3 V. The rpm only
+         * stands in when the car doesn't report its speed at all. Same rule as the charging trend
+         * (HealthStats takes charge readings only while moving), so the voice and the trend agree.
+         */
+        fun chargingCounts(s: CarSnapshot) = s.speedKmh?.let { it >= MOVING_KMH } ?: ((s.rpm ?: 0) >= WEAK_CHARGE_MIN_RPM)
         /** The battery recovers after a start (12.3 V then is normal): don't judge charging until this
          *  long after the engine started running - 5 min from a cold start, when recovery is slowest. */
         const val POST_START_CHARGING_MS = 3 * 60_000L

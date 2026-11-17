@@ -14,14 +14,18 @@ object WatchList {
 
     data class Issue(val level: Level, val code: String?, val title: String, val detail: String)
 
-    fun build(stored: CodeTracker, pending: CodeTracker, carReportsNow: List<String>,
+    /** [carCount] = how many codes the car itself says it has stored (PID 01), null if unknown. */
+    fun build(stored: CodeTracker, pending: CodeTracker, carReportsNow: List<String>, carCount: Int?,
               trends: List<CarTrends.Finding>, dutch: Boolean): List<Issue> {
         fun what(c: String) = TroubleCodes.explanation(c, dutch).what
         val out = mutableListOf<Issue>()
         // What the car reports right now is first-hand, but only a believable list counts as confirmed:
         // one garbled answer can carry six invented codes (CarAlerts.MAX_PLAUSIBLE_CODES). The voice takes
         // the same line, so the page and the greeting agree about what is real.
-        val believableNow = if (carReportsNow.size <= CarAlerts.MAX_PLAUSIBLE_CODES) carReportsNow else emptyList()
+        // Exactly the voice's rule (CarAlerts.countAgrees): the car's own believable count must cover the
+        // list. Without it a code is only confirmed by coming back in several reads (the tracker below).
+        val countAgrees = carCount != null && carCount <= CarAlerts.MAX_PLAUSIBLE_CODES && carReportsNow.size <= carCount
+        val believableNow = if (countAgrees) carReportsNow else emptyList()
         val faults = (believableNow + stored.codes().filter { stored.confirmed(it) }).distinct()
         faults.forEach { c ->
             out += Issue(Level.FAULT, c, "$c: ${what(c)}",

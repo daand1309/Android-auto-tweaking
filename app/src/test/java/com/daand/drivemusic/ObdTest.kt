@@ -204,6 +204,12 @@ class ObdTest {
         val idle = CarAlerts()
         assertTrue("a loaded idle at 12.3 V is normal",
             (0..120).flatMap { idle.checkOthers(CarSnapshot(it * 5_000L, rpm = 900, volts = 12.3)) }.isEmpty())
+        // Standing still at the cold fast idle (~1300 rpm) with the same loads: still not driving, still
+        // normal. The rpm alone must not make a standing car's voltage count (the trend rule needs
+        // movement too - the two must agree).
+        val fastIdle = CarAlerts()
+        assertTrue("a standing car at a fast idle is not a charging fault",
+            (0..120).flatMap { fastIdle.checkOthers(CarSnapshot(it * 5_000L, rpm = 1_300, speedKmh = 0, volts = 12.3)) }.isEmpty())
         // Driving: the post-start grace (3 min) and then 90 s of holding, before the alternator is blamed.
         // Right after the start the battery is still recovering (the real ASX reads ~12.3 V then).
         val b = CarAlerts()

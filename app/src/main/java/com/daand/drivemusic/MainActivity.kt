@@ -1307,7 +1307,8 @@ class MainActivity : Activity() {
     /** Everything the app keeps an eye on: confirmed codes, codes being checked, early codes, trends. */
     private fun watchIssues(): List<com.daand.drivemusic.obd.WatchList.Issue> = com.daand.drivemusic.obd.WatchList.build(
         com.daand.drivemusic.obd.CodeTracker(prefs.storedCodeLog), com.daand.drivemusic.obd.CodeTracker(prefs.pendingCodeLog),
-        (if (prefs.obdEnabled) com.daand.drivemusic.obd.ObdManager.live()?.codes else null).orEmpty(),
+        (if (prefs.obdEnabled) com.daand.drivemusic.obd.ObdManager.live() else null)?.codes.orEmpty(),
+        (if (prefs.obdEnabled) com.daand.drivemusic.obd.ObdManager.live() else null)?.codeCount,
         com.daand.drivemusic.obd.CarTrends.findings(com.daand.drivemusic.obd.TripHistory.load(this).mapNotNull { it.health }),
         prefs.greetingDutch)
 
