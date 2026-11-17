@@ -462,7 +462,7 @@ class MainActivity : Activity() {
         HomeFeatures.byGroup().forEach { (group, list) ->
             into.addView(TextView(this).apply {
                 text = group.en.uppercase(); textSize = 13f; setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Style.PRIMARY); letterSpacing = 0.08f; setPadding(dp(4), dp(18), 0, dp(4))
+                setTextColor(Style.TEXT2); letterSpacing = 0.08f; setPadding(dp(4), dp(18), 0, dp(4))
             })
             list.chunked(3).forEach { chunk ->
                 into.addView(LinearLayout(this).apply {
@@ -2581,7 +2581,7 @@ class MainActivity : Activity() {
         group = null
         root.addView(TextView(this).apply {
             text = s.uppercase(); textSize = 13f; setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Style.PRIMARY); letterSpacing = 0.08f
+            setTextColor(Style.TEXT2); letterSpacing = 0.08f
             setPadding(dp(4), dp(20), 0, dp(6))
         })
     }
