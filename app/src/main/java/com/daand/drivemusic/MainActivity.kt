@@ -1305,12 +1305,15 @@ class MainActivity : Activity() {
     }
 
     /** Everything the app keeps an eye on: confirmed codes, codes being checked, early codes, trends. */
-    private fun watchIssues(): List<com.daand.drivemusic.obd.WatchList.Issue> = com.daand.drivemusic.obd.WatchList.build(
+    private fun watchIssues(): List<com.daand.drivemusic.obd.WatchList.Issue> {
+        // One snapshot for both: the codes and the count that backs them must come from the same read.
+        val live = if (prefs.obdEnabled) com.daand.drivemusic.obd.ObdManager.live() else null
+        return com.daand.drivemusic.obd.WatchList.build(
         com.daand.drivemusic.obd.CodeTracker(prefs.storedCodeLog), com.daand.drivemusic.obd.CodeTracker(prefs.pendingCodeLog),
-        (if (prefs.obdEnabled) com.daand.drivemusic.obd.ObdManager.live() else null)?.codes.orEmpty(),
-        (if (prefs.obdEnabled) com.daand.drivemusic.obd.ObdManager.live() else null)?.codeCount,
+        live?.codes.orEmpty(), live?.codeCount,
         com.daand.drivemusic.obd.CarTrends.findings(com.daand.drivemusic.obd.TripHistory.load(this).mapNotNull { it.health }),
         prefs.greetingDutch)
+    }
 
     /** "Possible issues": opened from the Fault box on Home. */
     private fun renderIssues() {

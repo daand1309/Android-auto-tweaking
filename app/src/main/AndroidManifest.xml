@@ -121,7 +121,8 @@
         <activity
             android:name=".LogActivity"
             android:exported="false"
-            android:label="Drive logs" />
+            android:label="Drive logs"
+            android:theme="@style/Theme.DriveMusic" />
 
         <!-- Kept alive by Android once "Notification access" is granted. Gives us
              access to YouTube Music's media session and a persistent background process. -->

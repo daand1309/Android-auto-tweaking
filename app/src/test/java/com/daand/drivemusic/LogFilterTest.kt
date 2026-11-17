@@ -19,7 +19,6 @@ class LogFilterTest {
             "OBD: gave up for this drive",
             "OBD: couldn't save the trip (IOException)",
             "FUEL: lookup failed (UnknownHostException: no address)",
-            "FUEL: no position yet - keeping the manual price",
             "YouTube Music: PAUSED -> ERROR error='Upgrade naar Music Premium om deze functie te gebruiken'",
             "YouTube Music session destroyed (app closed or killed by the system?)",
             "!!! PAUSE #1 while driving. Clues: no clues (pause button / steering wheel / Hey Google?)",
@@ -33,6 +32,9 @@ class LogFilterTest {
 
     @Test fun leavesNormalDrivingOut() {
         listOf(
+            // The normal state on a phone that never granted location (the manual price is used):
+            // flagging it put two red lines in "Problems only" on every app open.
+            "FUEL: no position yet - keeping the manual price",
             "YouTube Music: PAUSED -> PLAYING",
             "YouTube Music: ERROR -> PAUSED",
             "START: success - YouTube Music is playing",

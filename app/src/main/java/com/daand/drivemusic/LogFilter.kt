@@ -21,7 +21,8 @@ object LogFilter {
         "OBD: alert OVERHEAT", "OBD: alert CHECK_ENGINE", "OBD: alert EARLY_CODE",
         "OBD: alert WEAK_CHARGING", "OBD: alert LOW_BATTERY", "OBD: alert THERMOSTAT",
         "OBD: alert LOW_FUEL", "early warning",
-        "no position",                                     // couldn't do what was asked
+        // Not "no position": the fuel lookup says that on every app open on a phone without location
+        // (the manual price is used) - normal, not something to fix.
     )
 
     /** Start/end of a drive: not a problem, but the context you need when reading one. */
