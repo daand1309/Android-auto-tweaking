@@ -199,20 +199,32 @@ class ObdTest {
         assertTrue(CarAlerts().checkOthers(CarSnapshot(0, rpm = 0, volts = 11.7)).isEmpty())
         assertTrue(a.checkOthers(CarSnapshot(0, rpm = 0, volts = 11.2)).isEmpty())                        // one reading: wait
         assertEquals(CarAlerts.Kind.LOW_BATTERY, a.checkOthers(CarSnapshot(6_000, rpm = 0, volts = 11.1)).single().kind)
-        // Right after the start the battery is still recovering (the real ASX reads ~12.3 V then):
-        // no charging warning until the post-start grace (3 min) has passed and the low voltage held 90 s.
-        assertTrue("just started: recovery time", a.checkOthers(CarSnapshot(5_000, rpm = 900, volts = 12.5)).isEmpty())
-        assertTrue("grace is not over", a.checkOthers(CarSnapshot(70_000, rpm = 900, volts = 12.5)).isEmpty())
-        assertTrue("grace not fully over", a.checkOthers(CarSnapshot(180_000, rpm = 900, volts = 12.5)).isEmpty())
-        assertTrue("hold not up yet", a.checkOthers(CarSnapshot(200_000, rpm = 900, volts = 12.5)).isEmpty())
-        assertEquals(CarAlerts.Kind.WEAK_CHARGING, a.checkOthers(CarSnapshot(295_000, rpm = 900, volts = 12.5)).single().kind)
-        assertTrue("one fuel read could be garbled: wait", a.checkOthers(CarSnapshot(300_000, rpm = 900, volts = 14.0, fuelPct = 9)).isEmpty())
-        for (t in 305_000L..335_000L step 5_000L) a.checkOthers(CarSnapshot(t, rpm = 900, volts = 14.0, fuelPct = 9))
-        assertEquals(CarAlerts.Kind.LOW_FUEL, a.checkOthers(CarSnapshot(340_000, rpm = 900, volts = 14.0, fuelPct = 9)).single().kind)
-        assertTrue(a.checkOthers(CarSnapshot(390_000, rpm = 900, volts = 14.0, fuelPct = 8)).isEmpty())
-        // A healthy alternator never triggers the charging warning.
+        // Standing still with the lights, fan and A/C on, the real ASX holds ~12.3 V: that is the
+        // alternator at idle, not a fault, so ten minutes of it must stay silent.
+        val idle = CarAlerts()
+        assertTrue("a loaded idle at 12.3 V is normal",
+            (0..120).flatMap { idle.checkOthers(CarSnapshot(it * 5_000L, rpm = 900, volts = 12.3)) }.isEmpty())
+        // Driving: the post-start grace (3 min) and then 90 s of holding, before the alternator is blamed.
+        // Right after the start the battery is still recovering (the real ASX reads ~12.3 V then).
         val b = CarAlerts()
-        assertTrue((0..20).flatMap { b.checkOthers(CarSnapshot(it * 5_000L, rpm = 2000, volts = 14.1)) }.isEmpty())
+        b.checkOthers(CarSnapshot(0, rpm = 2_000, speedKmh = 80, volts = 12.5))                            // the clock starts
+        assertTrue("grace is not over", b.checkOthers(CarSnapshot(170_000, rpm = 2_000, speedKmh = 80, volts = 12.5)).isEmpty())
+        assertTrue("hold not up yet", b.checkOthers(CarSnapshot(200_000, rpm = 2_000, speedKmh = 80, volts = 12.5)).isEmpty())
+        assertTrue("hold not up yet", b.checkOthers(CarSnapshot(280_000, rpm = 2_000, speedKmh = 80, volts = 12.5)).isEmpty())
+        // A standstill in between doesn't count towards the hold: it starts again when the car moves.
+        assertTrue("stopped in a queue", b.checkOthers(CarSnapshot(285_000, rpm = 700, speedKmh = 0, volts = 12.4)).isEmpty())
+        assertTrue("moving again, hold restarts", b.checkOthers(CarSnapshot(290_000, rpm = 2_000, speedKmh = 80, volts = 12.5)).isEmpty())
+        assertEquals(CarAlerts.Kind.WEAK_CHARGING,
+            b.checkOthers(CarSnapshot(385_000, rpm = 2_000, speedKmh = 80, volts = 12.5)).single().kind)
+        // Fuel: one read can be garbled, so it must hold for 40 s.
+        val c = CarAlerts()
+        assertTrue("one fuel read could be garbled: wait", c.checkOthers(CarSnapshot(0, rpm = 900, volts = 14.0, fuelPct = 9)).isEmpty())
+        for (t in 5_000L..35_000L step 5_000L) c.checkOthers(CarSnapshot(t, rpm = 900, volts = 14.0, fuelPct = 9))
+        assertEquals(CarAlerts.Kind.LOW_FUEL, c.checkOthers(CarSnapshot(40_000, rpm = 900, volts = 14.0, fuelPct = 9)).single().kind)
+        assertTrue(c.checkOthers(CarSnapshot(90_000, rpm = 900, volts = 14.0, fuelPct = 8)).isEmpty())
+        // A healthy alternator never triggers the charging warning.
+        val d = CarAlerts()
+        assertTrue((0..20).flatMap { d.checkOthers(CarSnapshot(it * 5_000L, rpm = 2000, speedKmh = 80, volts = 14.1)) }.isEmpty())
     }
 
     @Test fun wordsTheVoiceUses() {

@@ -286,7 +286,7 @@ class CarAlerts(
     private var firstCoolant: Int? = null
     private var lowChargeSince: Long? = null
     /** First reading with the engine running this drive: charging is only judged after this + a grace. */
-    private var engineStartAt = 0L
+    private var engineStartAt: Long? = null
     private var lastCheckEngine = false
     private var readyDone = false
     private var engineSeen = false
@@ -341,17 +341,22 @@ class CarAlerts(
             } else if (v >= LOW_BATTERY_V) lowBatterySince = null
             if (!s.engineRunning) lowChargeSince = null
             if (s.engineRunning) {
-                if (engineStartAt == 0L) engineStartAt = s.at
-                if (v < WEAK_CHARGE_V) {
-                    // Right after a start the battery is still recovering (the ASX reads ~12.3 V then):
-                    // that's normal, not an alternator fault. Only judge charging once the post-start
-                    // grace has passed (longer from a cold start), and require the low voltage to hold.
+                val started = engineStartAt ?: s.at.also { engineStartAt = it }
+                // Two things make a low voltage normal on this car, and neither says anything about the
+                // alternator: standing still (the real ASX holds ~12.3 V at a loaded idle - lights, fan,
+                // A/C - with the alternator barely spinning) and the first minutes after a start, while
+                // the battery recovers. So charging is judged only while the engine is off idle or the
+                // car is actually moving, and only once the post-start grace has passed (longer from a
+                // cold start); the low voltage must then hold, so one dipping sample can't blame it.
+                val chargingCounts = chargingCounts(s)
+                if (!chargingCounts || v >= WEAK_CHARGE_V) lowChargeSince = null
+                else {
                     val grace = if (coldAtStart == true) COLD_POST_START_CHARGING_MS else POST_START_CHARGING_MS
-                    if (s.at - engineStartAt >= grace) {
+                    if (s.at - started >= grace) {
                         val since = lowChargeSince ?: s.at.also { lowChargeSince = it }
                         if (!chargingDone && s.at - since >= CHARGING_HOLD_MS) { chargingDone = true; out += Alert(Kind.WEAK_CHARGING, false, v) }
                     }
-                } else lowChargeSince = null
+                }
             }
         }
         // Thermostat stuck open: after 15 min of real driving the engine still isn't near normal
@@ -445,6 +450,14 @@ class CarAlerts(
          */
         const val LOW_BATTERY_V = 11.4
         const val WEAK_CHARGE_V = 12.8     // engine running: the alternator should give ~13.5-14.7 V
+        /** Below this the engine is at idle and the alternator barely turns: the ASX holds ~12.3 V there
+         *  with the lights, fan and A/C on, which is normal. Charging is judged above it (or while moving). */
+        const val WEAK_CHARGE_MIN_RPM = 1200
+        /** "Moving" for the charging check: creeping in a queue still idles the alternator. */
+        const val MOVING_KMH = 10
+
+        /** Off idle, or actually moving: the two conditions in which a low voltage does mean something. */
+        fun chargingCounts(s: CarSnapshot) = (s.rpm ?: 0) >= WEAK_CHARGE_MIN_RPM || (s.speedKmh ?: 0) >= MOVING_KMH
         /** The battery recovers after a start (12.3 V then is normal): don't judge charging until this
          *  long after the engine started running - 5 min from a cold start, when recovery is slowest. */
         const val POST_START_CHARGING_MS = 3 * 60_000L
