@@ -418,8 +418,12 @@ class DriveModeActivity : Activity() {
         }.also { welcomeBtn = it }, hLp(1f))
         resumeBtn = smallButton(R.drawable.ic_repeat, "") {
             val p = Prefs(this)
-            p.autoResume = !p.autoResume
-            if (p.autoResume) svc()?.resumeOffThisDrive = false
+            val svc = svc()
+            // For this drive only (see ResumeToggle); without the monitor there is no "this drive".
+            val next = ResumeToggle.tap(ResumeToggle.State(p.autoResume, svc?.resumeOffThisDrive == true))
+            if (svc == null) p.autoResume = !p.autoResume
+            else { p.autoResume = next.setting; svc.resumeOffThisDrive = next.offThisDrive }
+            DriveLog.log("Drive Mode: auto-resume " + if (ResumeToggle.isOn(p.autoResume, svc?.resumeOffThisDrive == true)) "on" else "off for this drive")
             updateDynamic()
         }
         bottom.addView(resumeBtn, hLp(1f))
@@ -470,9 +474,13 @@ class DriveModeActivity : Activity() {
         val song = s?.currentSong()
         val songText = song?.let { "${it.title}${if (it.artist.isNotBlank()) "\n${it.artist}" else ""}" }
             ?: if (s == null) "Monitor not running" else "Nothing playing"
-        val statusText = if (s == null) "Open the app and grant Notification access" else prefs.lastCarState
+        val statusText = if (s == null) "Open the app and grant Notification access" else when (prefs.lastCarState) {
+            "not connected", "" -> "Not connected to the car"
+            DriveHold.STATE -> "Android Auto reconnecting…"
+            else -> prefs.lastCarState
+        }
         val playing = s?.isPlaying() == true
-        val resumeOn = prefs.autoResume
+        val resumeOn = ResumeToggle.isOn(prefs.autoResume, s?.resumeOffThisDrive == true)
         val speaking = Voice.speaking
         val key = "$songText|$statusText|$playing|$resumeOn|$speaking"
         if (key == lastShown) return
@@ -491,7 +499,8 @@ class DriveModeActivity : Activity() {
         if (playBtn.tag != icon) { if (playBtn.tag != null) Motion.pop(playBtn); playBtn.tag = icon }
         playBtn.setImageResource(icon)
         playBtn.contentDescription = if (playing) "Pause" else "Play"
-        resumeBtn.text = if (resumeOn) "Auto-resume on" else "Auto-resume off"
+        resumeBtn.text = if (resumeOn) "Resume on" else "Resume off"
+        resumeBtn.contentDescription = if (resumeOn) "Auto-resume is on. Tap to turn it off for this drive" else "Auto-resume is off. Tap to turn it on"
         // Bright green needs dark text and icon to stay readable.
         val fg = if (resumeOn) Style.ON_BRIGHT else Style.TEXT
         resumeBtn.setTextColor(fg); resumeBtn.compoundDrawableTintList = Style.tint(fg)
@@ -520,7 +529,9 @@ class DriveModeActivity : Activity() {
     private fun smallButton(icon: Int, label: String, onClick: () -> Unit) = Button(this).apply {
         text = label; isAllCaps = false
         // Landscape rows are short: icon beside the label (not above it), so the label can stay readable.
-        fitText(if (wide) 13 else 10, 17, if (wide) 1 else 2); setPadding(dp(6), dp(6), dp(6), dp(6))
+        // One line, shrinking to fit: with two lines allowed, auto-size happily broke a word in half
+        // ("Welcom/e", "Auto-resu/me on" in the screenshots).
+        fitText(9, 17, 1); setPadding(dp(6), dp(6), dp(6), dp(6))
         val d = getDrawable(icon)!!.mutate().apply { setBounds(0, 0, dp(26), dp(26)) }
         if (wide) setCompoundDrawablesRelative(d, null, null, null) else setCompoundDrawablesRelative(null, d, null, null)
         compoundDrawablePadding = dp(if (wide) 8 else 2)
