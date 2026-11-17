@@ -9,6 +9,9 @@ package com.daand.drivemusic.obd
 object WatchList {
     enum class Level { FAULT, CHECKING, EARLY, TREND }
 
+    /** The fewest sightings worth a line: one read can be garbled, and then the code is not real. */
+    const val MIN_SHOWN_HITS = 2
+
     data class Issue(val level: Level, val code: String?, val title: String, val detail: String)
 
     fun build(stored: CodeTracker, pending: CodeTracker, carReportsNow: List<String>,
@@ -21,13 +24,21 @@ object WatchList {
                 if (dutch) "Bevestigde storing · ${TroubleCodes.explanation(c, true).advice}"
                 else "Confirmed fault · ${TroubleCodes.explanation(c, false).advice}")
         }
-        stored.codes().filter { it !in faults }.forEach { c ->
+        // A code one garbled answer invented has exactly one sighting. The line under it says "one bad
+        // read doesn't count", so the page must not count it either: two sightings is the lowest honest
+        // evidence, and below that the code is not shown at all.
+        val listed = faults.toMutableSet()
+        stored.codes().filter { it !in listed && stored.hits(it) >= MIN_SHOWN_HITS }.forEach { c ->
             val n = stored.hits(c)
+            listed += c
             out += Issue(Level.CHECKING, c, "$c: ${what(c)}",
                 if (dutch) "$n× gezien, nog niet bevestigd - één foute meting telt niet"
-                else "Seen ${if (n == 1) "once" else "$n times"}, not confirmed yet - one bad read doesn't count")
+                else "Seen $n times, not confirmed yet - one bad read doesn't count")
         }
-        pending.codes().filter { it !in faults }.forEach { c ->
+        // Not again when the same code is already listed (a code can show up in both reads), and a pending
+        // code needs the two sightings the tracker asks for before it is worth a line.
+        pending.codes().filter { it !in listed && pending.hits(it) >= MIN_SHOWN_HITS }.forEach { c ->
+            listed += c
             out += Issue(Level.EARLY, c, "$c: ${what(c)}",
                 if (dutch) "Vroege waarschuwing: de auto twijfelt nog (nog geen lampje)"
                 else "Early warning: the car isn't sure yet (no warning light)")

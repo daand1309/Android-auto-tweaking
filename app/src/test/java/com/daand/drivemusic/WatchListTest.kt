@@ -16,8 +16,9 @@ class WatchListTest {
         assertTrue(WatchList.build(CodeTracker(), CodeTracker(), emptyList(), emptyList(), dutch = false).isEmpty())
     }
 
-    @Test fun aCodeSeenEnoughIsAFaultAndOnceIsBeingChecked() {
-        val stored = tracker(listOf("P0420", "P0300"), listOf("P0420"), listOf("P0420"))
+    @Test fun aCodeSeenEnoughIsAFaultAndOneSeenTwiceIsBeingChecked() {
+        // Seen once is not listed at all (see aCodeSeenOnceIsNotAnIssueAtAll); twice is "being checked".
+        val stored = tracker(listOf("P0420", "P0300"), listOf("P0420", "P0300"), listOf("P0420"))
         val list = WatchList.build(stored, CodeTracker(), emptyList(), emptyList(), dutch = false)
         assertEquals(listOf("P0420" to WatchList.Level.FAULT, "P0300" to WatchList.Level.CHECKING), list.map { it.code to it.level })
     }
@@ -28,7 +29,7 @@ class WatchListTest {
     }
 
     @Test fun pendingCodesAndTrendsAreEarlyWarnings() {
-        val pending = tracker(listOf("P0133"))
+        val pending = tracker(listOf("P0133"), listOf("P0133"))
         val trend = CarTrends.Finding(CarTrends.Kind.CHARGING, 13.1, 13.8)
         val list = WatchList.build(CodeTracker(), pending, emptyList(), listOf(trend), dutch = false)
         assertEquals(listOf(WatchList.Level.EARLY, WatchList.Level.TREND), list.map { it.level })
@@ -39,5 +40,35 @@ class WatchListTest {
         val stored = tracker(listOf("P0300"))
         val list = WatchList.build(stored, CodeTracker(), listOf("P0420"), emptyList(), dutch = false)
         assertEquals(WatchList.Level.FAULT, list.first().level)
+    }
+
+    @Test fun aCodeSeenOnceIsNotAnIssueAtAll() {
+        // One garbled answer invents codes; the page's own line says "one bad read doesn't count",
+        // so a single sighting is not listed - not even as "being checked".
+        val stored = tracker(listOf("P0420", "P0ABC", "P02FF"), listOf("P0420"), listOf("P0420"))
+        val list = WatchList.build(stored, CodeTracker(), emptyList(), emptyList(), dutch = false)
+        assertEquals(listOf("P0420"), list.map { it.code })
+        assertEquals(WatchList.Level.FAULT, list.single().level)
+        val twice = tracker(listOf("P0442"), listOf("P0442"))
+        val checking = WatchList.build(twice, CodeTracker(), emptyList(), emptyList(), dutch = false).single()
+        assertEquals(WatchList.Level.CHECKING, checking.level)
+        assertTrue("no \"once\" any more", checking.detail.contains("Seen 2 times"))
+    }
+
+    @Test fun theSameCodeIsListedOnceEvenWhenBothReadsSawIt() {
+        // A stored and a pending read can both carry the same code; it must not appear twice.
+        val stored = tracker(listOf("P0442"), listOf("P0442"))
+        val pending = tracker(listOf("P0442"), listOf("P0442"))
+        val list = WatchList.build(stored, pending, emptyList(), emptyList(), dutch = false)
+        assertEquals(listOf("P0442" to WatchList.Level.CHECKING), list.map { it.code to it.level })
+    }
+
+    @Test fun aSinglePendingSightingIsNotAnEarlyWarning() {
+        // The alert needs the code to come back before it is spoken; the page must agree.
+        val once = tracker(listOf("P0133"))
+        assertTrue(WatchList.build(CodeTracker(), once, emptyList(), emptyList(), dutch = false).isEmpty())
+        val twice = tracker(listOf("P0133"), listOf("P0133"))
+        assertEquals(WatchList.Level.EARLY,
+            WatchList.build(CodeTracker(), twice, emptyList(), emptyList(), dutch = false).single().level)
     }
 }
