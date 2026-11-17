@@ -156,6 +156,10 @@ object FuelPrices {
         return cbs(fuel, now)
     }
 
+    /** Every station around a point with its prices (Drive Mode's "Find fuel"). Network: off the main thread. */
+    fun stationsAround(lat: Double, lon: Double): List<Station> =
+        if (lat !in -90.0..90.0 || lon !in -180.0..180.0) emptyList() else parseAll(httpGet(urlFor(lat, lon)))
+
     private fun nearbyStations(lat: Double, lon: Double, fuel: Fuel): Quote? {
         if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return null
         val json = httpGet(urlFor(lat, lon))

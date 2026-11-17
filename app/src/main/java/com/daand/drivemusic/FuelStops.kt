@@ -1,0 +1,38 @@
+package com.daand.drivemusic
+
+import com.daand.drivemusic.FuelPrices.Fuel
+import com.daand.drivemusic.FuelPrices.Station
+
+/**
+ * Drive Mode's "Find fuel": from the stations around you (the ANWB list the fuel price already uses),
+ * the cheapest one in range and the nearest one with a good price - within [GOOD_CENTS] a litre of
+ * that cheapest. Distances are straight-line from your position, worked out on the phone only.
+ * Pure, unit tested.
+ */
+object FuelStops {
+    const val RADIUS_KM = 15.0
+    /** "A good price": at most this much above the cheapest around you (€ per litre). */
+    const val GOOD_CENTS = 0.05
+
+    data class Stop(val station: Station, val price: Double, val km: Double)
+    data class Choice(val nearestGood: Stop, val cheapest: Stop)
+
+    fun choose(stations: List<Station>, lat: Double, lon: Double, fuel: Fuel, radiusKm: Double = RADIUS_KM): Choice? {
+        val stops = stations.mapNotNull { s ->
+            val p = s.prices[fuel] ?: return@mapNotNull null
+            val km = FuelPrices.distanceKm(lat, lon, s.lat, s.lon)
+            if (km > radiusKm) null else Stop(s, p, Math.round(km * 10) / 10.0)
+        }
+        if (stops.isEmpty()) return null
+        val cheapest = stops.minWithOrNull(compareBy<Stop> { it.price }.thenBy { it.km })!!
+        val nearestGood = stops.filter { it.price <= cheapest.price + GOOD_CENTS + 1e-9 }.minByOrNull { it.km }!!
+        // Equal prices: the cheapest is already the nearer of them - one choice, not two.
+        return if (nearestGood.price <= cheapest.price) Choice(cheapest, cheapest) else Choice(nearestGood, cheapest)
+    }
+
+    /** Waze turn-by-turn to a position (it shows on the Android Auto screen too). */
+    fun wazeUri(lat: Double, lon: Double) = "waze://?ll=$lat,$lon&navigate=yes"
+
+    /** Google Maps (and so Android Auto) turn-by-turn to a position - when Waze isn't installed. */
+    fun navUri(lat: Double, lon: Double) = "google.navigation:q=$lat,$lon"
+}

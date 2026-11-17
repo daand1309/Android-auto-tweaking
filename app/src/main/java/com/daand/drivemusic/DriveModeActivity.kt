@@ -196,6 +196,15 @@ class DriveModeActivity : Activity() {
         }
         carStatus = TextView(this).apply { setTextColor(Style.TEXT2); textSize = 14f; gravity = Gravity.CENTER; setPadding(0, dp(6), 0, 0) }
         root.addView(carStatus, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
+        // Find fuel: the nearest good price or the cheapest around you, then navigate there.
+        root.addView(Button(this).apply {
+            text = "⛽  Find fuel"; isAllCaps = false; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD)
+            textSize = if (wide) 16f else 18f
+            background = Style.button(Style.SURFACE2, dp(Style.R_CARD).toFloat()); stateListAnimator = null
+            contentDescription = "Find fuel: the nearest good price or the cheapest station"
+            setOnClickListener { findFuel() }
+            Feel.press(this)
+        }, LinearLayout.LayoutParams(-1, dp(if (wide) 48 else 58)).apply { topMargin = dp(8); setMargins(dp(6), dp(8), dp(6), 0) })
         return root
     }
 
@@ -264,6 +273,113 @@ class DriveModeActivity : Activity() {
         }
         if (carStatus.text != statusText) carStatus.text = statusText
         carStatus.visibility = if (statusText.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    // ---------------------------------------------------------------- find fuel
+
+    private var fuelView: View? = null
+
+    /** Full-screen, like the update question: what's happening, then one or two big station buttons. */
+    private fun findFuel() {
+        if (fuelView != null) return
+        val dutch = Prefs(this).greetingDutch
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+            setBackgroundColor(Style.BG); isClickable = true
+            val pad = if (wide) dp(14) else dp(24); setPadding(pad, pad, pad, pad)
+        }
+        fun close() { fuelView?.let { rootFrame.removeView(it) }; fuelView = null }
+        fun message(text: String) {
+            box.removeAllViews()
+            box.addView(TextView(this).apply { this.text = text; setTextColor(Style.TEXT); textSize = 22f; gravity = Gravity.CENTER },
+                LinearLayout.LayoutParams(-1, 0, 1f))
+            box.addView(answerButton(R.drawable.ic_answer_no, if (dutch) "Sluiten" else "Close", Style.SURFACE2) { close() },
+                LinearLayout.LayoutParams(-1, dp(72)))
+        }
+        message(if (dutch) "⛽  Tankstations zoeken…" else "⛽  Looking for fuel near you…")
+        fuelView = box
+        rootFrame.addView(box, android.widget.FrameLayout.LayoutParams(-1, -1))
+        val fuel = FuelPrices.Fuel.of(Prefs(this).fuelType)
+        Thread({
+            val here = currentPosition()
+            val result: Any = when {
+                here == null -> if (dutch) "Je locatie is niet bekend. Sta locatie toe voor Drive Music." else "Your position isn't known. Allow location for Drive Music."
+                else -> try {
+                    FuelStops.choose(FuelPrices.stationsAround(here.first, here.second), here.first, here.second, fuel)
+                        ?: (if (dutch) "Geen tankstation met ${fuel.nl} binnen 15 km." else "No station selling ${fuel.en} within 15 km.")
+                } catch (e: Exception) {
+                    DriveLog.log("FUEL: station lookup failed (${e.javaClass.simpleName}: ${e.message})")
+                    if (dutch) "De prijzen zijn nu niet op te halen (geen bereik?)." else "Couldn't get the prices right now (no signal?)."
+                }
+            }
+            runOnUiThread {
+                if (fuelView !== box) return@runOnUiThread   // closed meanwhile
+                if (result is String) { message(result); return@runOnUiThread }
+                val c = result as FuelStops.Choice
+                box.removeAllViews()
+                fun stopButton(title: String, stop: FuelStops.Stop, color: Int) = Button(this).apply {
+                    text = "$title\n${stop.station.name}\n€%.3f · %.1f km".format(java.util.Locale.ROOT, stop.price, stop.km)
+                    isAllCaps = false; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD); fitText(13, 24, 4)
+                    background = Style.button(color, dp(Style.R_BIG).toFloat()); stateListAnimator = null
+                    setOnClickListener { close(); navigateTo(stop, title) }
+                    Feel.press(this)
+                }
+                val buttons = LinearLayout(this).apply { orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL }
+                val good = if (dutch) "Dichtbij, goede prijs" else "Nearest good price"
+                val cheap = if (dutch) "Goedkoopste" else "Cheapest"
+                if (c.nearestGood == c.cheapest) buttons.addView(stopButton("$good · $cheap", c.cheapest, Style.PRIMARY), if (wide) hLp(1f) else vLp(weight = 1f))
+                else {
+                    buttons.addView(stopButton(good, c.nearestGood, Style.PRIMARY), if (wide) hLp(1f) else vLp(weight = 1f))
+                    buttons.addView(stopButton(cheap, c.cheapest, 0xFF2E7D32.toInt()), if (wide) hLp(1f) else vLp(weight = 1f))
+                }
+                box.addView(buttons, LinearLayout.LayoutParams(-1, 0, 1f))
+                box.addView(answerButton(R.drawable.ic_answer_no, if (dutch) "Annuleren" else "Cancel", Style.SURFACE2) { close() },
+                    LinearLayout.LayoutParams(-1, dp(64)).apply { topMargin = dp(8) })
+            }
+        }, "find-fuel").start()
+    }
+
+    /** Your position for the fuel search, on the phone only: a recent fix, else a fresh one (≤ 10 s). */
+    private fun currentPosition(): Pair<Double, Double>? {
+        val granted = { p: String -> checkSelfPermission(p) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+        if (!granted(android.Manifest.permission.ACCESS_FINE_LOCATION) && !granted(android.Manifest.permission.ACCESS_COARSE_LOCATION)) return null
+        return try {
+            val lm = getSystemService(android.location.LocationManager::class.java)
+            val now = System.currentTimeMillis()
+            fun last(maxAge: Long) = lm.allProviders.mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }
+                .filter { now - it.time < maxAge }.maxByOrNull { it.time }
+            last(2 * 60_000L)?.let { return it.latitude to it.longitude }   // Maps is usually running: GPS is fresh
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                val provider = listOf(android.location.LocationManager.GPS_PROVIDER, android.location.LocationManager.NETWORK_PROVIDER)
+                    .firstOrNull { runCatching { lm.isProviderEnabled(it) }.getOrDefault(false) }
+                if (provider != null) {
+                    val latch = java.util.concurrent.CountDownLatch(1)
+                    var fix: android.location.Location? = null
+                    lm.getCurrentLocation(provider, null, mainExecutor) { fix = it; latch.countDown() }
+                    latch.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                    fix?.let { return it.latitude to it.longitude }
+                }
+            }
+            last(15 * 60_000L)?.let { it.latitude to it.longitude }
+        } catch (e: SecurityException) { null }
+    }
+
+    /** Turn-by-turn in Waze (shows on the car screen too); Google Maps, then any maps app, if it isn't there. */
+    private fun navigateTo(stop: FuelStops.Stop, why: String) {
+        val lat = stop.station.lat; val lon = stop.station.lon
+        val tries = listOf(
+            "Waze" to android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(FuelStops.wazeUri(lat, lon))).setPackage("com.waze"),
+            "Google Maps" to android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(FuelStops.navUri(lat, lon))).setPackage("com.google.android.apps.maps"),
+            "a maps app" to android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("geo:$lat,$lon?q=$lat,$lon")),
+        )
+        for ((app, intent) in tries) {
+            try {
+                startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                DriveLog.log("FUEL: navigating to ${stop.station.name} with $app ($why, €%.3f, %.1f km)".format(java.util.Locale.ROOT, stop.price, stop.km))
+                return
+            } catch (e: android.content.ActivityNotFoundException) { /* next one */ }
+        }
+        DriveLog.log("FUEL: no maps app to navigate with")
     }
 
     /** True once the car has been connected while this screen was open. */
