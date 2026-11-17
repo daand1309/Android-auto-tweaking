@@ -18,6 +18,9 @@ object ObdManager {
     const val FULL_EVERY = 6               // fuel / voltage / warning light every 30 s
     const val CODES_EVERY_MS = 10 * 60_000L
     const val CONNECT_TRIES = 6
+    /** Re-ask for the catalyst test every 4 minutes once warm, at most 6 times a drive. */
+    const val CATALYST_EVERY_MS = 4 * 60_000L
+    const val CATALYST_CHECKS = 6
     const val RETRY_MS = 20_000L
 
     /** Latest reading (null = none this drive). */
@@ -89,11 +92,14 @@ object ObdManager {
                 DriveLog.log("OBD: the car runs on ${f.en} - fuel type set to match (pick another in Car data to overrule)")
             }
         }
-        s.catalyst?.let { c ->
-            p.catalystLog = CatalystLog.add(p.catalystLog, System.currentTimeMillis(), c.closeness)
-            DriveLog.log("OBD: catalytic converter self-test - %d%% of its limit (%s)".format(java.util.Locale.ROOT,
-                Math.round(c.closeness * 100), if (c.passes) "passes" else "FAILS"))
-        }
+        s.catalyst?.let { c -> saveCatalyst(ctx, c, "") }
+    }
+
+    private fun saveCatalyst(ctx: Context, c: OnBoardTests.Catalyst, `when`: String) {
+        val p = Prefs(ctx)
+        p.catalystLog = CatalystLog.add(p.catalystLog, System.currentTimeMillis(), c.closeness)
+        DriveLog.log("OBD: catalytic converter self-test$`when` - %d%% of its limit (%s)".format(java.util.Locale.ROOT,
+            Math.round(c.closeness * 100), if (c.passes) "passes" else "FAILS"))
     }
 
     /** The freeze frame, kept so the pages can show it while you're parked (logged once per change). */
@@ -269,6 +275,8 @@ object ObdManager {
         var lastCodes = 0L
         var silent = 0          // rounds in a row with no answer at all
         var toldQuiet = false
+        var catalystChecks = 0
+        var lastCatalystCheck = System.currentTimeMillis()
         while (alive(myGen)) {
             val roundStart = System.currentTimeMillis()
             val full = n % FULL_EVERY == 0
@@ -276,6 +284,13 @@ object ObdManager {
             val snap = session.read(latest, full, readCodes = codesDue)
             session.freeze?.let { f -> appCtx?.let { c -> saveFreeze(c, f) } }
             if (codesDue) lastCodes = System.currentTimeMillis()
+            // The catalyst test only completes mid-drive (warm engine, steady cruise): ask again now and then.
+            if (session.catalyst == null && catalystChecks < CATALYST_CHECKS && (snap.coolantC ?: 0) >= 70 &&
+                System.currentTimeMillis() - lastCatalystCheck > CATALYST_EVERY_MS) {
+                lastCatalystCheck = System.currentTimeMillis()
+                catalystChecks++
+                session.recheckCatalyst()?.let { c -> appCtx?.let { ctx -> runCatching { saveCatalyst(ctx, c, " (completed during the drive)") } } }
+            }
             latest = snap
             val answered = snap.coolantC != null || snap.rpm != null || snap.speedKmh != null
             if (answered) {

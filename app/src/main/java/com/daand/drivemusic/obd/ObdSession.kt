@@ -63,6 +63,18 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
         return null
     }
 
+    /**
+     * Ask for the catalyst's self-test again. The ASX resets it at every start (answers 0 / 0 until
+     * the test has run), and the engine only runs it once warm, on a steady cruise - so a reading at
+     * connect is nearly always "not yet". Returns the result once the test has completed this drive.
+     */
+    fun recheckCatalyst(): OnBoardTests.Catalyst? {
+        if (catalyst != null) return catalyst
+        val ans = runCatching { Elm327.lines(link.send("0621", 3_000)) }.getOrNull().orEmpty()
+        catalyst = runCatching { OnBoardTests.catalyst(OnBoardTests.parse(ans)) }.getOrNull()
+        return catalyst
+    }
+
     /** The values worth knowing from the moment a fault code was stored. */
     private val FREEZE_PIDS = listOf(0x0D, 0x0C, 0x05, 0x04, 0x11, 0x0B, 0x0F)
 

@@ -38,6 +38,22 @@ class ObdExtrasTest {
         assertTrue(c.passes)
     }
 
+    @Test fun theAsxAtStartSaysNotRunYetThenTheResultComesMidDrive() {
+        // Real answer from the ASX right after starting (17 Nov): value 0, limits 0..0x19 = not run yet.
+        val atStart = mapOf("0621" to "00A\r0:462183200000\r1:00000019315742\r\r")
+        val link = FakeElm(FakeElm.ASX + atStart)
+        val s = com.daand.drivemusic.obd.ObdSession(link)
+        s.start()
+        assertNull(s.catalyst)
+        assertNull(s.recheckCatalyst())
+        // Later, warm and cruising: the test has run - 7 of a limit of 25.
+        val done = FakeElm(FakeElm.ASX + mapOf("0621" to "00A\r0:462183200007\r1:00000019315742\r\r"))
+        val s2 = com.daand.drivemusic.obd.ObdSession(done)
+        val c = s2.recheckCatalyst()!!
+        assertEquals(7 / 25.0, c.closeness, 0.001)
+        assertTrue(c.passes)
+    }
+
     @Test fun catalystTestMultiFrameCan() {
         // Two test records over ISO-TP frames, like the ELM327 prints them ("012" = byte count line).
         val lines = listOf("013", "0:4621800D0070", "1:00000080218124", "2:00110000FFFF00")
