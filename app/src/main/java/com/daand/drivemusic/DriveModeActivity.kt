@@ -31,6 +31,8 @@ class DriveModeActivity : Activity() {
     private var coverShown: android.graphics.Bitmap? = null
     private lateinit var status: TextView
     private lateinit var thumbs: LinearLayout
+    private val thumbButtons = mutableListOf<View>()
+    private lateinit var sourceBtn: Button
     private lateinit var playBtn: android.widget.ImageButton
     private lateinit var resumeBtn: Button
     private lateinit var rootFrame: android.widget.FrameLayout
@@ -523,6 +525,9 @@ class DriveModeActivity : Activity() {
         val h = dp(if (wide) 64 else 76)
         val st = RadioPlayer.station
         val state = RadioPlayer.state
+        if (RadioPlayer.on) radioList.addView(goRow("🎵", if (dutch) "Terug naar YouTube Music" else "Back to YouTube Music",
+            if (dutch) "Op dezelfde plek, zonder stilte" else "Same song and spot, no silence in between") {
+            RadioPlayer.backToMusic(this) }, LinearLayout.LayoutParams(-1, h).apply { bottomMargin = dp(10) })
         if (st != null && state != RadioPlayer.State.OFF) {
             val (line, color) = when (state) {
                 RadioPlayer.State.CONNECTING -> (if (dutch) "Verbinden…" else "Tuning in…") to Style.TEXT2
@@ -701,7 +706,19 @@ class DriveModeActivity : Activity() {
                 lastShown = ""; handler.postDelayed({ updateDynamic() }, 2_500)
             }
             Feel.press(this)
-        }, LinearLayout.LayoutParams(0, dp(if (wide) 44 else 52), 1f).apply { setMargins(dp(6), 0, dp(6), 0) })
+        }.also { thumbButtons += it }, LinearLayout.LayoutParams(0, dp(if (wide) 44 else 52), 1f).apply { setMargins(dp(6), 0, dp(6), 0) })
+        // One tap between the two: "📻 Radio 2" <-> "🎵 Back to YouTube Music" (YouTube Music keeps its place).
+        sourceBtn = Button(this).apply {
+            isAllCaps = false; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD); fitText(11, if (wide) 15 else 17, 1)
+            background = Style.button(Style.SURFACE2, dp(Style.R_CARD).toFloat()); stateListAnimator = null
+            setOnClickListener {
+                if (RadioPlayer.on) RadioPlayer.backToMusic(this@DriveModeActivity)
+                else RadioPlayer.play(this@DriveModeActivity, RadioPlayer.lastStation(this@DriveModeActivity))
+                lastShown = ""; handler.postDelayed({ updateDynamic() }, 400)
+            }
+            Feel.press(this)
+        }
+        thumbs.addView(sourceBtn, LinearLayout.LayoutParams(0, dp(if (wide) 44 else 52), 2.2f).apply { setMargins(dp(6), 0, dp(6), 0) })
         status = TextView(this).apply {
             setTextColor(Style.TEXT2); textSize = 15f; gravity = Gravity.CENTER; maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -709,10 +726,15 @@ class DriveModeActivity : Activity() {
 
         // Big transport row (horizontal: weight drives WIDTH, height fills the row).
         val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        controls.addView(bigButton(R.drawable.ic_prev, "Previous song", accent = false) { svc()?.skipPrevious(); flash() }, hLp(1f))
-        playBtn = bigButton(R.drawable.ic_play, "Play", accent = true) { svc()?.playPause(); handler.postDelayed({ updateDynamic() }, 300) }
+        // The same three buttons for whatever is playing: songs for YouTube Music, stations for the radio.
+        controls.addView(bigButton(R.drawable.ic_prev, "Previous", accent = false) {
+            if (RadioPlayer.on) RadioPlayer.step(this, -1) else svc()?.skipPrevious(); flash() }, hLp(1f))
+        playBtn = bigButton(R.drawable.ic_play, "Play", accent = true) {
+            if (RadioPlayer.on) RadioPlayer.stop("you pressed pause") else svc()?.playPause()
+            handler.postDelayed({ updateDynamic() }, 300) }
         controls.addView(playBtn, hLp(1.3f))
-        controls.addView(bigButton(R.drawable.ic_next, "Next song", accent = false) { svc()?.skipNext(); flash() }, hLp(1f))
+        controls.addView(bigButton(R.drawable.ic_next, "Next", accent = false) {
+            if (RadioPlayer.on) RadioPlayer.step(this, 1) else svc()?.skipNext(); flash() }, hLp(1f))
 
         // Bottom row: icon on top, one short word underneath.
         val bottom = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
@@ -804,12 +826,17 @@ class DriveModeActivity : Activity() {
             else -> prefs.lastCarState
         }
         val radio = RadioPlayer.station?.takeIf { RadioPlayer.on }
-        val statusText2 = if (radio != null) "📻 ${radio.name} is on - press play for YouTube Music" else statusText
-        val playing = s?.isPlaying() == true
+        val statusText2 = when {
+            radio == null -> statusText
+            RadioPlayer.state == RadioPlayer.State.CONNECTING -> "📻 Tuning in… YouTube Music plays until it's there"
+            else -> "📻 Radio · ⏮ ⏭ change station · YouTube Music waits in the background"
+        }
+        val songText2 = if (radio != null) "📻 ${radio.name}\nRadio" else songText
+        val playing = s?.isPlaying() == true || radio != null
         val resumeOn = ResumeToggle.isOnNow(this)
         val speaking = Voice.speaking
         val art = s?.currentArt()
-        val key = "$songText|$statusText2|$playing|$resumeOn|$speaking|${System.identityHashCode(art)}"
+        val key = "$songText2|$statusText2|$playing|${RadioPlayer.lastStation(this).name}|$resumeOn|$speaking|${System.identityHashCode(art)}"
         if (key == lastShown) return
         lastShown = key
         // While something is being said, this button cuts it short rather than starting another one.
@@ -821,12 +848,19 @@ class DriveModeActivity : Activity() {
             if (wide) welcomeBtn.setCompoundDrawablesRelative(d, null, null, null) else welcomeBtn.setCompoundDrawablesRelative(null, d, null, null)
             welcomeBtn.contentDescription = if (speaking) "Skip the voice" else "Play the welcome"
         }
-        Motion.swapText(nowPlaying, songText)
-        if (art !== coverShown) {
-            coverShown = art
-            cover.setImageBitmap(art)
-            cover.visibility = if (art == null) View.GONE else View.VISIBLE
-            if (art != null) Motion.fadeIn(cover)
+        Motion.swapText(nowPlaying, songText2)
+        if (::sourceBtn.isInitialized) {
+            sourceBtn.text = if (radio != null) "🎵  Back to YouTube Music" else "📻  ${RadioPlayer.lastStation(this).name}"
+            sourceBtn.contentDescription = if (radio != null) "Switch back to YouTube Music" else "Switch to the radio"
+            // Like / dislike are for YouTube Music's songs: not while the radio plays.
+            thumbButtons.forEach { it.visibility = if (radio != null) View.GONE else View.VISIBLE }
+        }
+        val shownArt = if (radio != null) null else art
+        if (shownArt !== coverShown) {
+            coverShown = shownArt
+            cover.setImageBitmap(shownArt)
+            cover.visibility = if (shownArt == null) View.GONE else View.VISIBLE
+            if (shownArt != null) Motion.fadeIn(cover)
         }
         status.text = statusText2
         val icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play

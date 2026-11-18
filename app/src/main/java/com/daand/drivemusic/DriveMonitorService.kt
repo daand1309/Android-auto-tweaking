@@ -1037,8 +1037,8 @@ class DriveMonitorService : NotificationListenerService() {
 
     /** Toggle play/pause from the car screen. A pause here won't be auto-resumed. */
     /** Pause pressed on a car screen: you meant it, so auto-resume leaves it alone. */
-    fun pauseByUser(where: String) {
-        Voice.stop("you pressed pause")
+    fun pauseByUser(where: String, stopVoice: Boolean = true) {
+        if (stopVoice) Voice.stop("you pressed pause")
         userPausedViaUi = true
         musicController()?.transportControls?.pause()
         DriveLog.log("$where: pause (you asked - won't auto-resume)")

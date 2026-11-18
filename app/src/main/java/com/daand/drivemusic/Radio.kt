@@ -117,20 +117,16 @@ object RadioPlayer {
 
     fun toggle(ctx: Context, st: Radio.Station) = if (on && station == st) stop("you pressed stop") else play(ctx, st)
 
+    /**
+     * Tune in. YouTube Music keeps playing while the station connects; only once the radio actually
+     * sounds is YouTube Music paused (in the background, at the same song and spot) - no silent gap.
+     */
     fun play(ctx: Context, st: Radio.Station) {
         val app = ctx.applicationContext
         appCtx = app
         release()
-        // YouTube Music off first - counted as your choice, so it isn't auto-resumed over the radio.
-        DriveMonitorService.instance?.let { if (it.isPlaying()) it.pauseByUser("Radio") }
-        val audio = app.getSystemService(AudioManager::class.java)
-        val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(attrs)
-            .setOnAudioFocusChangeListener(focusListener, main).setWillPauseWhenDucked(false).build()
-        focus = req
-        if (audio.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_FAILED) {
-            fail(st, "the car's audio is busy (a call?)"); return
-        }
         station = st; state = State.CONNECTING; problem = ""
+        Prefs(app).radioLast = st.encode()
         DriveLog.log("RADIO: tuning in to ${st.name}")
         changed()
         val mp = MediaPlayer()
@@ -138,13 +134,49 @@ object RadioPlayer {
         try {
             mp.setAudioAttributes(attrs)
             mp.setDataSource(st.url)
-            mp.setOnPreparedListener { if (player === it) { it.start(); state = State.PLAYING; DriveLog.log("RADIO: playing ${st.name}"); changed() } }
+            mp.setOnPreparedListener { p ->
+                if (player !== p) return@setOnPreparedListener
+                // Ready: hand over. YouTube Music off - counted as your choice, so it isn't auto-resumed over the radio.
+                DriveMonitorService.instance?.let { if (it.isPlaying()) it.pauseByUser("Radio", stopVoice = false) }
+                val audio = app.getSystemService(AudioManager::class.java)
+                val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(attrs)
+                    .setOnAudioFocusChangeListener(focusListener, main).setWillPauseWhenDucked(false).build()
+                focus = req
+                if (audio.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_FAILED) { fail(st, "the car's audio is busy (a call?)"); return@setOnPreparedListener }
+                p.start(); state = State.PLAYING
+                DriveLog.log("RADIO: playing ${st.name}")
+                changed()
+            }
             mp.setOnErrorListener { p, what, extra -> if (player === p) fail(st, "the stream stopped ($what/$extra) - no signal?"); true }
             mp.setOnCompletionListener { if (player === it) fail(st, "the stream ended") }
             mp.prepareAsync()
             // A stream that never starts (dead station, no signal): give up after 20 s instead of hanging.
             main.postDelayed({ if (player === mp && state == State.CONNECTING) fail(st, "it didn't answer within 20 s") }, 20_000)
         } catch (e: Exception) { fail(st, e.message ?: e.javaClass.simpleName) }
+    }
+
+    /** The station you had last (or the first of your list) - for the one-tap switch back to radio. */
+    fun lastStation(ctx: Context): Radio.Station {
+        val p = Prefs(ctx)
+        val list = Radio.decode(p.radioStations)
+        return Radio.decode(p.radioLast).firstOrNull()?.takeIf { it in list } ?: list.first()
+    }
+
+    /** ⏮ / ⏭ while the radio is on: the station before / after in your list (wrapping round). */
+    fun step(ctx: Context, by: Int) {
+        val list = Radio.decode(Prefs(ctx).radioStations)
+        val i = list.indexOf(station).coerceAtLeast(0)
+        play(ctx, list[Math.floorMod(i + by, list.size)])
+    }
+
+    /** Radio off and YouTube Music back where it was - one tap, no gap (it takes the sound and the radio stops). */
+    fun backToMusic(ctx: Context) {
+        DriveLog.log("RADIO: switching back to YouTube Music")
+        val svc = DriveMonitorService.instance
+        if (svc == null) { stop("you switched back to music"); return }
+        svc.playByUser("Radio tab")
+        // YouTube Music's own focus request ends the radio; if it never takes it, end it anyway.
+        main.postDelayed({ if (on) stop("you switched back to music") }, 2_500)
     }
 
     private fun fail(st: Radio.Station, why: String) {

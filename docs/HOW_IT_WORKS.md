@@ -115,8 +115,10 @@ Go - tap them for the Car tab.
   Home, Work and favourites are set on the app's *Car screen* page.
 - **Radio tab:** internet radio - a Dutch set to start with (NPO Radio 1/2, 3FM, Qmusic, 538, Sky,
   Radio 10, Veronica, 100% NL, SLAM!, NPO Klassiek, FunX, BNR). Tap a station to tune in, tap again to
-  stop. It pauses YouTube Music (and auto-resume leaves it alone); press play on the Music tab and
-  YouTube Music takes over again. Our own voice and navigation dip the radio. Add stations in
+  stop. Switching is seamless: YouTube Music keeps playing until the station actually sounds, then waits
+  paused in the background (same song and spot; auto-resume leaves it alone). The Music tab has a
+  one-tap switch ("📻 Radio 2" / "🎵 Back to YouTube Music"), and while the radio is on its big buttons
+  work for the radio: ⏮ ⏭ change station, ⏸ stops it. Our own voice and navigation dip the radio. Add stations in
   *Music & driving → Radio* (searched in the free radio-browser.info directory). ~60 MB an hour.
 - **Car tab** (with the OBD adapter): speed, RPM, engine temperature (blue cold / green good / red hot),
   fuel use now, this trip (km and L/100), battery, range left, outside and intake temperature.

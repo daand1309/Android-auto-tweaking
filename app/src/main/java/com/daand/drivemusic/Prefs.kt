@@ -222,6 +222,10 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putString("favourites", v).apply()
 
     /** Your radio stations ([Radio.encode]); "" = the Dutch set. */
+    /** The station you listened to last ([Radio.Station.encode]) - for the one-tap switch back. */
+    var radioLast: String
+        get() = sp.getString("radio_last", "") ?: ""
+        set(v) = sp.edit().putString("radio_last", v).apply()
     var radioStations: String
         get() = sp.getString("radio_stations", "") ?: ""
         set(v) = sp.edit().putString("radio_stations", v).apply()
