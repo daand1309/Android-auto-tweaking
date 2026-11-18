@@ -668,6 +668,7 @@ class MainActivity : Activity() {
         if (stations.size < Radio.MAX_STATIONS) button("Add a station") { addRadioStation() }
         if (prefs.radioStations.isNotBlank()) button("Back to the Dutch stations") { prefs.radioStations = ""; render() }
         switch("Radio on when I parked: start it again next drive", prefs.radioResume) { prefs.radioResume = it }
+        switch("YouTube Music won't start: play the radio instead", prefs.radioFallback) { prefs.radioFallback = it }
 
         header("Sound")
         button("Open the equalizer") { openEqualizer() }

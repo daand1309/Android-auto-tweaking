@@ -1,5 +1,7 @@
 package com.daand.drivemusic.obd
 
+import com.daand.drivemusic.RadioPlayer
+
 import android.Manifest
 import android.bluetooth.BluetoothSocket
 import android.content.Context
@@ -275,6 +277,9 @@ object ObdManager {
         var lastCodes = 0L
         var silent = 0          // rounds in a row with no answer at all
         var toldQuiet = false
+        // Answer quality per 5 minutes: one line when many questions go unanswered, so a log shows *when*
+        // the adapter struggles (17 Nov: 1366 of 3723 unanswered, cause unknown).
+        var windowAt = System.currentTimeMillis(); var windowQ = 0; var windowMissed = 0
         var catalystChecks = 0
         var lastCatalystCheck = System.currentTimeMillis()
         while (alive(myGen)) {
@@ -283,6 +288,12 @@ object ObdManager {
             val codesDue = full && System.currentTimeMillis() - lastCodes > CODES_EVERY_MS
             val snap = session.read(latest, full, readCodes = codesDue)
             if (codesDue) lastCodes = System.currentTimeMillis()
+            if (System.currentTimeMillis() - windowAt >= 5 * 60_000L) {
+                val q = session.questions - windowQ; val missed = session.unansweredWhileOn - windowMissed
+                if (q >= 20 && missed * 10 > q) DriveLog.log("OBD: last 5 min $missed of $q questions unanswered (${missed * 100 / q}%)" +
+                    (if (RadioPlayer.on) " - radio was on" else ""))
+                windowAt = System.currentTimeMillis(); windowQ = session.questions; windowMissed = session.unansweredWhileOn
+            }
             // The catalyst test only completes mid-drive (warm engine, steady cruise): ask again now and then.
             if (session.catalyst == null && catalystChecks < CATALYST_CHECKS && (snap.coolantC ?: 0) >= 70 &&
                 System.currentTimeMillis() - lastCatalystCheck > CATALYST_EVERY_MS) {

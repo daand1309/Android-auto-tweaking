@@ -296,8 +296,16 @@ object RadioPlayer {
         main.postDelayed({ if (on) stop("you switched back to music") }, 2_500)
     }
 
+    /** When it last went off, and whether something else took the sound (not you) - for "was it on?". */
+    @Volatile var stoppedAt = 0L; private set
+    @Volatile var stoppedByOthers = false; private set
+    /** On now, or taken off by something else (Android Auto dropping) in the last [ms]. */
+    fun onOrJustLost(ms: Long = 5_000) = on || (stoppedByOthers && android.os.SystemClock.elapsedRealtime() - stoppedAt < ms)
+
     fun stop(why: String) {
         if (state == State.OFF) return
+        stoppedAt = android.os.SystemClock.elapsedRealtime()
+        stoppedByOthers = why.startsWith("another app")
         station?.let { DriveLog.log("RADIO: ${it.name} off ($why)") }
         releasePlayer(); abandonFocus()
         state = State.OFF; problem = ""; nowPlaying = null

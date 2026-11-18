@@ -426,7 +426,8 @@ class DriveMonitorService : NotificationListenerService() {
             getSystemService(NotificationManager::class.java).cancel(DRIVE_MODE_NOTIFICATION)
             pausedAtDrop = false
             // The radio is a car thing: off when you leave, whatever the YouTube Music setting says.
-            prefs.radioWasOn = RadioPlayer.on
+            // Android Auto dropping takes the sound a moment before we hear about the drop: count that as on.
+            prefs.radioWasOn = RadioPlayer.onOrJustLost()
             RadioPlayer.stop("you left the car (or Android Auto dropped)")
             if (prefs.pauseOnDisconnect) {
                 val c = findYtm()
@@ -575,6 +576,14 @@ class DriveMonitorService : NotificationListenerService() {
                     if (carConnected) { musicController()?.transportControls?.play(); DriveLog.log("Music resumed after Android Auto came back") }
                 }, 5_000)
             }
+            // The radio was on when Android Auto dropped: the radio again, not YouTube Music.
+            prefs.radioWasOn && prefs.radioResume -> handler.postDelayed({
+                if (carConnected && !RadioPlayer.on) {
+                    prefs.radioWasOn = false
+                    DriveLog.log("START: the radio was on before Android Auto dropped - back on")
+                    RadioPlayer.play(this, RadioPlayer.lastStation(this))
+                }
+            }, 3_000)
             // Stalled before the music had even started (e.g. during the greeting): start it now.
             !musicStartedThisDrive && prefs.autoStart && !userPausedViaUi && otherAppPlaying() == null ->
                 handler.postDelayed({ if (carConnected) startMusic("Android Auto came back") }, 3_000)
@@ -871,7 +880,14 @@ class DriveMonitorService : NotificationListenerService() {
                     if (System.currentTimeMillis() - prefs.lastMusicChangeAt < 7 * 24 * 3600_000L) {
                         DriveLog.log("START: the music app was updated/changed recently - that may have changed how it starts; send this log")
                     }
+                    logStartDiagnosis()
                     startRunnable = null
+                    // Started by the app (not your play button): rather the radio than silence.
+                    if (prefs.radioFallback && !RadioPlayer.on && carConnected && "play" !in reason && "manual" !in reason) {
+                        val st = RadioPlayer.lastStation(this@DriveMonitorService)
+                        DriveLog.log("START: YouTube Music won't start - playing the radio instead (${st.name})")
+                        RadioPlayer.play(this@DriveMonitorService, st)
+                    }
                 } else {
                     handler.postDelayed(this, START_TICK_MS)
                 }
@@ -1215,6 +1231,22 @@ class DriveMonitorService : NotificationListenerService() {
         return coverCache.get(song?.takeIf { it != "|" }) { CoverArt.from(md) }
     }
     private val coverCache = CoverArt.Cache()
+
+    /**
+     * YouTube Music never showed up: which players Android does list, and the app's own state - so a
+     * log tells "not running / stopped / switched off" apart from "running but we don't see it".
+     */
+    private fun logStartDiagnosis() {
+        val seen = try { sessions.getActiveSessions(listenerComponent).map { it.packageName }.distinct() } catch (e: SecurityException) { null }
+        val app = try { packageManager.getApplicationInfo(musicPkg, 0) } catch (e: Exception) { null }
+        DriveLog.log("START: diagnosis - players Android lists: " + (seen?.joinToString().takeUnless { it.isNullOrEmpty() } ?: if (seen == null) "none visible (notification access off?)" else "none") +
+            "; $musicPkg " + when {
+                app == null -> "not installed"
+                !app.enabled -> "switched off (disabled)"
+                app.flags and android.content.pm.ApplicationInfo.FLAG_STOPPED != 0 -> "force-stopped (open it once by hand)"
+                else -> "installed and allowed to run"
+            })
+    }
 
     private fun findYtm(): MediaController? = try {
         sessions.getActiveSessions(listenerComponent)

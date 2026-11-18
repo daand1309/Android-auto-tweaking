@@ -234,6 +234,10 @@ class Prefs(context: Context) {
     var radioWasOn: Boolean
         get() = sp.getBoolean("radio_was_on", false)
         set(v) = sp.edit().putBoolean("radio_was_on", v).apply()
+    /** YouTube Music won't start (no session after 22 s): play the radio instead of silence. */
+    var radioFallback: Boolean
+        get() = sp.getBoolean("radio_fallback", true)
+        set(v) = sp.edit().putBoolean("radio_fallback", v).apply()
     var radioStations: String
         get() = sp.getString("radio_stations", "") ?: ""
         set(v) = sp.edit().putString("radio_stations", v).apply()
