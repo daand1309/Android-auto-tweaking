@@ -867,7 +867,7 @@ class DriveMonitorService : NotificationListenerService() {
                     // No player yet. Wake it without its screen first; only open the app if that fails.
                     tick == 0 -> { if (!wakeMusicQuietly()) { DriveLog.log("START: no YouTube Music session yet - sending media PLAY key"); sendPlayKey() } }
                     tick == 2 || tick == 6 -> {
-                        // A media PLAY key wakes the last-used music app, also without its screen.
+                        // A PLAY key wakes YouTube Music without its screen (sent to it directly, see sendPlayKey).
                         DriveLog.log("START: no YouTube Music session yet - sending media PLAY key")
                         sendPlayKey()
                     }
@@ -974,8 +974,27 @@ class DriveMonitorService : NotificationListenerService() {
         }
     }
 
-    private fun sendPlayKey() {
+    /**
+     * PLAY for YouTube Music while it has no player yet. Sent to YouTube Music's own media-button
+     * receiver: Android's general media key goes to whichever app played last - and since the radio
+     * that's Drive Music itself, so YouTube Music never woke (18 Nov 16:09, 18:07, 18:21). Android's
+     * route is only the last resort, when the music app has no such receiver.
+     */
+    private fun sendPlayKey(viaAndroid: Boolean = false) {
         val now = SystemClock.uptimeMillis()
+        val receivers = try {
+            packageManager.queryBroadcastReceivers(Intent(Intent.ACTION_MEDIA_BUTTON).setPackage(musicPkg), 0)
+        } catch (e: Exception) { emptyList() }
+        if (receivers.isNotEmpty() && !viaAndroid) {
+            val r = receivers.first().activityInfo
+            for (action in listOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
+                sendBroadcast(Intent(Intent.ACTION_MEDIA_BUTTON).setClassName(r.packageName, r.name)
+                    .putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(now, now, action, KeyEvent.KEYCODE_MEDIA_PLAY, 0)))
+            }
+            DriveLog.log("START: PLAY sent to YouTube Music itself")
+            return
+        }
+        if (receivers.isEmpty()) DriveLog.log("START: YouTube Music has no media button receiver - using Android's media key")
         audio.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY, 0))
         audio.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY, 0))
     }

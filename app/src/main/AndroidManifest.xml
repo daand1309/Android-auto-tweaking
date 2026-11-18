@@ -31,6 +31,10 @@
          REQUEST_IGNORE_BATTERY_OPTIMIZATIONS (policy-flagged). -->
 
     <queries>
+        <!-- Press play on the music app itself (its media button receiver), not on "whoever played last". -->
+        <intent>
+            <action android:name="android.intent.action.MEDIA_BUTTON" />
+        </intent>
         <!-- Wake the music app without its screen (like Android Auto does), via its media browser service. -->
         <intent>
             <action android:name="android.media.browse.MediaBrowserService" />
