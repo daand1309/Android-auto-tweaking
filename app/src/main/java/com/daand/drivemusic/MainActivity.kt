@@ -1467,7 +1467,8 @@ class MainActivity : Activity() {
             "• Notifications are never read. Logs stay on the phone unless you share them.\n" +
             "• Where's my car (optional): your parked spot is saved on the phone only, never sent anywhere.\n" +
             "• The premium voice (if you set it up) sends the spoken text to Microsoft, and nothing else.\n" +
-            "• No overlay, accessibility, contacts, SMS or storage access.")
+            "• Car screen shortcuts: Home / Work and up to 3 favourite contacts you pick yourself - stored on the phone only, never logged.\n" +
+            "• No overlay, accessibility, SMS or storage access, and no access to your contact list (only a contact you pick).")
 
         header("Still stuck?")
         text("Home → Music & driving is where the music settings live; Home → Setup runs the checklist again and " +
@@ -1487,8 +1488,61 @@ class MainActivity : Activity() {
         stepRow(4, "Back in the Android Auto settings → Customise launcher (Launcher aanpassen) → tick Drive Music.")
         stepRow(5, "Unplug the phone and reconnect it.")
         header("What you get")
-        text("Drive Music in the car's app grid: now playing, the media controls and the Welcome button " +
-            "(which also skips the greeting while it speaks).")
+        text("Drive Music in the car's app grid, so the phone can stay in its holder: play / next, Find fuel " +
+            "(Waze on the car screen), Navigate home or to work, Call a favourite, and under More: previous, " +
+            "like / dislike, auto-resume and the weather. The Welcome button replays the greeting (or skips it).")
+
+        header("Navigate (Home / Work)")
+        for ((label, enc) in listOf("Home" to prefs.placeHome, "Work" to prefs.placeWork)) {
+            val place = Shortcuts.decodePlace(enc)
+            stepperLike("$label: ${place?.name ?: "not set"}", if (place == null) "Set" else "Change") { askPlace(label) }
+        }
+
+        header("Call (up to ${Shortcuts.MAX_FAVOURITES} favourites)")
+        val favs = Shortcuts.decodeFavourites(prefs.favourites)
+        favs.forEachIndexed { i, f ->
+            stepperLike("📞 ${f.name}", "Remove") {
+                prefs.favourites = Shortcuts.encodeFavourites(favs.filterIndexed { j, _ -> j != i }); render()
+            }
+        }
+        if (favs.size < Shortcuts.MAX_FAVOURITES) button("Pick a contact") {
+            try {
+                @Suppress("DEPRECATION")
+                startActivityForResult(Intent(Intent.ACTION_PICK, android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI), REQ_CONTACT)
+            } catch (e: Exception) { toast("No contacts app to pick from") }
+        }
+        text("Only the contact you pick is read (Android hands over just that one), and it stays on this phone. " +
+            "Calls go through the car, hands-free.")
+    }
+
+    /** Home / Work: where you are now, or an address (looked up by Android's own geocoder). */
+    private fun askPlace(label: String) {
+        val save = { name: String, lat: Double, lon: Double ->
+            val enc = Shortcuts.Place(name.ifBlank { label }, lat, lon).encode()
+            if (label == "Home") prefs.placeHome = enc else prefs.placeWork = enc
+            DriveLog.log("Setting changed: $label set for the car screen")   // never where it is
+            toast("$label saved"); render()
+        }
+        AlertDialog.Builder(this).setTitle(label)
+            .setItems(arrayOf("Where I am now", "Type an address", "Clear")) { _, i ->
+                when (i) {
+                    0 -> { toast("Finding your location..."); Thread {
+                        val here = Here.position(this)
+                        runOnUiThread { if (here == null) toast("Couldn't get your location (allowed?)") else save(label, here.first, here.second) }
+                    }.start() }
+                    1 -> askText("$label address", "e.g. Kerkstraat 1, Noordwijk", "") { q ->
+                        if (q.isBlank()) return@askText
+                        Thread {
+                            val a = try {
+                                @Suppress("DEPRECATION")
+                                android.location.Geocoder(this).getFromLocationName(q, 1)?.firstOrNull()
+                            } catch (e: Exception) { null }
+                            runOnUiThread { if (a == null) toast("Address not found") else save(q, a.latitude, a.longitude) }
+                        }.start()
+                    }
+                    else -> { if (label == "Home") prefs.placeHome = "" else prefs.placeWork = ""; render() }
+                }
+            }.show()
     }
 
     private fun openAndroidAutoSettings() {
@@ -1540,6 +1594,19 @@ class MainActivity : Activity() {
                     DriveLog.log("Settings backed up")
                 }
                 REQ_CAR_PHOTO -> saveImageInBackground(uri, IntroImage.HERO, "Car photo set")
+                REQ_CONTACT -> {
+                    val p = android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER
+                    val n = android.provider.ContactsContract.Contacts.DISPLAY_NAME
+                    contentResolver.query(uri, arrayOf(n, p), null, null, null)?.use { c ->
+                        if (!c.moveToFirst()) return
+                        val number = c.getString(1).orEmpty()
+                        if (!Shortcuts.validNumber(number)) { toast("That contact has no usable number"); return }
+                        val fav = Shortcuts.Favourite(c.getString(0).orEmpty().ifBlank { number }, number)
+                        prefs.favourites = Shortcuts.encodeFavourites(Shortcuts.addFavourite(Shortcuts.decodeFavourites(prefs.favourites), fav))
+                        DriveLog.log("Setting changed: a favourite contact added for the car screen")   // no name, no number
+                        toast("${fav.name} added"); render()
+                    }
+                }
                 REQ_INTRO_IMAGE -> saveImageInBackground(uri, null, "Intro image set")
                 REQ_IMPORT -> {
                     // A settings backup is a few KB; refuse anything big (picked the wrong file?).
@@ -2839,6 +2906,7 @@ class MainActivity : Activity() {
         private const val REQ_IMPORT = 11
         private const val REQ_INTRO_IMAGE = 12
         private const val REQ_CAR_PHOTO = 13
+        private const val REQ_CONTACT = 31
         /** Utterance id for a voice sample on the Voice page. */
         private const val SAMPLE_ID = "sample"
         /** Key for the "Automatic" row (it has no voice name of its own). */

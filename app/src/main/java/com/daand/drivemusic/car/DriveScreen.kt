@@ -91,20 +91,24 @@ class DriveScreen(carContext: CarContext) : Screen(carContext), DefaultLifecycle
         }
         val s = state()
         lastSignature = s.toString()
+        val favs = com.daand.drivemusic.Shortcuts.decodeFavourites(prefs.favourites)
+        val places = listOf("Home" to prefs.placeHome, "Work" to prefs.placeWork)
+            .filter { com.daand.drivemusic.Shortcuts.decodePlace(it.second) != null }.map { it.first }
         return CarTemplate.build(
             s,
             CarTemplate.Callbacks(
-                onPrevious = { DriveMonitorService.instance?.skipPrevious(); invalidate() },
                 onPlayPause = { DriveMonitorService.instance?.playPause(); invalidate() },
                 onNext = { DriveMonitorService.instance?.skipNext(); invalidate() },
-                onToggleResume = {
-                    ResumeToggle.tapNow(carContext, "Car screen")   // for this drive only
-                    invalidate()
-                },
+                onFuel = { screenManager.push(FuelScreen(carContext)) },
+                onNavigate = { screenManager.push(PlacesScreen(carContext)) },
+                onCall = { screenManager.push(CallScreen(carContext)) },
+                onMore = { screenManager.push(MoreScreen(carContext) { state().let { it.infoTitle to it.infoText } }) },
                 onWelcome = {
                     WelcomeAnnouncer.run(carContext, DriveMonitorService.instance?.currentSong(), recordAsGreeted = false)
                 },
             ),
+            callNames = favs.joinToString(" · ") { it.name }.ifEmpty { "Pick favourites on the phone" },
+            placeNames = places.joinToString(" · ").ifEmpty { "Set Home / Work on the phone" },
         )
     }
 }

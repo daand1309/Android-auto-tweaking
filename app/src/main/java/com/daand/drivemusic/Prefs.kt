@@ -210,6 +210,17 @@ class Prefs(context: Context) {
         get() = sp.getString("freeze_frame", "") ?: ""
         set(v) = sp.edit().putString("freeze_frame", v).apply()
 
+    /** Car-screen shortcuts (see [Shortcuts]): "name|lat|lon" each, and "name|number;..." - on the phone only. */
+    var placeHome: String
+        get() = sp.getString("place_home", "") ?: ""
+        set(v) = sp.edit().putString("place_home", v).apply()
+    var placeWork: String
+        get() = sp.getString("place_work", "") ?: ""
+        set(v) = sp.edit().putString("place_work", v).apply()
+    var favourites: String
+        get() = sp.getString("favourites", "") ?: ""
+        set(v) = sp.edit().putString("favourites", v).apply()
+
     var fuelType: String
         get() = sp.getString("fuel_type", FuelPrices.Fuel.EURO95.code) ?: FuelPrices.Fuel.EURO95.code
         set(v) = sp.edit().putString("fuel_type", v).apply()

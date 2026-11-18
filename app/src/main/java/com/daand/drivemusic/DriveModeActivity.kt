@@ -354,29 +354,7 @@ class DriveModeActivity : Activity() {
     }
 
     /** Your position for the fuel search, on the phone only: a recent fix, else a fresh one (≤ 10 s). */
-    private fun currentPosition(): Pair<Double, Double>? {
-        val granted = { p: String -> checkSelfPermission(p) == android.content.pm.PackageManager.PERMISSION_GRANTED }
-        if (!granted(android.Manifest.permission.ACCESS_FINE_LOCATION) && !granted(android.Manifest.permission.ACCESS_COARSE_LOCATION)) return null
-        return try {
-            val lm = getSystemService(android.location.LocationManager::class.java)
-            val now = System.currentTimeMillis()
-            fun last(maxAge: Long) = lm.allProviders.mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }
-                .filter { now - it.time < maxAge }.maxByOrNull { it.time }
-            last(2 * 60_000L)?.let { return it.latitude to it.longitude }   // Maps is usually running: GPS is fresh
-            if (android.os.Build.VERSION.SDK_INT >= 30) {
-                val provider = listOf(android.location.LocationManager.GPS_PROVIDER, android.location.LocationManager.NETWORK_PROVIDER)
-                    .firstOrNull { runCatching { lm.isProviderEnabled(it) }.getOrDefault(false) }
-                if (provider != null) {
-                    val latch = java.util.concurrent.CountDownLatch(1)
-                    var fix: android.location.Location? = null
-                    lm.getCurrentLocation(provider, null, mainExecutor) { fix = it; latch.countDown() }
-                    latch.await(10, java.util.concurrent.TimeUnit.SECONDS)
-                    fix?.let { return it.latitude to it.longitude }
-                }
-            }
-            last(15 * 60_000L)?.let { it.latitude to it.longitude }
-        } catch (e: SecurityException) { null }
-    }
+    private fun currentPosition(): Pair<Double, Double>? = Here.position(this)
 
     /** Turn-by-turn in Waze (shows on the car screen too); Google Maps, then any maps app, if it isn't there. */
     private fun navigateTo(stop: FuelStops.Stop, why: String) {

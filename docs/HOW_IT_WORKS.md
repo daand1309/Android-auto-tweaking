@@ -127,6 +127,13 @@ Landscape works too (side by side). Controls dip slightly and give a short vibra
 *Auto-resume* on/off, *Weather*, *Any news?*, and *Car status* (with the OBD adapter). Update
 questions appear there as a pop-up with *Go ahead* / *Not interested*.
 
+**Drive Music car app** (the other icon, so the phone can stay in its holder): *Play/Pause* (with
+what's playing), *Next*, *Find fuel* (nearest good price / cheapest, no motorway stations - one tap
+starts Waze on the car screen), *Navigate* (Home / Work, set on the phone's *Car screen* page),
+*Call* (up to 3 favourites you pick - only that contact is read, calls go hands-free through the car)
+and *More* (previous, like / dislike, auto-resume, weather). Places and favourites stay on the phone
+and are never logged.
+
 ---
 
 ## 5. The butler

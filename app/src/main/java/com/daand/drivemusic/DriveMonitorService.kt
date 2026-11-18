@@ -1000,6 +1000,38 @@ class DriveMonitorService : NotificationListenerService() {
         DriveLog.log("Car screen: previous track")
     }
 
+    /**
+     * Thumbs up / down for the song playing, the way YouTube Music offers it in Android Auto (its own
+     * custom actions); else a thumb rating. Down also skips it. False when the music app offers neither.
+     */
+    fun rate(up: Boolean, where: String): Boolean {
+        val c = musicController() ?: return false
+        val actions = c.playbackState?.customActions.orEmpty()
+        fun matches(a: android.media.session.PlaybackState.CustomAction): Boolean {
+            val k = (a.action + " " + a.name).lowercase()
+            val down = "down" in k || "dislike" in k
+            return if (up) !down && ("thumb" in k || "like" in k) else down
+        }
+        val custom = actions.firstOrNull { matches(it) }
+        val ok = when {
+            custom != null -> runCatching { c.transportControls.sendCustomAction(custom, null) }.isSuccess
+            c.ratingType == android.media.Rating.RATING_THUMB_UP_DOWN ->
+                runCatching { c.transportControls.setRating(android.media.Rating.newThumbRating(up)) }.isSuccess
+            else -> false
+        }
+        DriveLog.log("$where: ${if (up) "like" else "dislike"} - " + when {
+            custom != null -> "sent '${custom.name}'"
+            ok -> "sent as a rating"
+            else -> "the music app offers no like button (it offers: ${actions.joinToString { it.name.toString() }.ifEmpty { "nothing" }})"
+        })
+        if (!up && ok) {
+            // YouTube Music usually skips a disliked song itself; only skip if it's still on.
+            val before = currentSong()?.title
+            handler.postDelayed({ if (before != null && currentSong()?.title == before) skipNext() }, 1_500)
+        }
+        return ok
+    }
+
     /** Toggle play/pause from the car screen. A pause here won't be auto-resumed. */
     /** Pause pressed on a car screen: you meant it, so auto-resume leaves it alone. */
     fun pauseByUser(where: String) {

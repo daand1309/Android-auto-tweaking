@@ -16,7 +16,7 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class CarTemplateTest {
 
-    private val noop = CarTemplate.Callbacks({}, {}, {}, {}, {})
+    private val noop = CarTemplate.Callbacks({}, {}, {}, {}, {}, {}, {})
 
     private fun state(playing: Boolean, resume: Boolean) = CarTemplate.State(
         nowPlaying = "Freedom — Rage Against The Machine",
@@ -28,11 +28,20 @@ class CarTemplateTest {
 
     @Test fun buildsWithoutBreakingAndroidAutoRules() {
         for (playing in listOf(true, false)) for (resume in listOf(true, false)) {
-            val t = CarTemplate.build(state(playing, resume), noop) as ListTemplate
+            val t = CarTemplate.build(state(playing, resume), noop, "Mum · Anna", "Home · Work") as ListTemplate
             val rows = t.singleList!!.items.size
             assertTrue("$rows rows exceeds the driving limit", rows <= CarTemplate.MAX_ROWS)
             assertEquals(1, t.actionStrip!!.actions.size)
         }
+    }
+
+    @Test fun subScreensBuildWithinTheRules() {
+        val many = (1..9).map { CarTemplate.Item("Row $it", "text $it") {} } + CarTemplate.Item("Info only", "no tap")
+        val t = CarTemplate.list("Find fuel", many) as ListTemplate
+        assertTrue(t.singleList!!.items.size <= CarTemplate.MAX_ROWS)
+        assertTrue((CarTemplate.list("Find fuel", emptyList(), loading = true) as ListTemplate).isLoading)
+        CarTemplate.list("Call", emptyList())                       // empty: a message, no crash
+        CarTemplate.list("", listOf(CarTemplate.Item("", "")))      // blank titles must not crash either
     }
 
     /** Proves the rules are really checked here: the old layout (two titled buttons) must be rejected. */

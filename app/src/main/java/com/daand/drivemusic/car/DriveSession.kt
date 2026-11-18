@@ -30,10 +30,21 @@ object CarLink {
     fun detach(c: CarContext) { if (ref?.get() === c) ref = null }
 
     /** Navigate on the car screen; false when Drive Music isn't running there (or it refused). Main thread. */
-    fun navigate(lat: Double, lon: Double): Boolean {
-        val c = ref?.get() ?: return false
+    fun navigate(lat: Double, lon: Double, c: CarContext? = ref?.get()): Boolean {
+        c ?: return false
         return runCatching {
             c.startCarApp(Intent(CarContext.ACTION_NAVIGATE, android.net.Uri.parse(com.daand.drivemusic.FuelStops.carNavUri(lat, lon))))
         }.isSuccess
+    }
+
+    /**
+     * Call through the car (hands-free, the car's own phone screen). A straight call where Android Auto
+     * allows it; otherwise the number comes up ready to dial with one tap. Main thread.
+     */
+    fun call(number: String, c: CarContext? = ref?.get()): Boolean {
+        c ?: return false
+        val uri = android.net.Uri.parse(com.daand.drivemusic.Shortcuts.telUri(number))
+        return runCatching { c.startCarApp(Intent(Intent.ACTION_CALL, uri)) }.isSuccess ||
+            runCatching { c.startCarApp(Intent(Intent.ACTION_DIAL, uri)) }.isSuccess
     }
 }
