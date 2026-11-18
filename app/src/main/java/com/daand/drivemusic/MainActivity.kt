@@ -1512,7 +1512,8 @@ class MainActivity : Activity() {
             } catch (e: Exception) { toast("No contacts app to pick from") }
         }
         text("Only the contact you pick is read (Android hands over just that one), and it stays on this phone. " +
-            "Calls go through the car, hands-free.")
+            "Calls go through the car, hands-free - from the car screen or Drive Mode's Go tab. Allow phone calls " +
+            "when asked, so one tap starts the call.")
     }
 
     /** Home / Work: where you are now, or an address (looked up by Android's own geocoder). */
@@ -1605,6 +1606,9 @@ class MainActivity : Activity() {
                         prefs.favourites = Shortcuts.encodeFavourites(Shortcuts.addFavourite(Shortcuts.decodeFavourites(prefs.favourites), fav))
                         DriveLog.log("Setting changed: a favourite contact added for the car screen")   // no name, no number
                         toast("${fav.name} added"); render()
+                        // One tap from Drive Mode starts the call (without it, the dialer opens and needs another tap).
+                        if (checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED)
+                            requestPermissions(arrayOf(Manifest.permission.CALL_PHONE), REQ_CALL)
                     }
                 }
                 REQ_INTRO_IMAGE -> saveImageInBackground(uri, null, "Intro image set")
@@ -2907,6 +2911,7 @@ class MainActivity : Activity() {
         private const val REQ_INTRO_IMAGE = 12
         private const val REQ_CAR_PHOTO = 13
         private const val REQ_CONTACT = 31
+        private const val REQ_CALL = 32
         /** Utterance id for a voice sample on the Voice page. */
         private const val SAMPLE_ID = "sample"
         /** Key for the "Automatic" row (it has no voice name of its own). */

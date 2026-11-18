@@ -19,6 +19,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Opens Drive Mode on connect via a full-screen-intent notification (no overlay permission). -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- One-tap calls to the favourites you pick (Drive Mode / car screen), hands-free through the car. -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
 
     <!-- Deliberately NOT requested, to keep phone security (Play Protect / Samsung) happy:
          SYSTEM_ALERT_WINDOW (overlay + notification access is a malware pattern),

@@ -629,7 +629,7 @@ class DriveFlowTest {
         assertTrue("Car tab is ${carTab?.height}px tall, want >= $minPx", (carTab?.height ?: 0) >= minPx)
         onMain { carTab!!.performClick() }
         SystemClock.sleep(500)
-        assertEquals("tapping the Car tab opens it", 1, a.currentTab())
+        assertEquals("tapping the Car tab opens it", 2, a.currentTab())
         onMain { a.pagerForTest().goTo(0, animate = false) }
         SystemClock.sleep(300)
         val instr = InstrumentationRegistry.getInstrumentation()
@@ -652,9 +652,19 @@ class DriveFlowTest {
         val w = pager.width.toFloat()
         val midY = loc[1] + pager.height * 0.5f
 
-        // Swipe left -> car tab.
+        // Swipe left -> the Go tab (Music · Go · Car).
         swipe(loc[0] + w * 0.85f, loc[0] + w * 0.1f, midY)
-        assertEquals("swipe left opens the car tab", 1, a.currentTab())
+        assertEquals("swipe left opens the Go tab", 1, a.currentTab())
+        // The Go tab: fuel, Home / Work and calls, each a big button.
+        var goRows = 0
+        onMain {
+            fun find(v: android.view.View) {
+                if (v is android.widget.TextView && v.isShown && v.text.toString() in setOf("Find fuel", "Home", "Work", "Call")) goRows++
+                if (v is android.view.ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i))
+            }
+            find(a.window.decorView)
+        }
+        assertEquals("Go tab shows Find fuel, Home, Work and Call", 4, goRows)
         // Swipe right -> back to music.
         swipe(loc[0] + w * 0.1f, loc[0] + w * 0.85f, midY)
         assertEquals(0, a.currentTab())
@@ -679,7 +689,7 @@ class DriveFlowTest {
         onMain { pager.goTo(0) }
         SystemClock.sleep(400)
         assertEquals(0, a.currentTab())
-        onMain { pager.goTo(1) }
+        onMain { pager.goTo(2) }
         SystemClock.sleep(1_500)
         var guidance = ""
         onMain {

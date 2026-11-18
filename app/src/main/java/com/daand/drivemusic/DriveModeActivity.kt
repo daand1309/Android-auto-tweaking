@@ -30,6 +30,7 @@ class DriveModeActivity : Activity() {
     private lateinit var cover: android.widget.ImageView
     private var coverShown: android.graphics.Bitmap? = null
     private lateinit var status: TextView
+    private lateinit var thumbs: LinearLayout
     private lateinit var playBtn: android.widget.ImageButton
     private lateinit var resumeBtn: Button
     private lateinit var rootFrame: android.widget.FrameLayout
@@ -97,8 +98,9 @@ class DriveModeActivity : Activity() {
             if (closeIfLeftCar()) return
             val onCar = ::pager.isInitialized && pager.current == TAB_CAR
             if (onCar) updateCarPage() else updateDynamic()
-            // Car tab with live data: every second. No data yet (or music tab): every 3 s.
-            val live = onCar && Prefs(this@DriveModeActivity).obdEnabled && com.daand.drivemusic.obd.ObdManager.live() != null
+            updateStrip()
+            // Live car data (car tab, or the numbers above the tabs): every second. Otherwise every 3 s.
+            val live = (onCar || stripShown) && Prefs(this@DriveModeActivity).obdEnabled && com.daand.drivemusic.obd.ObdManager.live() != null
             handler.postDelayed(this, if (live) 1000L else 3000L)
         }
     }
@@ -113,7 +115,7 @@ class DriveModeActivity : Activity() {
         val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(dp(12), dp(10), dp(12), dp(2)) }
         // Big, solid tab buttons: easy to find and hit at a glance (64 dp tall; a bit less in landscape).
         val tabHeight = dp(if (wide) 52 else 64)
-        listOf(R.drawable.ic_music to "Music", R.drawable.ic_gauge to "Car").forEachIndexed { i, (icon, label) ->
+        listOf(R.drawable.ic_music to "Music", R.drawable.ic_navigate to "Go", R.drawable.ic_gauge to "Car").forEachIndexed { i, (icon, label) ->
             val tv = TextView(this).apply {
                 text = label; textSize = if (wide) 19f else 22f; gravity = Gravity.CENTER; setPadding(dp(8), 0, dp(8), 0)
                 tag = icon  // the icon goes inline, right next to the word (see highlightTab)
@@ -123,13 +125,16 @@ class DriveModeActivity : Activity() {
             tabLabels += tv
             bar.addView(tv, LinearLayout.LayoutParams(0, tabHeight, 1f).apply { setMargins(dp(5), 0, dp(5), 0) })
         }
+        column.addView(buildStrip(), LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
         column.addView(bar, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
         pager = SwipePager(this)
         pager.addPage(buildUi())
+        pager.addPage(buildGoPage())
         pager.addPage(buildCarPage())
         pager.onPageChanged = { i ->
             highlightTab(i)
-            com.daand.drivemusic.obd.ObdManager.liveView = i == TAB_CAR
+            com.daand.drivemusic.obd.ObdManager.liveView = i == TAB_CAR || stripShown
+            if (i == TAB_GO) refreshGo()
             handler.removeCallbacks(tick); handler.post(tick)
         }
         column.addView(pager, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -168,6 +173,66 @@ class DriveModeActivity : Activity() {
     @androidx.annotation.VisibleForTesting internal fun currentTab() = pager.current
     @androidx.annotation.VisibleForTesting internal fun pagerForTest() = pager
 
+    // ---------------------------------------------------------------- live numbers above the tabs
+
+    private lateinit var strip: LinearLayout
+    private val stripValues = mutableListOf<TextView>()
+    private var stripShown = false
+
+    /** Speed · range · engine · battery: visible on every tab while the adapter gives data; tap = Car tab. */
+    private fun buildStrip(): View {
+        strip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; setPadding(dp(12), dp(10), dp(12), 0); visibility = View.GONE
+            setOnClickListener { pager.goTo(TAB_CAR) }
+            contentDescription = "Live car numbers. Tap for all car data"
+        }
+        for (unit in listOf("km/h", "km range", "engine", "volt")) {
+            val v = TextView(this).apply {
+                setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD); textSize = if (wide) 18f else 22f
+                gravity = Gravity.CENTER; fontFeatureSettings = Style.TABULAR; maxLines = 1; text = "—"
+            }
+            stripValues += v
+            strip.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+                background = Style.rounded(Style.SURFACE, dp(Style.R_CARD).toFloat()); setPadding(dp(4), dp(6), dp(4), dp(6))
+                isDuplicateParentStateEnabled = true
+                setOnClickListener { pager.goTo(TAB_CAR) }
+                addView(v)
+                addView(TextView(this@DriveModeActivity).apply { text = unit; textSize = 11f; setTextColor(Style.TEXT2); gravity = Gravity.CENTER })
+            }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(4), 0, dp(4), 0) })
+        }
+        return strip
+    }
+
+    private fun updateStrip() {
+        if (!::strip.isInitialized) return
+        val p = Prefs(this)
+        val obd = com.daand.drivemusic.obd.ObdManager
+        val s = if (p.obdEnabled) obd.live() else null
+        // On the car tab the big tiles say it all; without data the strip would only show dashes.
+        val show = s != null && pager.current != TAB_CAR
+        if (show != stripShown) {
+            stripShown = show
+            strip.visibility = if (show) View.VISIBLE else View.GONE
+            obd.liveView = pager.current == TAB_CAR || show
+        }
+        if (!show) return
+        val v = CarDash.values(s, obd.trip, p.greetingDutch, obd.rangeKm(s))
+        val texts = listOf(
+            s!!.speedKmh?.toString() ?: "—",
+            obd.rangeKm(s)?.toString() ?: "—",
+            s.coolantC?.let { "$it°" } ?: "—",
+            s.volts?.let { "%.1f".format(java.util.Locale.ROOT, it) } ?: "—",
+        )
+        val colors = listOf(null, null, v["coolant"]?.second, v["battery"]?.second)
+        texts.forEachIndexed { i, t ->
+            val tv = stripValues[i]
+            if (tv.text != t) tv.text = t
+            val c = colors[i] ?: Style.TEXT
+            if (tv.currentTextColor != c) tv.setTextColor(c)
+        }
+    }
+
     // ---------------------------------------------------------------- car tab (live OBD data)
 
     private val carValues = HashMap<String, TextView>()
@@ -200,15 +265,6 @@ class DriveModeActivity : Activity() {
         }
         carStatus = TextView(this).apply { setTextColor(Style.TEXT2); textSize = 14f; gravity = Gravity.CENTER; setPadding(0, dp(6), 0, 0) }
         root.addView(carStatus, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
-        // Find fuel: the nearest good price or the cheapest around you, then navigate there.
-        root.addView(Button(this).apply {
-            text = "⛽  Find fuel"; isAllCaps = false; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD)
-            textSize = if (wide) 16f else 18f
-            background = Style.button(Style.SURFACE2, dp(Style.R_CARD).toFloat()); stateListAnimator = null
-            contentDescription = "Find fuel: the nearest good price or the cheapest station"
-            setOnClickListener { findFuel() }
-            Feel.press(this)
-        }, LinearLayout.LayoutParams(-1, dp(if (wide) 48 else 58)).apply { topMargin = dp(8); setMargins(dp(6), dp(8), dp(6), 0) })
         return root
     }
 
@@ -289,30 +345,87 @@ class DriveModeActivity : Activity() {
         }
     }
 
-    // ---------------------------------------------------------------- find fuel
+    // ---------------------------------------------------------------- Go tab: fuel, places, calls
 
-    private var fuelView: View? = null
+    private lateinit var goList: LinearLayout
+    /** Find fuel's answer: a Choice, a message, or null while looking / not looked yet. */
+    private var fuelResult: Any? = null
+    private var fuelAt = 0L
+    private var fuelLooking = false
 
-    /** Full-screen, like the update question: what's happening, then one or two big station buttons. */
-    private fun findFuel() {
-        if (fuelView != null) return
+    private fun buildGoPage(): View {
+        goList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(6), dp(14), dp(14)) }
+        return android.widget.ScrollView(this).apply {
+            setBackgroundColor(Style.BG); isFillViewport = true
+            addView(goList, android.widget.FrameLayout.LayoutParams(-1, -2))
+        }
+    }
+
+    /** One big row: icon, title, a smaller line under it. No [onClick] = just information. */
+    private fun goRow(icon: String, title: String, sub: String, accent: Int? = null, onClick: (() -> Unit)?) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(18), dp(10), dp(18), dp(10))
+        background = if (onClick != null) Style.button(Style.SURFACE, dp(Style.R_BIG).toFloat()) else Style.rounded(Style.SURFACE, dp(Style.R_BIG).toFloat())
+        addView(TextView(this@DriveModeActivity).apply { text = icon; textSize = if (wide) 26f else 32f; gravity = Gravity.CENTER },
+            LinearLayout.LayoutParams(dp(if (wide) 46 else 56), -2))
+        addView(LinearLayout(this@DriveModeActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(this@DriveModeActivity).apply {
+                text = title; setTextColor(accent ?: Style.TEXT); setTypeface(typeface, Typeface.BOLD)
+                textSize = if (wide) 18f else 21f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            if (sub.isNotBlank()) addView(TextView(this@DriveModeActivity).apply {
+                text = sub; setTextColor(Style.TEXT2); textSize = if (wide) 13f else 15f; maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END; fontFeatureSettings = Style.TABULAR
+            })
+        }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10) })
+        if (onClick != null) { setOnClickListener { onClick() }; Feel.press(this, 0.98f) }
+        contentDescription = "$title. $sub"
+    }
+
+    /** Fills the Go tab; the fuel search starts by itself the first time (and again after 10 minutes). */
+    private fun refreshGo() {
+        if (!::goList.isInitialized) return
+        val p = Prefs(this)
+        val dutch = p.greetingDutch
+        if (!fuelLooking && (fuelResult == null || System.currentTimeMillis() - fuelAt > 10 * 60_000L)) lookForFuel()
+        goList.removeAllViews()
+        val h = dp(if (wide) 72 else 88)
+        fun add(v: View) = goList.addView(v, LinearLayout.LayoutParams(-1, h).apply { bottomMargin = dp(10) })
+
+        when (val r = fuelResult) {
+            is FuelStops.Choice -> {
+                fun line(st: FuelStops.Stop) = "%s · €%.3f · %.1f km".format(java.util.Locale.ROOT, st.station.name, st.price, st.km)
+                val good = if (dutch) "Dichtbij, goede prijs" else "Nearest good price"
+                val cheap = if (dutch) "Goedkoopste" else "Cheapest"
+                if (r.nearestGood == r.cheapest) add(goRow("⛽", "$good · $cheap", line(r.cheapest)) { navigate(r.cheapest, "$good · $cheap") })
+                else {
+                    add(goRow("⛽", good, line(r.nearestGood)) { navigate(r.nearestGood, good) })
+                    add(goRow("💶", cheap, line(r.cheapest)) { navigate(r.cheapest, cheap) })
+                }
+            }
+            is String -> add(goRow("⛽", if (dutch) "Tanken" else "Find fuel", r + (if (dutch) " Tik om opnieuw te zoeken." else " Tap to try again.")) {
+                fuelResult = null; refreshGo() })
+            else -> add(goRow("⛽", if (dutch) "Tanken" else "Find fuel", if (dutch) "Tankstations zoeken…" else "Looking for fuel near you…", onClick = null))
+        }
+
+        for ((label, enc) in listOf((if (dutch) "Naar huis" else "Home") to p.placeHome, (if (dutch) "Naar werk" else "Work") to p.placeWork)) {
+            val icon = if (enc == p.placeHome) "🏠" else "💼"
+            val place = Shortcuts.decodePlace(enc)
+            if (place == null) add(goRow(icon, label, if (dutch) "Nog niet ingesteld: app → Car screen" else "Not set yet: in the app → Car screen", onClick = null))
+            else add(goRow(icon, label, if (dutch) "Waze op het autoscherm" else "Waze on the car screen") {
+                navigate(place.lat, place.lon, "NAVIGATE: to $label")   // never where it is
+            })
+        }
+
+        val favs = Shortcuts.decodeFavourites(p.favourites)
+        if (favs.isEmpty()) add(goRow("📞", if (dutch) "Bellen" else "Call", if (dutch) "Kies tot 3 favorieten in de app → Car screen" else "Pick up to 3 favourites in the app → Car screen", onClick = null))
+        favs.forEachIndexed { i, fav -> add(goRow("📞", fav.name, if (dutch) "Bellen, handsfree via de auto" else "Call, hands-free through the car") { call(fav, i) }) }
+    }
+
+    private fun lookForFuel() {
+        fuelLooking = true
         val dutch = Prefs(this).greetingDutch
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
-            setBackgroundColor(Style.BG); isClickable = true
-            val pad = if (wide) dp(14) else dp(24); setPadding(pad, pad, pad, pad)
-        }
-        fun close() { fuelView?.let { rootFrame.removeView(it) }; fuelView = null }
-        fun message(text: String) {
-            box.removeAllViews()
-            box.addView(TextView(this).apply { this.text = text; setTextColor(Style.TEXT); textSize = 22f; gravity = Gravity.CENTER },
-                LinearLayout.LayoutParams(-1, 0, 1f))
-            box.addView(answerButton(R.drawable.ic_answer_no, if (dutch) "Sluiten" else "Close", Style.SURFACE2) { close() },
-                LinearLayout.LayoutParams(-1, dp(72)))
-        }
-        message(if (dutch) "⛽  Tankstations zoeken…" else "⛽  Looking for fuel near you…")
-        fuelView = box
-        rootFrame.addView(box, android.widget.FrameLayout.LayoutParams(-1, -1))
         val fuel = FuelPrices.Fuel.of(Prefs(this).fuelType)
         Thread({
             val here = currentPosition()
@@ -327,28 +440,9 @@ class DriveModeActivity : Activity() {
                 }
             }
             runOnUiThread {
-                if (fuelView !== box) return@runOnUiThread   // closed meanwhile
-                if (result is String) { message(result); return@runOnUiThread }
-                val c = result as FuelStops.Choice
-                box.removeAllViews()
-                fun stopButton(title: String, stop: FuelStops.Stop, color: Int) = Button(this).apply {
-                    text = "$title\n${stop.station.name}\n€%.3f · %.1f km".format(java.util.Locale.ROOT, stop.price, stop.km)
-                    isAllCaps = false; setTextColor(Color.WHITE); setTypeface(typeface, Typeface.BOLD); fitText(13, 24, 4)
-                    background = Style.button(color, dp(Style.R_BIG).toFloat()); stateListAnimator = null
-                    setOnClickListener { close(); navigateTo(stop, title) }
-                    Feel.press(this)
-                }
-                val buttons = LinearLayout(this).apply { orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL }
-                val good = if (dutch) "Dichtbij, goede prijs" else "Nearest good price"
-                val cheap = if (dutch) "Goedkoopste" else "Cheapest"
-                if (c.nearestGood == c.cheapest) buttons.addView(stopButton("$good · $cheap", c.cheapest, Style.PRIMARY), if (wide) hLp(1f) else vLp(weight = 1f))
-                else {
-                    buttons.addView(stopButton(good, c.nearestGood, Style.PRIMARY), if (wide) hLp(1f) else vLp(weight = 1f))
-                    buttons.addView(stopButton(cheap, c.cheapest, 0xFF2E7D32.toInt()), if (wide) hLp(1f) else vLp(weight = 1f))
-                }
-                box.addView(buttons, LinearLayout.LayoutParams(-1, 0, 1f))
-                box.addView(answerButton(R.drawable.ic_answer_no, if (dutch) "Annuleren" else "Cancel", Style.SURFACE2) { close() },
-                    LinearLayout.LayoutParams(-1, dp(64)).apply { topMargin = dp(8) })
+                fuelLooking = false
+                fuelResult = result; fuelAt = System.currentTimeMillis()
+                if (!isFinishing) refreshGo()
             }
         }, "find-fuel").start()
     }
@@ -356,12 +450,14 @@ class DriveModeActivity : Activity() {
     /** Your position for the fuel search, on the phone only: a recent fix, else a fresh one (≤ 10 s). */
     private fun currentPosition(): Pair<Double, Double>? = Here.position(this)
 
+    private fun navigate(stop: FuelStops.Stop, why: String) = navigate(stop.station.lat, stop.station.lon,
+        "FUEL: navigating to ${stop.station.name}", " ($why, €%.3f, %.1f km)".format(java.util.Locale.ROOT, stop.price, stop.km))
+
     /** Turn-by-turn in Waze (shows on the car screen too); Google Maps, then any maps app, if it isn't there. */
-    private fun navigateTo(stop: FuelStops.Stop, why: String) {
-        val lat = stop.station.lat; val lon = stop.station.lon
+    private fun navigate(lat: Double, lon: Double, what: String, detail: String = "") {
         // Best: Android Auto opens your navigation app (Waze) on the car screen; the phone stays here.
         if (com.daand.drivemusic.car.CarLink.navigate(lat, lon)) {
-            DriveLog.log("FUEL: navigating to ${stop.station.name} on the car screen ($why, €%.3f, %.1f km)".format(java.util.Locale.ROOT, stop.price, stop.km))
+            DriveLog.log("$what on the car screen$detail")
             return
         }
         val tries = listOf(
@@ -376,11 +472,28 @@ class DriveModeActivity : Activity() {
                 // back on top of the phone - same moment, while we're still in front (that's what allows it).
                 startActivity(android.content.Intent(this, DriveModeActivity::class.java)
                     .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
-                DriveLog.log("FUEL: navigating to ${stop.station.name} with $app, Drive Mode kept in front ($why, €%.3f, %.1f km)".format(java.util.Locale.ROOT, stop.price, stop.km))
+                DriveLog.log("$what with $app, Drive Mode kept in front$detail")
                 return
             } catch (e: android.content.ActivityNotFoundException) { /* next one */ }
         }
-        DriveLog.log("FUEL: no maps app to navigate with")
+        DriveLog.log("$what: no maps app to navigate with")
+    }
+
+    /** A favourite: through the car's own phone screen when Drive Music runs there, else straight from the phone (audio goes to the car). */
+    private fun call(f: Shortcuts.Favourite, index: Int) {
+        val where = when {
+            com.daand.drivemusic.car.CarLink.call(f.number) -> "on the car screen"
+            else -> {
+                val direct = checkSelfPermission(android.Manifest.permission.CALL_PHONE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                val uri = android.net.Uri.parse(Shortcuts.telUri(f.number))
+                try {
+                    startActivity(android.content.Intent(if (direct) android.content.Intent.ACTION_CALL else android.content.Intent.ACTION_DIAL, uri)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                    if (direct) "from the phone" else "dialer opened (allow calls in the app for one tap)"
+                } catch (e: Exception) { "failed (${e.javaClass.simpleName})" }
+            }
+        }
+        DriveLog.log("CALL: favourite ${index + 1} from Drive Mode - $where")   // no name, no number
     }
 
     /** True once the car has been connected while this screen was open. */
@@ -526,6 +639,18 @@ class DriveModeActivity : Activity() {
             background = Style.rounded(Style.SURFACE, dp(Style.R_BIG).toFloat()); clipToOutline = true
             contentDescription = "Cover"; visibility = View.GONE
         }
+        thumbs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+        for (up in listOf(true, false)) thumbs.addView(Button(this).apply {
+            text = if (up) "👍" else "👎"; textSize = if (wide) 18f else 22f; isAllCaps = false
+            contentDescription = if (up) "Like this song" else "Dislike this song and skip it"
+            background = Style.button(Style.SURFACE2, dp(Style.R_CARD).toFloat()); stateListAnimator = null
+            setOnClickListener {
+                val ok = svc()?.rate(up, "Drive Mode") == true
+                status.text = when { !ok -> "YouTube Music didn't take the ${if (up) "like" else "dislike"}"; up -> "👍 Liked"; else -> "👎 Disliked - skipping" }
+                lastShown = ""; handler.postDelayed({ updateDynamic() }, 2_500)
+            }
+            Feel.press(this)
+        }, LinearLayout.LayoutParams(0, dp(if (wide) 44 else 52), 1f).apply { setMargins(dp(6), 0, dp(6), 0) })
         status = TextView(this).apply {
             setTextColor(Style.TEXT2); textSize = 15f; gravity = Gravity.CENTER; maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -563,6 +688,7 @@ class DriveModeActivity : Activity() {
             left.addView(cover, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, 0, 1.3f).apply {
                 gravity = Gravity.CENTER_HORIZONTAL; setMargins(dp(6), dp(6), dp(6), dp(2)) })
             left.addView(nowPlaying, vLp(weight = 1f))
+            left.addView(thumbs, vLp())
             left.addView(status, vLp())
             val right = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             right.addView(controls, vLp(weight = 2f))
@@ -582,6 +708,7 @@ class DriveModeActivity : Activity() {
             .apply { marginEnd = dp(14) })
         songRow.addView(nowPlaying, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
         root.addView(songRow, vLp(weight = 2f))
+        root.addView(thumbs, vLp())
         root.addView(status, vLp())
         root.addView(controls, vLp(weight = 3f))
         root.addView(bottom, vLp(weight = 1.4f))
@@ -608,7 +735,8 @@ class DriveModeActivity : Activity() {
             }
         }
         private const val TAB_MUSIC = 0
-        private const val TAB_CAR = 1
+        private const val TAB_GO = 1
+        private const val TAB_CAR = 2
     }
 
     /** Refreshes song / status / buttons - only touching the views when something changed (saves redraws). */

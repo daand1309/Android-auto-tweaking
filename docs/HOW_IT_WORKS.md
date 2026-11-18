@@ -103,10 +103,16 @@ per section, and long explanations folded to their first sentence ("More ›" op
 warnings, the setup checklist or the Help page). Back on any page returns to Home. New features and themes are one entry each (`HomeFeatures`,
 `Style.ALL_THEMES`).
 
-**Drive Mode** (full-screen, keeps the screen on, two tabs you can swipe between):
+**Drive Mode** (full-screen, keeps the screen on, three tabs you can swipe between: Music · Go · Car).
+With the OBD adapter, **live numbers** (speed, range, engine, battery) sit above the tabs on Music and
+Go - tap them for the Car tab.
 
-- **Music tab:** the song, huge previous / play-pause / next buttons, and *Welcome* (hear the greeting
-  again), *Resume on/off* (auto-resume for this drive) and *Close*.
+- **Music tab:** the song with 👍 / 👎 (like it in YouTube Music / dislike and skip), huge previous /
+  play-pause / next buttons, and *Welcome* (hear the greeting again), *Resume on/off* (auto-resume for
+  this drive) and *Close*.
+- **Go tab:** big buttons for *Find fuel* (searched as soon as you open the tab), *Home*, *Work* (Waze
+  on the car screen) and your up to 3 favourite contacts (one tap calls, hands-free through the car).
+  Home, Work and favourites are set on the app's *Car screen* page.
 - **Car tab** (with the OBD adapter): speed, RPM, engine temperature (blue cold / green good / red hot),
   fuel use now, this trip (km and L/100), battery, range left, outside and intake temperature.
   Warnings appear on top: amber = get it checked, red = stop or be careful.
@@ -115,7 +121,7 @@ warnings, the setup checklist or the Help page). Back on any page returns to Hom
   (mode 06: how close it is to its limit - shown in *Possible issues* from 85%, with its trend over drives),
   and, when a fault code is stored, the **freeze frame** (mode 02: speed, rpm, temperature… at that moment).
   All read-only.
-  *⛽ Find fuel* (under the numbers): the nearest station with a good price (at most 5 cents a litre
+  *⛽ Find fuel* (Go tab): the nearest station with a good price (at most 5 cents a litre
   above the cheapest) and the cheapest within 15 km, for your fuel type - motorway stations (often 20+
   cents dearer, recognised by the A-road in their address) are left out; tap one and Waze (or Google
   Maps) navigates there. Uses the ANWB station prices; your exact position stays on the phone.
@@ -239,7 +245,7 @@ simulated and a stand-in for YouTube Music. Every step was photographed and logg
 | Car connects | Greeting, shown on the car screen, then music | ✓ greeting spoken, car-screen pop-up shown and removed, music playing |
 | Pause mid-drive | Back on by itself after ~8 s | ✓ playing again 11 s after the pause (8 s wait + detection) |
 | Home while driving | Status "Driving", Now playing tile | ✓ "Driving · Android Auto connected", "Mr. Brightside – The Killers" |
-| Drive Mode | Song, big buttons, Welcome / Resume / Close; Car tab | ✓ all there; Car tab without adapter shows dashes and "Set up Car data (OBD)…" |
+| Drive Mode | Song, like / dislike, big buttons, Welcome / Resume / Close; Go tab (fuel, Home, Work, Call); Car tab | ✓ all there; Car tab without adapter shows dashes and "Set up Car data (OBD)…" |
 | Leaving the car | Music pauses, drive written down | ✓ paused immediately; Last drive tile "Under a minute" |
 | Car data page (new) | Switch it on, then choose the adapter | ✓ explanation and the switch |
 
