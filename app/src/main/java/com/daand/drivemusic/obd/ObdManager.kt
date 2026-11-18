@@ -378,9 +378,12 @@ object ObdManager {
      * the last 2 weeks) gets a quiet notification now and is said once in the next greeting.
      */
     private fun checkTrends(ctx: Context) {
-        val history = TripHistory.load(ctx).mapNotNull { it.health }
-        val h = history.lastOrNull()
-        if (h != null) DriveLog.log("OBD: health this drive - " + listOfNotNull(
+        val trips = TripHistory.load(ctx)
+        val history = trips.mapNotNull { it.health }
+        // This drive's own sample - not the last drive that had one (a short cold hop has none).
+        val h = trips.lastOrNull()?.health
+        if (h == null) DriveLog.log("OBD: health this drive - not measured (too short, or the engine didn't get warm)")
+        else DriveLog.log("OBD: health this drive - " + listOfNotNull(
             h.ltft?.let { "fuel trim $it%" }, h.chargeV?.let { "charging $it V" },
             h.idleSpread?.let { "idle ±$it rpm" }, h.warmupMin?.let { "warm-up $it min" }, h.cruiseCoolant?.let { "road temp $it °C" },
         ).joinToString(", ").ifEmpty { "not enough data" })

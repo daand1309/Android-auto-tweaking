@@ -17,6 +17,10 @@ object StartRules {
     fun quickRestart(sinceFirstStartMs: Long, sinceLastStartMs: Long, restartsUsed: Int, bounceWindowMs: Long): Boolean =
         bounceWindowMs > 0 && sinceLastStartMs < bounceWindowMs && sinceFirstStartMs < SETTLE_WINDOW_MS && restartsUsed < MAX_QUICK_RESTARTS
 
+    /** A pause with no clues that plays on by itself this soon (no resume from us) was the music app's hiccup. */
+    const val SELF_RECOVER_MS = 10_000L
+    fun selfRecovered(sincePauseCountedMs: Long): Boolean = sincePauseCountedMs in 0 until SELF_RECOVER_MS
+
     /** Turn auto-resume off for the rest of the drive because you clearly paused on purpose. */
     fun looksDeliberate(sinceResumeMs: Long, noClues: Boolean, sinceFirstStartMs: Long, afterMs: Long = DELIBERATE_AFTER_MS): Boolean =
         sinceResumeMs < 60_000 && noClues && sinceFirstStartMs >= afterMs

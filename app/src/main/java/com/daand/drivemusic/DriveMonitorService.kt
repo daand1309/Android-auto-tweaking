@@ -156,6 +156,8 @@ class DriveMonitorService : NotificationListenerService() {
     /** Set when you pause from the car screen, so auto-resume doesn't fight you. */
     private var userPausedViaUi = false
     private var lastPauseClue = ""
+    /** When the last pause with no clues was counted (0: none pending) - see [StartRules.selfRecovered]. */
+    private var unexplainedPauseAt = 0L
     private var lastAutoResumeAt = 0L
     /** Set when you pause again right after an auto-resume: we take the hint for the rest of the drive. */
     /** This drive's own auto-resume choice (a button in the car, or the app when your pauses look
@@ -330,6 +332,7 @@ class DriveMonitorService : NotificationListenerService() {
             firstStartAt = 0L; quickRestarts = 0
             lastAutoResumeAt = 0L
             lastPauseClue = ""
+            unexplainedPauseAt = 0L
             userPausedViaUi = false
             announceSongAfterStart = false
             musicStartedThisDrive = false
@@ -1201,7 +1204,17 @@ class DriveMonitorService : NotificationListenerService() {
                         briefInterruptions++
                         DriveLog.log("Brief interruption - playback recovered on its own (not counted)")
                     }
-                    if (resumeRunnable != null) DriveLog.log("Music came back by itself - auto-resume not needed")
+                    if (resumeRunnable != null) {
+                        val since = SystemClock.elapsedRealtime() - unexplainedPauseAt
+                        if (unexplainedPauseAt > 0 && StartRules.selfRecovered(since)) {
+                            // Nobody pressed anything and it played on within seconds: the music app's own
+                            // hiccup (buffering, the Morphe "Premium" check), not you - uncount it.
+                            pausesThisDrive = maxOf(0, pausesThisDrive - 1)
+                            briefInterruptions++
+                            DriveLog.log("Music came back by itself after ${since / 1000}s - a music app hiccup, not counted as a pause after all")
+                        } else DriveLog.log("Music came back by itself - auto-resume not needed")
+                    }
+                    unexplainedPauseAt = 0L
                     cancelResume()
                 }
                 PlaybackState.STATE_PAUSED, PlaybackState.STATE_STOPPED, PlaybackState.STATE_ERROR,
@@ -1270,6 +1283,7 @@ class DriveMonitorService : NotificationListenerService() {
         val clues = diagnose()
         lastPauseClue = clues.joinToString("; ").ifEmpty { "no clues (pause button / steering wheel / Hey Google?)" }
         DriveLog.log("!!! PAUSE #$pausesThisDrive while driving. Clues: $lastPauseClue")
+        unexplainedPauseAt = if (clues.isEmpty()) SystemClock.elapsedRealtime() else 0L
         val sinceResume = SystemClock.elapsedRealtime() - lastAutoResumeAt
         val sinceFirstStart = if (firstStartAt > 0) SystemClock.elapsedRealtime() - firstStartAt else Long.MAX_VALUE
         if (lastAutoResumeAt > 0 && StartRules.looksDeliberate(sinceResume, clues.isEmpty(), sinceFirstStart, deliberateAfterMs) && !resumeOffThisDrive) {

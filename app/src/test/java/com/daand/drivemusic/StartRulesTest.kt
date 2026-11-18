@@ -24,4 +24,11 @@ class StartRulesTest {
         assertFalse("with a clue (a call, the Assistant...) it isn't you", StartRules.looksDeliberate(4_000, false, 600_000))
         assertFalse("long after the auto-resume", StartRules.looksDeliberate(120_000, true, 600_000))
     }
+
+    @Test fun aPauseThatPlaysOnBySoonWasTheMusicAppsHiccup() {
+        // 18 Nov 09:51: paused with no clues, played on by itself 4 s later - YouTube Music, not you.
+        assertTrue(StartRules.selfRecovered(4_400))
+        assertFalse("long after: you pressed play yourself", StartRules.selfRecovered(30_000))
+        assertFalse(StartRules.selfRecovered(-1))
+    }
 }
