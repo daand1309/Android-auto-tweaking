@@ -369,7 +369,7 @@ object ObdManager {
             runCatching { TripHistory.add(ctx, rec); TripHistory.clearDraft(ctx) }
                 .onFailure { DriveLog.log("OBD: couldn't save the trip (${it.javaClass.simpleName})") }
             runCatching { TripNotice.post(ctx, rec, Prefs(ctx)) }
-            runCatching { checkTrends(ctx) }.onFailure { DriveLog.log("OBD: trend check failed (${it.javaClass.simpleName})") }
+            runCatching { checkTrends(ctx, rec.health) }.onFailure { DriveLog.log("OBD: trend check failed (${it.javaClass.simpleName})") }
         }, "trip-save").start()
     }
 
@@ -377,11 +377,12 @@ object ObdManager {
      * After each drive: compare the latest drives with this car's normal. A new finding (not told in
      * the last 2 weeks) gets a quiet notification now and is said once in the next greeting.
      */
-    private fun checkTrends(ctx: Context) {
+    private fun checkTrends(ctx: Context, thisDrive: HealthSample?) {
         val trips = TripHistory.load(ctx)
         val history = trips.mapNotNull { it.health }
-        // This drive's own sample - not the last drive that had one (a short cold hop has none).
-        val h = trips.lastOrNull()?.health
+        // This drive's own sample - not the last drive that had one (a short cold hop has none), and
+        // not whatever is last in the file if saving this drive failed.
+        val h = thisDrive?.takeIf { !it.isEmpty }
         if (h == null) DriveLog.log("OBD: health this drive - not measured (too short, or the engine didn't get warm)")
         else DriveLog.log("OBD: health this drive - " + listOfNotNull(
             h.ltft?.let { "fuel trim $it%" }, h.chargeV?.let { "charging $it V" },
