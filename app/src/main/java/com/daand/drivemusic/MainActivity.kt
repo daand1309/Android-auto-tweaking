@@ -1508,6 +1508,19 @@ class MainActivity : Activity() {
             "(Waze on the car screen), Navigate home or to work, Call a favourite, and under More: previous, " +
             "like / dislike, auto-resume and the weather. The Welcome button replays the greeting (or skips it).")
 
+        header("FM to the car")
+        text("No Bluetooth or AUX in the car: the screen sends the sound to the car radio over FM. A real station " +
+            "on (or next to) that frequency means crackle. This finds a frequency nobody uses where you drive " +
+            "(here, Home and Work) - set it on the screen and on the car radio.")
+        val fm = prefs.fmFrequency
+        stepperLike("Your FM frequency: " + (if (fm > 0) "%.1f MHz".format(java.util.Locale.ROOT, fm) else "not set"), if (fm > 0) "Change" else "Set") {
+            askText("FM frequency", "87.5 - 108.0, e.g. 107.9", if (fm > 0) "%.1f".format(java.util.Locale.ROOT, fm) else "") { v ->
+                val f = FmTip.parseMhz(v)
+                if (f == null) toast("FM runs from 87.5 to 108.0 MHz - check the number on the screen") else { prefs.fmFrequency = f; render() }
+            }
+        }
+        button("Find the best FM frequency here", accent = true) { findFmFrequency() }
+
         header("Navigate (Home / Work)")
         for ((label, enc) in listOf("Home" to prefs.placeHome, "Work" to prefs.placeWork)) {
             val place = Shortcuts.decodePlace(enc)
@@ -1566,6 +1579,40 @@ class MainActivity : Activity() {
                 prefs.radioStations = Radio.encode(Radio.add(Radio.decode(prefs.radioStations), st))
                 DriveLog.log("Setting changed: radio station '${st.name}' added")
                 toast("${st.name} added"); render()
+            }
+        }.start()
+    }
+
+    /** Checks your frequency and suggests the three quietest - everything worked out on the phone. */
+    private fun findFmFrequency() {
+        toast("Checking the FM band where you drive...")
+        Thread {
+            val here = Here.position(this)
+            val where = listOfNotNull(here) + listOf(prefs.placeHome, prefs.placeWork).mapNotNull { Shortcuts.decodePlace(it) }.map { it.lat to it.lon }
+            val txs = FmTip.transmitters(this)
+            runOnUiThread {
+                if (where.isEmpty()) { toast("Your position isn't known - allow location, or set Home on this page"); return@runOnUiThread }
+                if (txs.isEmpty()) { toast("The FM list is missing from this version"); return@runOnUiThread }
+                val mine = prefs.fmFrequency.takeIf { it > 0 }?.let { FmTip.verdict(it, where, txs) }
+                val picks = FmTip.best(where, txs)
+                DriveLog.log("FM: checked ${where.size} place(s) - yours ${mine?.let { FmTip.describe(it, false) } ?: "not set"}; best " +
+                    picks.joinToString { "%.1f".format(java.util.Locale.ROOT, it.mhz) })
+                val msg = (mine?.let { "Yours now: ${FmTip.describe(it, prefs.greetingDutch)}\n\n" } ?: "") +
+                    "Quietest here" + (if (where.size > 1) ", Home and Work" else "") + ":\n" +
+                    picks.joinToString("\n") { "•  " + FmTip.describe(it, prefs.greetingDutch) } +
+                    "\n\nSet the same frequency on the screen and on the car radio, then save it here."
+                fun use(v: FmTip.Verdict) {
+                    prefs.fmFrequency = v.mhz
+                    toast("Saved - now set %.1f on the screen and the car radio".format(java.util.Locale.ROOT, v.mhz)); render()
+                }
+                AlertDialog.Builder(this).setTitle("Best FM frequency").setMessage(msg)
+                    .setPositiveButton("Use %.1f".format(java.util.Locale.ROOT, picks.first().mhz)) { _, _ -> use(picks.first()) }
+                    .setNeutralButton("Pick another") { _, _ ->
+                        AlertDialog.Builder(this).setTitle("Use which?")
+                            .setItems(picks.map { "%.1f MHz  (%s)".format(java.util.Locale.ROOT, it.mhz, FmTip.word(it.score, prefs.greetingDutch)) }.toTypedArray()) { _, i -> use(picks[i]) }
+                            .show()
+                    }
+                    .setNegativeButton("Close", null).show()
             }
         }.start()
     }

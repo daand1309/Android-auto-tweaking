@@ -238,6 +238,11 @@ class Prefs(context: Context) {
         get() = sp.getString("radio_stations", "") ?: ""
         set(v) = sp.edit().putString("radio_stations", v).apply()
 
+    /** The FM frequency the Senzo screen sends on, in MHz (0 = not set). */
+    var fmFrequency: Double
+        get() = sp.getFloat("fm_frequency", 0f).toDouble().let { Math.round(it * 10) / 10.0 }.takeIf { FmTip.valid(it) } ?: 0.0
+        set(v) = sp.edit().putFloat("fm_frequency", v.toFloat()).apply()
+
     var fuelType: String
         get() = sp.getString("fuel_type", FuelPrices.Fuel.EURO95.code) ?: FuelPrices.Fuel.EURO95.code
         set(v) = sp.edit().putString("fuel_type", v).apply()
