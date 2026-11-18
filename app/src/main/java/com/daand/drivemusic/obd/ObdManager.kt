@@ -16,8 +16,10 @@ import com.daand.drivemusic.Prefs
  * Stops (and lets the adapter sleep) when you leave the car.
  */
 object ObdManager {
-    const val POLL_MS = 5_000L
-    const val FULL_EVERY = 6               // fuel / voltage / warning light every 30 s
+    /** Speed, rpm, temperature: every 3 s (5 s while the adapter is falling behind, see [PollPace]). */
+    const val POLL_MS = 3_000L
+    /** Fuel / voltage / warning light: every 30 s by the clock, whatever the pace of the fast values. */
+    const val FULL_EVERY_MS = 30_000L
     const val CODES_EVERY_MS = 10 * 60_000L
     const val CONNECT_TRIES = 6
     /** Re-ask for the catalyst test every 4 minutes once warm, at most 6 times a drive. */
@@ -280,13 +282,25 @@ object ObdManager {
         // Answer quality per 5 minutes: one line when many questions go unanswered, so a log shows *when*
         // the adapter struggles (17 Nov: 1366 of 3723 unanswered, cause unknown).
         var windowAt = System.currentTimeMillis(); var windowQ = 0; var windowMissed = 0
+        var lastFullAt = 0L
+        var minuteAt = System.currentTimeMillis(); var minuteQ = 0; var minuteMissed = 0; var slowUntil = 0L
         var catalystChecks = 0
         var movingAt = 0L          // when the car last reported speed or a running engine
         var lastReset = 0L
         var lastCatalystCheck = System.currentTimeMillis()
         while (alive(myGen)) {
             val roundStart = System.currentTimeMillis()
-            val full = n % FULL_EVERY == 0
+            val full = n == 0 || roundStart - lastFullAt >= FULL_EVERY_MS
+            if (full) lastFullAt = roundStart
+            // Once a minute: is the adapter keeping up? If not, the slower pace for 5 minutes.
+            if (roundStart - minuteAt >= 60_000L) {
+                val q = session.questions - minuteQ; val missed = session.unansweredWhileOn - minuteMissed
+                if (PollPace.fallingBehind(q, missed) && roundStart >= slowUntil) {
+                    slowUntil = roundStart + PollPace.SLOW_FOR_MS
+                    DriveLog.log("OBD: the adapter is falling behind ($missed of $q unanswered in the last minute) - asking every 5 s for 5 minutes")
+                }
+                minuteAt = roundStart; minuteQ = session.questions; minuteMissed = session.unansweredWhileOn
+            }
             val codesDue = full && System.currentTimeMillis() - lastCodes > CODES_EVERY_MS
             val snap = session.read(latest, full, readCodes = codesDue)
             if (codesDue) lastCodes = System.currentTimeMillis()
@@ -359,12 +373,7 @@ object ObdManager {
             }
             n++
             // A steady rhythm: the wait includes the time the reading took.
-            val interval = when {
-                liveView -> LIVE_POLL_MS
-                alerts.countingDown() -> FAST_POLL_MS
-                silent >= 3 -> QUIET_POLL_MS      // ignition off: don't hammer a car that isn't listening
-                else -> POLL_MS
-            }
+            val interval = PollPace.interval(liveView, alerts.countingDown(), silent, slowed = System.currentTimeMillis() < slowUntil)
             sleep((interval - (System.currentTimeMillis() - roundStart)).coerceAtLeast(200L))
         }
     }
@@ -604,4 +613,21 @@ object RestingBattery {
     }
     /** What to log once the engine starts: null if there was no believable reading. */
     fun value(max: Double?): Double? = max?.takeIf { it in 9.0..16.0 }
+}
+
+/** How often to ask the car. Pure, unit tested. */
+object PollPace {
+    const val SLOW_MS = 5_000L
+    const val SLOW_FOR_MS = 5 * 60_000L
+
+    /** More than 15% unanswered in a minute (with enough questions to tell): the adapter can't keep up. */
+    fun fallingBehind(questions: Int, missed: Int) = questions >= 10 && missed * 100 > questions * 15
+
+    fun interval(liveView: Boolean, countingDown: Boolean, silent: Int, slowed: Boolean): Long = when {
+        silent >= 3 -> ObdManager.QUIET_POLL_MS      // ignition off: don't hammer a car that isn't listening
+        slowed -> SLOW_MS                            // the adapter is falling behind: give it room
+        liveView -> ObdManager.LIVE_POLL_MS
+        countingDown -> ObdManager.FAST_POLL_MS
+        else -> ObdManager.POLL_MS
+    }
 }
