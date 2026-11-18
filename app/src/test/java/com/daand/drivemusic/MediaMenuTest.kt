@@ -15,6 +15,8 @@ class MediaMenuTest {
         assertTrue(MediaMenu.trustedCaller("com.google.android.projection.gearhead", 10050, me))
         assertTrue(MediaMenu.trustedCaller("anything", me, me))                       // ourselves
         assertTrue(MediaMenu.trustedCaller("android", android.os.Process.SYSTEM_UID, me))
+        assertTrue(MediaMenu.trustedCaller("com.google.android.apps.bard", 10555, me))  // the Gemini app
+        assertTrue(MediaMenu.trustedCaller("com.google.android.googlequicksearchbox", 10556, me))  // Google app / Gemini as assistant
         assertFalse(MediaMenu.trustedCaller("com.random.app", 10777, me))            // other apps: no
     }
 

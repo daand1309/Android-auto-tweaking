@@ -47,8 +47,9 @@ class MainActivity : Activity() {
             // Any app can send this, with any data attached: read defensively, pass on only clean text.
             val query = try { intent.getStringExtra(android.app.SearchManager.QUERY) } catch (e: Exception) { null }
             val extras = try { intent.extras } catch (e: Exception) { null }
-            com.daand.drivemusic.car.MediaMenu.playFromSearch(DriveMonitorService.instance?.musicController(),
-                DriveMonitorService.instance, query, extras)
+            val from = referrer?.host ?: "phone"   // which app asked (e.g. the Gemini app)
+            com.daand.drivemusic.car.MediaMenu.playFromSearch(this, DriveMonitorService.instance?.musicController(),
+                DriveMonitorService.instance, query, extras, from)
             finish()
             return
         }

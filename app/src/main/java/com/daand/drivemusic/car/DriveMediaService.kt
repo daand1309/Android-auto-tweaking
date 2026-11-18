@@ -182,13 +182,8 @@ class DriveMediaService : MediaBrowserService() {
         override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) { menu(mediaId ?: return) }
         /** "Hey Google, play <song> on Drive Music" -> YouTube Music searches and plays it. */
         override fun onPlayFromSearch(query: String?, extras: Bundle?) {
-            // "Play Radio 2 on Drive Music": one of your stations, if the words name one.
-            Radio.match(query.orEmpty(), Radio.decode(Prefs(this@DriveMediaService).radioStations))?.let { st ->
-                radioPausedFromCar = false
-                press("voice", "radio ${st.name}"); RadioPlayer.play(this@DriveMediaService, st); return
-            }
-            DriveLog.log("Car media: voice search")
-            MediaMenu.playFromSearch(yt(), monitor(), query, extras)
+            radioPausedFromCar = false
+            MediaMenu.playFromSearch(this@DriveMediaService, yt(), monitor(), query, extras, origin())
         }
         override fun onCustomAction(action: String, extras: Bundle?) { menu(action) }
     }
@@ -327,7 +322,8 @@ object MediaMenu {
     private val TRUSTED = setOf(
         "com.google.android.projection.gearhead",       // Android Auto
         "com.google.android.carassistant",              // Assistant for cars
-        "com.google.android.googlequicksearchbox",      // Assistant ("play Drive Music")
+        "com.google.android.googlequicksearchbox",      // Assistant / Gemini as the system assistant
+        "com.google.android.apps.bard",                 // the Gemini app ("play ... on Drive Music")
         "com.android.systemui", "com.android.bluetooth",
     )
 
@@ -348,9 +344,20 @@ object MediaMenu {
         )
     }
 
-    /** Voice search: hand the words to YouTube Music; nothing said ("play Drive Music") = just play. */
-    fun playFromSearch(yt: MediaController?, monitor: DriveMonitorService?, query: String?, extras: Bundle?) {
-        val q = query?.trim()?.take(200).orEmpty()
+    /**
+     * Voice ("Hey Google / Gemini, play ... on Drive Music"), from the car or the phone: one of your radio
+     * stations if the words name one; else the words go to YouTube Music; nothing said = just play.
+     * Logged with who sent it, so a drive log shows what Gemini really passes on.
+     */
+    fun playFromSearch(ctx: android.content.Context, yt: MediaController?, monitor: DriveMonitorService?, query: String?, extras: Bundle?, from: String) {
+        val q = GreetingTextBridge.clean(query?.trim()?.take(200).orEmpty())
+        val station = if (q.isEmpty()) null else Radio.match(q, Radio.decode(Prefs(ctx).radioStations))
+        DriveLog.log("VOICE: \"$q\" from $from -> " + when {
+            station != null -> "radio ${station.name}"
+            q.isEmpty() -> "play YouTube Music"
+            else -> "YouTube Music search"
+        })
+        if (station != null) { RadioPlayer.play(ctx, station); return }
         when {
             yt == null -> monitor?.startMusic("voice search", requireCar = false)
             q.isEmpty() -> yt.transportControls.play()

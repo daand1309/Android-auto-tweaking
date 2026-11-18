@@ -56,4 +56,13 @@ class RadioPlaybackTest {
         waitFor("the error", 50_000) { RadioPlayer.state == RadioPlayer.State.ERROR }
         assertEquals("Nowhere FM", RadioPlayer.station?.name)
     }
+
+    /** What Gemini / the Assistant sends for "play Radio 2 on Drive Music" on the phone. */
+    @Test fun voiceOnThePhonePicksTheStation() {
+        Prefs(ctx).radioStations = ""
+        ctx.startActivity(android.content.Intent(android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
+            .setPackage(ctx.packageName).putExtra(android.app.SearchManager.QUERY, "radio 2")
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        waitFor("the voice request to pick a station", 10_000) { RadioPlayer.station?.name == "NPO Radio 2" && RadioPlayer.state != RadioPlayer.State.OFF }
+    }
 }
