@@ -154,6 +154,14 @@ on, next / previous change station, pause stops it and play brings the radio bac
 (`BUTTON: next from Android Auto -> next station`, and raw keys as `BUTTON KEY: ...` with the device),
 so a drive log shows what this car's buttons really send.
 
+**FM to the car** (*Car screen* page): the car has no Bluetooth or AUX, so the Android Auto screen
+sends the sound to the car radio over FM. *Find the best FM frequency here* checks your frequency and
+suggests the three quietest where you drive (here, Home, Work), from a built-in list of all ~780 Dutch
+FM transmitters (radios.nl, Nov 2026; places © OpenStreetMap): the same frequency as a station within
+reach is what crackles. In the Randstad nothing is truly free; around Noordwijk/Leiden 99.2 is the
+quietest (nearest station on it: Vlissingen, 109 km), while 107.9 and 106.0 have stations 12-17 km away.
+Note: the car's own seek buttons retune the car radio - leave it on the screen's frequency.
+
 **Drive Music car app** (the other icon, so the phone can stay in its holder): *Play/Pause* (with
 what's playing), *Next*, *Find fuel* (nearest good price / cheapest, no motorway stations - one tap
 starts Waze on the car screen), *Navigate* (Home / Work, set on the phone's *Car screen* page),

@@ -1483,6 +1483,8 @@ class MainActivity : Activity() {
             "• Notifications are never read. Logs stay on the phone unless you share them.\n" +
             "• Where's my car (optional): your parked spot is saved on the phone only, never sent anywhere.\n" +
             "• The premium voice (if you set it up) sends the spoken text to Microsoft, and nothing else.\n" +
+            "• FM tip: worked out on the phone from a built-in list of Dutch FM transmitters (frequencies: radios.nl; " +
+            "places: © OpenStreetMap contributors) - nothing is sent.\n" +
             "• Car screen shortcuts: Home / Work and up to 3 favourite contacts you pick yourself - stored on the phone only, never logged.\n" +
             "• No overlay, accessibility, SMS or storage access, and no access to your contact list (only a contact you pick).")
 

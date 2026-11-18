@@ -46,8 +46,11 @@ object FmTip {
      */
     fun reachKm(stationsAtPlace: Int) = when { stationsAtPlace >= 8 -> 80.0; stationsAtPlace >= 4 -> 50.0; else -> 25.0 }
 
-    /** Nearby on the dial interferes too, less the further away it is (a car radio's selectivity). */
-    private fun channel(delta: Double) = when { delta < 0.05 -> 1.0; delta < 0.15 -> 0.5; delta < 0.25 -> 0.2; delta < 0.35 -> 0.05; else -> 0.0 }
+    /**
+     * The same frequency is what hurts; 0.1 MHz off only from a strong station, 0.2 barely - the
+     * transmitter sits right next to the car's antenna, so it's much stronger than a station further off.
+     */
+    private fun channel(delta: Double) = when { delta < 0.05 -> 1.0; delta < 0.15 -> 0.3; delta < 0.25 -> 0.08; else -> 0.0 }
 
     /** Signal strength guess: strong inside the reach, fading out to nothing at twice the reach. */
     private fun strength(km: Double, reach: Double) = when {
@@ -68,7 +71,7 @@ object FmTip {
                 val km = FuelPrices.distanceKm(lat, lon, t.lat, t.lon)
                 val s = strength(km, reachKm(perPlace[t.place] ?: 1)); if (s == 0.0) continue
                 score += c * s
-                if (c * s >= 0.1) clashes[t] = minOf(clashes[t] ?: Int.MAX_VALUE, km.roundToInt())
+                if (c * s >= 0.15) clashes[t] = minOf(clashes[t] ?: Int.MAX_VALUE, km.roundToInt())
             }
             worst = maxOf(worst, score)
         }
@@ -86,10 +89,11 @@ object FmTip {
     /** Tie-break: the ends of the band are used least (fewer surprises on trips elsewhere). */
     private fun edge(mhz: Double) = maxOf(90.0 - mhz, mhz - 105.5, 0.0)
 
+    /** In the Randstad nothing is truly free (big masts 60-90 km away reach everywhere): "quiet" is the best there is. */
     fun word(score: Double, dutch: Boolean) = when {
-        score < 0.05 -> if (dutch) "vrij" else "clear"
-        score < 0.3 -> if (dutch) "goed" else "good"
-        score < 0.7 -> if (dutch) "wat ruis mogelijk" else "some crackle likely"
+        score < 0.15 -> if (dutch) "vrij" else "clear"
+        score < 0.5 -> if (dutch) "rustig" else "quiet"
+        score < 1.0 -> if (dutch) "wat ruis mogelijk" else "some crackle likely"
         else -> if (dutch) "bezet" else "busy"
     }
 
