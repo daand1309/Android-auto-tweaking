@@ -234,4 +234,15 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
     }
 
     fun close() { runCatching { link.close() } }
+
+    /**
+     * The adapter stopped answering in the middle of a drive (cheap ELM327 clones get stuck when
+     * answers pile up): reset it and set it up again, as at the start. True when the car answers again.
+     */
+    fun resetAdapter(): Boolean {
+        for (cmd in Elm327.INIT) runCatching { link.send(cmd, if (cmd == "ATZ") 3_000 else 1_500) }
+        val ok = runCatching { !Elm327.isError(Elm327.lines(link.send("0100", 10_000))) }.getOrDefault(false)
+        if (ok) { lastAnswerAt = System.currentTimeMillis(); unansweredSinceAnswer = 0 }
+        return ok
+    }
 }

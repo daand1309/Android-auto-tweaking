@@ -139,7 +139,9 @@ class DriveModeActivity : Activity() {
         pager.addPage(buildCarPage())
         pager.onPageChanged = { i ->
             highlightTab(i)
-            com.daand.drivemusic.obd.ObdManager.liveView = i == TAB_CAR || stripShown
+            // Only the Car tab asks the car fast: the numbers above the tabs are fine at the normal pace
+            // (fast everywhere overloaded the ELM327 - 37% unanswered on 18 Nov).
+            com.daand.drivemusic.obd.ObdManager.liveView = i == TAB_CAR
             if (i == TAB_GO) refreshGo()
             if (i == TAB_RADIO) refreshRadio()
             handler.removeCallbacks(tick); handler.post(tick)
@@ -221,7 +223,7 @@ class DriveModeActivity : Activity() {
         if (show != stripShown) {
             stripShown = show
             strip.visibility = if (show) View.VISIBLE else View.GONE
-            obd.liveView = pager.current == TAB_CAR || show
+            obd.liveView = pager.current == TAB_CAR
         }
         if (!show) return
         val v = CarDash.values(s, obd.trip, p.greetingDutch, obd.rangeKm(s))

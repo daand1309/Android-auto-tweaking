@@ -281,6 +281,8 @@ object ObdManager {
         // the adapter struggles (17 Nov: 1366 of 3723 unanswered, cause unknown).
         var windowAt = System.currentTimeMillis(); var windowQ = 0; var windowMissed = 0
         var catalystChecks = 0
+        var movingAt = 0L          // when the car last reported speed or a running engine
+        var lastReset = 0L
         var lastCatalystCheck = System.currentTimeMillis()
         while (alive(myGen)) {
             val roundStart = System.currentTimeMillis()
@@ -307,8 +309,18 @@ object ObdManager {
                 lastEcuAnswerAt = snap.at
                 silent = 0
                 toldQuiet = false
+                if ((snap.speedKmh ?: 0) > 3 || (snap.rpm ?: 0) > 400) movingAt = System.currentTimeMillis()
             } else {
                 silent++
+                // Silent right after driving or a running engine: the ignition isn't off that fast - the
+                // adapter is stuck (18 Nov 18:17: silent for a minute mid-drive). Reset it, at most every 2 min.
+                val now = System.currentTimeMillis()
+                if (silent == 2 && now - movingAt < 30_000 && now - lastReset > 120_000) {
+                    lastReset = now
+                    val back = session.resetAdapter()
+                    DriveLog.log("OBD: the adapter stopped answering while driving - reset it: " + if (back) "answering again" else "still quiet")
+                    if (back) { silent = 0; continue }
+                }
                 // One line per quiet episode instead of twenty a minute: the car is off, not broken.
                 if (silent == 3 && !toldQuiet) {
                     toldQuiet = true

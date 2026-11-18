@@ -86,4 +86,18 @@ class ObdExtrasTest {
         val log = com.daand.drivemusic.obd.CatalystLog.decode("1700000000000:0.000;1700100000000:0.640")
         assertEquals(listOf(1700100000000L to 0.64), log)
     }
+
+    @Test fun aStuckAdapterIsResetAndSetUpAgain() {
+        val link = FakeElm(FakeElm.ASX)
+        val s = com.daand.drivemusic.obd.ObdSession(link)
+        s.start()
+        link.sent.clear()
+        assertTrue(s.resetAdapter())
+        assertEquals("reset first, then the same set-up as at the start", "ATZ", link.sent.first())
+        assertTrue(link.sent.containsAll(com.daand.drivemusic.obd.Elm327.INIT))
+        assertTrue("and the car is asked again", link.sent.last() == "0100")
+        // Every command it sends is one the read-only guard allows.
+        assertTrue(link.sent.all { com.daand.drivemusic.obd.ReadOnly.allowed(it) })
+        assertFalse(com.daand.drivemusic.obd.ObdSession(FakeElm(emptyMap())).resetAdapter())
+    }
 }
