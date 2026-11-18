@@ -1261,14 +1261,18 @@ object WelcomeAnnouncer {
                         asker.speak(q, p.greetingDutch, pauseOthers = true) {
                             if (asker.cutShort) { UpdatePrompt.cancel(ctx); Briefing.end(ctx, shownToken); then(); return@speak }
                             main.post {
+                                // The music starts now - it doesn't wait for your answer (an unanswered
+                                // question used to mean 10 s of silence). Yes: the forecast is said over
+                                // the music, which dips while it talks.
+                                Briefing.end(ctx, shownToken)
+                                then()
                                 UpdatePrompt.awaitAnswer(ctx, onTimeout = false) { yes ->
-                                    val rest = (if (yes) GreetingText.forecast(weather!!, p.weatherPlace, p.greetingDutch) + " " else "") +
-                                        GreetingText.signOff(p.greetingDutch, p.butler, p.greetingShort)
-                                    DriveLog.log("GREETING: forecast ${if (yes) "wanted" else "skipped"} - \"$rest\"")
-                                    Greeter(ctx).speak(rest, p.greetingDutch, pauseOthers = true) {
-                                        Briefing.end(ctx, shownToken)
-                                        then()
-                                    }
+                                    if (!yes) { DriveLog.log("GREETING: forecast skipped"); return@awaitAnswer }
+                                    val forecast = GreetingText.forecast(weather!!, p.weatherPlace, p.greetingDutch)
+                                    DriveLog.log("GREETING: forecast wanted - \"$forecast\"")
+                                    val svc = DriveMonitorService.instance
+                                    if (svc != null) svc.sayOverMusic(forecast, if (p.greetingDutch) "Weer" else "Weather", "forecast")
+                                    else Greeter(ctx).speak(forecast, p.greetingDutch, pauseOthers = false) {}
                                 }
                             }
                         }

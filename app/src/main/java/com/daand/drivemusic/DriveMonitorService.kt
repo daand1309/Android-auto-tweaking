@@ -722,6 +722,26 @@ class DriveMonitorService : NotificationListenerService() {
         }
     }
 
+    /**
+     * Something you asked for after the music started (the weather forecast): said over the music,
+     * which dips while it talks - not counted as a pause, and put back if the music app stopped for it.
+     * Waits its turn if the voice is busy (e.g. "Now playing").
+     */
+    fun sayOverMusic(text: String, title: String, what: String, waited: Int = 0) {
+        if (!carConnected) return
+        if (Voice.speaking && waited < 40) { handler.postDelayed({ sayOverMusic(text, title, what, waited + 1) }, 500); return }
+        ownSpeechStarts()
+        // Just after the start YouTube Music may be in one of its own brief stops: it was meant to be
+        // playing, so put it back after the forecast all the same.
+        if (firstStartAt > 0 && SystemClock.elapsedRealtime() - firstStartAt < StartRules.SETTLE_WINDOW_MS) playingBeforeOwnSpeech = true
+        suppressPauseUntil = SystemClock.elapsedRealtime() + 90_000L
+        val token = Briefing.start(this, title, text)
+        safeSpeak(text) {
+            Briefing.end(this, token)
+            handler.post { ownSpeechDone(what) }
+        }
+    }
+
     private fun speakUpdate(text: String, title: String) {
         DriveLog.log("UPDATE: \"$text\"")
         val token = Briefing.start(this, title, text)
@@ -855,7 +875,10 @@ class DriveMonitorService : NotificationListenerService() {
         announceSongAfterStart = false
         val gen = connectGen
         // Give the player a moment to publish the track info, then announce it.
-        handler.postDelayed({
+        var waits = 0
+        handler.postDelayed(object : Runnable { override fun run() {
+            // The forecast you just said yes to may be talking: announce the song after it.
+            if (Voice.speaking && waits++ < 40) { handler.postDelayed(this, 500); return }
             val song = currentSong()
             if (song != null && carConnected && gen == connectGen) {
                 suppressPauseUntil = SystemClock.elapsedRealtime() + 15_000
@@ -865,7 +888,7 @@ class DriveMonitorService : NotificationListenerService() {
                     handler.post { if (gen == connectGen) ownSpeechDone("song announcement") }
                 }
             }
-        }, 2_500)
+        } }, 2_500)
     }
 
     private fun cancelStart() {
