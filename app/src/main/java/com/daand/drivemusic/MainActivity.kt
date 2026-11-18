@@ -654,6 +654,19 @@ class MainActivity : Activity() {
         switch("Pause when you leave the car", prefs.pauseOnDisconnect) { prefs.pauseOnDisconnect = it }
 
         // This used to be its own "Sound" page, whose only advice was to come here.
+        header("Radio")
+        val stations = Radio.decode(prefs.radioStations)
+        text("Internet radio for Drive Mode's Radio tab. Starting a station pauses YouTube Music; pressing play " +
+            "there brings it back. About 60 MB of data an hour.")
+        stations.forEachIndexed { i, st ->
+            stepperLike("📻 ${st.name}", "Remove") {
+                prefs.radioStations = Radio.encode(stations.filterIndexed { j, _ -> j != i }.ifEmpty { listOf(st) })
+                render()
+            }
+        }
+        if (stations.size < Radio.MAX_STATIONS) button("Add a station") { addRadioStation() }
+        if (prefs.radioStations.isNotBlank()) button("Back to the Dutch stations") { prefs.radioStations = ""; render() }
+
         header("Sound")
         button("Open the equalizer") { openEqualizer() }
         button("Phone sound settings") {
@@ -1463,6 +1476,7 @@ class MainActivity : Activity() {
         header("Privacy")
         text("• Internet only for update checks (GitHub), weather (Open-Meteo, location rounded to ~10 km; in NL/BE also the Buienradar rain radar, rounded to ~5 km; MET Norway and wttr.in as backups, ~10 km - MET Norway is told the app's name and GitHub page), fuel prices " +
             "(ANWB's station database: a box of about 15 km around a position rounded to ~1 km) and, if on, " +
+            "internet radio (the station you play; adding one searches radio-browser.info with the words you type), " +
             "drive news (NU.nl, NOS, NL Times and regional newsrooms; Google News is searched for your town name).\n" +
             "• Notifications are never read. Logs stay on the phone unless you share them.\n" +
             "• Where's my car (optional): your parked spot is saved on the phone only, never sent anywhere.\n" +
@@ -1514,6 +1528,24 @@ class MainActivity : Activity() {
         text("Only the contact you pick is read (Android hands over just that one), and it stays on this phone. " +
             "Calls go through the car, hands-free - from the car screen or Drive Mode's Go tab. Allow phone calls " +
             "when asked, so one tap starts the call.")
+    }
+
+    /** Search radio-browser.info by name (only the words you type are sent) and pick one. */
+    private fun addRadioStation() = askText("Add a station", "e.g. Joe, Radio West, BBC Radio 2", "") { q ->
+        if (q.isBlank()) return@askText
+        toast("Searching...")
+        Thread {
+            val found = Radio.search(q)
+            runOnUiThread {
+                if (found.isEmpty()) { toast("No station found for \"$q\" (or no signal)"); return@runOnUiThread }
+                AlertDialog.Builder(this).setTitle("Pick a station")
+                    .setItems(found.map { it.name }.toTypedArray()) { _, i ->
+                        prefs.radioStations = Radio.encode(Radio.add(Radio.decode(prefs.radioStations), found[i]))
+                        DriveLog.log("Setting changed: radio station '${found[i].name}' added")
+                        toast("${found[i].name} added"); render()
+                    }.show()
+            }
+        }.start()
     }
 
     /** Home / Work: where you are now, or an address (looked up by Android's own geocoder). */

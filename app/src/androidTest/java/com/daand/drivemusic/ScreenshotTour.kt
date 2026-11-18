@@ -152,6 +152,9 @@ class ScreenshotTour {
         SystemClock.sleep(2_500)
         snap("${prefix}drive_${o}_2go")
         instr.runOnMainSync { dm.pagerForTest().goTo(2, animate = false) }
+        SystemClock.sleep(1_500)
+        snap("${prefix}drive_${o}_2radio")
+        instr.runOnMainSync { dm.pagerForTest().goTo(3, animate = false) }
         SystemClock.sleep(2_500)
         snap("${prefix}drive_${o}_2car")
         instr.runOnMainSync { UpdatePrompt.open(ctx, "Breaking news", "I do apologise, sir, but there is an update. Shall I go ahead?") }

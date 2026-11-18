@@ -52,6 +52,7 @@ class DriveModeActivity : Activity() {
     override fun onDestroy() {
         if (open?.get() === this) open = null
         UpdatePrompt.removeListener(promptChanged)
+        RadioPlayer.removeListener(radioChanged)
         super.onDestroy()
     }
 
@@ -115,26 +116,30 @@ class DriveModeActivity : Activity() {
         val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(dp(12), dp(10), dp(12), dp(2)) }
         // Big, solid tab buttons: easy to find and hit at a glance (64 dp tall; a bit less in landscape).
         val tabHeight = dp(if (wide) 52 else 64)
-        listOf(R.drawable.ic_music to "Music", R.drawable.ic_navigate to "Go", R.drawable.ic_gauge to "Car").forEachIndexed { i, (icon, label) ->
+        listOf(R.drawable.ic_music to "Music", R.drawable.ic_navigate to "Go", R.drawable.ic_radio to "Radio", R.drawable.ic_gauge to "Car").forEachIndexed { i, (icon, label) ->
             val tv = TextView(this).apply {
-                text = label; textSize = if (wide) 19f else 22f; gravity = Gravity.CENTER; setPadding(dp(8), 0, dp(8), 0)
+                // Four tabs: one line each, shrinking a little on narrow phones rather than wrapping.
+                text = label; textSize = if (wide) 18f else 19f; gravity = Gravity.CENTER; setPadding(dp(4), 0, dp(4), 0)
+                maxLines = 1; setAutoSizeTextTypeUniformWithConfiguration(12, if (wide) 18 else 19, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
                 tag = icon  // the icon goes inline, right next to the word (see highlightTab)
                 setOnClickListener { pager.goTo(i) }
                 Feel.press(this, 0.97f)
             }
             tabLabels += tv
-            bar.addView(tv, LinearLayout.LayoutParams(0, tabHeight, 1f).apply { setMargins(dp(5), 0, dp(5), 0) })
+            bar.addView(tv, LinearLayout.LayoutParams(0, tabHeight, 1f).apply { setMargins(dp(3), 0, dp(3), 0) })
         }
         column.addView(buildStrip(), LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
         column.addView(bar, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
         pager = SwipePager(this)
         pager.addPage(buildUi())
         pager.addPage(buildGoPage())
+        pager.addPage(buildRadioPage())
         pager.addPage(buildCarPage())
         pager.onPageChanged = { i ->
             highlightTab(i)
             com.daand.drivemusic.obd.ObdManager.liveView = i == TAB_CAR || stripShown
             if (i == TAB_GO) refreshGo()
+            if (i == TAB_RADIO) refreshRadio()
             handler.removeCallbacks(tick); handler.post(tick)
         }
         column.addView(pager, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -496,6 +501,52 @@ class DriveModeActivity : Activity() {
         DriveLog.log("CALL: favourite ${index + 1} from Drive Mode - $where")   // no name, no number
     }
 
+    // ---------------------------------------------------------------- Radio tab
+
+    private lateinit var radioList: LinearLayout
+    private val radioChanged: () -> Unit = { refreshRadio(); lastShown = ""; updateDynamic() }
+
+    private fun buildRadioPage(): View {
+        radioList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(6), dp(14), dp(14)) }
+        RadioPlayer.addListener(radioChanged)
+        return android.widget.ScrollView(this).apply {
+            setBackgroundColor(Style.BG); isFillViewport = true
+            addView(radioList, android.widget.FrameLayout.LayoutParams(-1, -2))
+        }
+    }
+
+    /** What's on (with a big Stop), then your stations: tap one to tune in, tap the one playing to stop. */
+    private fun refreshRadio() {
+        if (!::radioList.isInitialized) return
+        val dutch = Prefs(this).greetingDutch
+        radioList.removeAllViews()
+        val h = dp(if (wide) 64 else 76)
+        val st = RadioPlayer.station
+        val state = RadioPlayer.state
+        if (st != null && state != RadioPlayer.State.OFF) {
+            val (line, color) = when (state) {
+                RadioPlayer.State.CONNECTING -> (if (dutch) "Verbinden…" else "Tuning in…") to Style.TEXT2
+                RadioPlayer.State.PLAYING -> (if (dutch) "Speelt nu - tik om te stoppen" else "Playing - tap to stop") to Style.GREEN
+                else -> ((if (dutch) "Lukt niet: " else "Didn't work: ") + RadioPlayer.problem + (if (dutch) ". Tik om opnieuw te proberen." else ". Tap to try again.")) to Style.AMBER
+            }
+            radioList.addView(goRow(if (state == RadioPlayer.State.PLAYING) "⏹" else "📻", st.name, line,
+                accent = if (state == RadioPlayer.State.ERROR) Style.AMBER else color) {
+                if (state == RadioPlayer.State.ERROR) RadioPlayer.play(this, st) else RadioPlayer.stop("you pressed stop")
+            }, LinearLayout.LayoutParams(-1, dp(if (wide) 72 else 92)).apply { bottomMargin = dp(14) })
+        }
+        for (s in Radio.decode(Prefs(this).radioStations)) {
+            val playing = s == st && RadioPlayer.on
+            radioList.addView(goRow("📻", s.name, if (playing) (if (dutch) "Speelt nu" else "On now") else "",
+                accent = if (playing) Style.GREEN else null) { RadioPlayer.toggle(this, s) },
+                LinearLayout.LayoutParams(-1, h).apply { bottomMargin = dp(10) })
+        }
+        radioList.addView(TextView(this).apply {
+            text = if (dutch) "Stations toevoegen of weghalen: in de app → Music & driving → Radio. Radio gebruikt ~60 MB per uur."
+                else "Add or remove stations in the app: Music & driving → Radio. Radio uses about 60 MB an hour."
+            setTextColor(Style.TEXT2); textSize = 13f; gravity = Gravity.CENTER; setPadding(dp(8), dp(4), dp(8), dp(4))
+        })
+    }
+
     /** True once the car has been connected while this screen was open. */
     private var sawCarConnected = false
 
@@ -736,7 +787,8 @@ class DriveModeActivity : Activity() {
         }
         private const val TAB_MUSIC = 0
         private const val TAB_GO = 1
-        private const val TAB_CAR = 2
+        private const val TAB_RADIO = 2
+        private const val TAB_CAR = 3
     }
 
     /** Refreshes song / status / buttons - only touching the views when something changed (saves redraws). */
@@ -751,11 +803,13 @@ class DriveModeActivity : Activity() {
             DriveHold.STATE -> "Android Auto reconnecting…"
             else -> prefs.lastCarState
         }
+        val radio = RadioPlayer.station?.takeIf { RadioPlayer.on }
+        val statusText2 = if (radio != null) "📻 ${radio.name} is on - press play for YouTube Music" else statusText
         val playing = s?.isPlaying() == true
         val resumeOn = ResumeToggle.isOnNow(this)
         val speaking = Voice.speaking
         val art = s?.currentArt()
-        val key = "$songText|$statusText|$playing|$resumeOn|$speaking|${System.identityHashCode(art)}"
+        val key = "$songText|$statusText2|$playing|$resumeOn|$speaking|${System.identityHashCode(art)}"
         if (key == lastShown) return
         lastShown = key
         // While something is being said, this button cuts it short rather than starting another one.
@@ -774,7 +828,7 @@ class DriveModeActivity : Activity() {
             cover.visibility = if (art == null) View.GONE else View.VISIBLE
             if (art != null) Motion.fadeIn(cover)
         }
-        status.text = statusText
+        status.text = statusText2
         val icon = if (playing) R.drawable.ic_pause else R.drawable.ic_play
         if (playBtn.tag != icon) { if (playBtn.tag != null) Motion.pop(playBtn); playBtn.tag = icon }
         playBtn.setImageResource(icon)

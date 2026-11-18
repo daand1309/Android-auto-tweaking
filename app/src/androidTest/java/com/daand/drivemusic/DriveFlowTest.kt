@@ -629,7 +629,7 @@ class DriveFlowTest {
         assertTrue("Car tab is ${carTab?.height}px tall, want >= $minPx", (carTab?.height ?: 0) >= minPx)
         onMain { carTab!!.performClick() }
         SystemClock.sleep(500)
-        assertEquals("tapping the Car tab opens it", 2, a.currentTab())
+        assertEquals("tapping the Car tab opens it", 3, a.currentTab())
         onMain { a.pagerForTest().goTo(0, animate = false) }
         SystemClock.sleep(300)
         val instr = InstrumentationRegistry.getInstrumentation()
@@ -689,7 +689,7 @@ class DriveFlowTest {
         onMain { pager.goTo(0) }
         SystemClock.sleep(400)
         assertEquals(0, a.currentTab())
-        onMain { pager.goTo(2) }
+        onMain { pager.goTo(3) }
         SystemClock.sleep(1_500)
         var guidance = ""
         onMain {

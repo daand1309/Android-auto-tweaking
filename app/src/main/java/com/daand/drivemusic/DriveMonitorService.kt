@@ -419,6 +419,7 @@ class DriveMonitorService : NotificationListenerService() {
             getSystemService(NotificationManager::class.java).cancel(DRIVE_MODE_NOTIFICATION)
             pausedAtDrop = false
             if (prefs.pauseOnDisconnect) {
+                RadioPlayer.stop("you left the car (or Android Auto dropped)")
                 val c = findYtm()
                 if (c?.playbackState?.state == PlaybackState.STATE_PLAYING) {
                     c.transportControls.pause()
@@ -813,6 +814,8 @@ class DriveMonitorService : NotificationListenerService() {
     /** Opens YouTube Music and presses play, retrying until it is really playing. */
     fun startMusic(reason: String, delayMs: Long = 0L, requireCar: Boolean = true) {
         cancelStart()
+        // The radio is playing: only you (a play button) may switch back to YouTube Music.
+        if (RadioPlayer.on && listOf("play", "voice", "manual").none { it in reason }) { DriveLog.log("START: skipped ($reason) - the radio is on"); return }
         DriveLog.log("START: trying to start YouTube Music ($reason)" + if (delayMs > 0) " in ${delayMs / 1000}s" else "")
         var tick = 0
         var playSentAtTick = -10
@@ -1356,6 +1359,7 @@ class DriveMonitorService : NotificationListenerService() {
     // ---------------------------------------------------------------- auto resume
 
     private fun scheduleResume(delayOverrideMs: Long? = null) {
+        if (RadioPlayer.on) { DriveLog.log("The radio is on - leaving YouTube Music paused"); return }
         if (!autoResumeNow) {
             DriveLog.log(if (resumeThisDrive == false) "Auto-resume paused for this drive - leaving it paused"
                 else "Auto-resume is off - leaving it paused")

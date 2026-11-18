@@ -221,6 +221,11 @@ class Prefs(context: Context) {
         get() = sp.getString("favourites", "") ?: ""
         set(v) = sp.edit().putString("favourites", v).apply()
 
+    /** Your radio stations ([Radio.encode]); "" = the Dutch set. */
+    var radioStations: String
+        get() = sp.getString("radio_stations", "") ?: ""
+        set(v) = sp.edit().putString("radio_stations", v).apply()
+
     var fuelType: String
         get() = sp.getString("fuel_type", FuelPrices.Fuel.EURO95.code) ?: FuelPrices.Fuel.EURO95.code
         set(v) = sp.edit().putString("fuel_type", v).apply()

@@ -103,7 +103,7 @@ per section, and long explanations folded to their first sentence ("More ›" op
 warnings, the setup checklist or the Help page). Back on any page returns to Home. New features and themes are one entry each (`HomeFeatures`,
 `Style.ALL_THEMES`).
 
-**Drive Mode** (full-screen, keeps the screen on, three tabs you can swipe between: Music · Go · Car).
+**Drive Mode** (full-screen, keeps the screen on, four tabs you can swipe between: Music · Go · Radio · Car).
 With the OBD adapter, **live numbers** (speed, range, engine, battery) sit above the tabs on Music and
 Go - tap them for the Car tab.
 
@@ -113,6 +113,11 @@ Go - tap them for the Car tab.
 - **Go tab:** big buttons for *Find fuel* (searched as soon as you open the tab), *Home*, *Work* (Waze
   on the car screen) and your up to 3 favourite contacts (one tap calls, hands-free through the car).
   Home, Work and favourites are set on the app's *Car screen* page.
+- **Radio tab:** internet radio - a Dutch set to start with (NPO Radio 1/2, 3FM, Qmusic, 538, Sky,
+  Radio 10, Veronica, 100% NL, SLAM!, NPO Klassiek, FunX, BNR). Tap a station to tune in, tap again to
+  stop. It pauses YouTube Music (and auto-resume leaves it alone); press play on the Music tab and
+  YouTube Music takes over again. Our own voice and navigation dip the radio. Add stations in
+  *Music & driving → Radio* (searched in the free radio-browser.info directory). ~60 MB an hour.
 - **Car tab** (with the OBD adapter): speed, RPM, engine temperature (blue cold / green good / red hot),
   fuel use now, this trip (km and L/100), battery, range left, outside and intake temperature.
   Warnings appear on top: amber = get it checked, red = stop or be careful.
