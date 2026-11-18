@@ -8,8 +8,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PollPaceTest {
-    @Test fun everyThreeSecondsNormally() {
-        assertEquals(3_000L, PollPace.interval(liveView = false, countingDown = false, silent = 0, slowed = false))
+    @Test fun everyThreeAndAHalfSecondsNormally() {
+        assertEquals(3_500L, PollPace.interval(liveView = false, countingDown = false, silent = 0, slowed = false))
         assertEquals("the Car tab", ObdManager.LIVE_POLL_MS, PollPace.interval(true, false, 0, false))
         assertEquals("counting down to ready", ObdManager.FAST_POLL_MS, PollPace.interval(false, true, 0, false))
         assertEquals("ignition off", ObdManager.QUIET_POLL_MS, PollPace.interval(true, true, 3, false))

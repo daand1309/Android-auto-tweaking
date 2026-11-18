@@ -16,8 +16,8 @@ import com.daand.drivemusic.Prefs
  * Stops (and lets the adapter sleep) when you leave the car.
  */
 object ObdManager {
-    /** Speed, rpm, temperature: every 3 s (5 s while the adapter is falling behind, see [PollPace]). */
-    const val POLL_MS = 3_000L
+    /** Speed, rpm, temperature: every 3.5 s - a little headroom for the ELM327 clone (5 s while it falls behind, see [PollPace]). */
+    const val POLL_MS = 3_500L
     /** Fuel / voltage / warning light: every 30 s by the clock, whatever the pace of the fast values. */
     const val FULL_EVERY_MS = 30_000L
     const val CODES_EVERY_MS = 10 * 60_000L
