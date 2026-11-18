@@ -6,7 +6,9 @@ import android.media.browse.MediaBrowser
 import android.media.session.MediaController
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.content.Intent
 import android.os.Bundle
+import android.view.KeyEvent
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
@@ -18,6 +20,8 @@ import com.daand.drivemusic.Greeter
 import com.daand.drivemusic.News
 import com.daand.drivemusic.Prefs
 import com.daand.drivemusic.R
+import com.daand.drivemusic.Radio
+import com.daand.drivemusic.RadioPlayer
 import com.daand.drivemusic.ResumeToggle
 import com.daand.drivemusic.WelcomeAnnouncer
 
@@ -49,11 +53,19 @@ class DriveMediaService : MediaBrowserService() {
         }
         sessionToken = session.sessionToken
         ownToken = session.sessionToken
+        RadioPlayer.addListener(radioChanged)
         mirrorTick.run()
+    }
+
+    /** The radio started / stopped / changed station: the car screen shows it, and its menu updates. */
+    private val radioChanged: () -> Unit = {
+        publishMetadata(); publishState()
+        notifyChildrenChanged(MediaMenu.RADIO)
     }
 
     override fun onDestroy() {
         ownToken = null
+        RadioPlayer.removeListener(radioChanged)
         handler.removeCallbacksAndMessages(null)
         mirrored?.unregisterCallback(mirrorCallback)
         session.isActive = false
@@ -72,8 +84,16 @@ class DriveMediaService : MediaBrowserService() {
     }
 
     override fun onLoadChildren(parentId: String, result: Result<MutableList<MediaBrowser.MediaItem>>) {
-        if (parentId != MediaMenu.ROOT) { result.sendResult(mutableListOf()); return }
         val p = Prefs(this)
+        if (parentId == MediaMenu.RADIO) {
+            val playing = RadioPlayer.station.takeIf { RadioPlayer.on }
+            result.sendResult(Radio.decode(p.radioStations).mapIndexed { i, st ->
+                MediaBrowser.MediaItem(MediaDescription.Builder().setMediaId(MediaMenu.radioId(i)).setTitle("📻  ${st.name}")
+                    .setSubtitle(if (st == playing) "On now" else "Internet radio").build(), MediaBrowser.MediaItem.FLAG_PLAYABLE)
+            }.toMutableList())
+            return
+        }
+        if (parentId != MediaMenu.ROOT) { result.sendResult(mutableListOf()); return }
         val items = MediaMenu.items(
             monitorRunning = DriveMonitorService.instance != null,
             autoResume = ResumeToggle.isOnNow(this),
@@ -83,7 +103,7 @@ class DriveMediaService : MediaBrowserService() {
         ).map { (id, title, subtitle) ->
             MediaBrowser.MediaItem(
                 MediaDescription.Builder().setMediaId(id).setTitle(title).setSubtitle(subtitle).build(),
-                MediaBrowser.MediaItem.FLAG_PLAYABLE,
+                if (id == MediaMenu.RADIO) MediaBrowser.MediaItem.FLAG_BROWSABLE else MediaBrowser.MediaItem.FLAG_PLAYABLE,
             )
         }.toMutableList()
         result.sendResult(items)
@@ -95,14 +115,70 @@ class DriveMediaService : MediaBrowserService() {
     /** YouTube Music - never our own mirror (that would mirror itself in an endless loop). */
     private fun yt() = monitor()?.musicController()?.takeIf { it.sessionToken != session.sessionToken }
 
+    /** Who pressed: Android Auto (wheel or car screen), the car's Bluetooth, the Assistant, the phone... */
+    private fun origin(): String {
+        val pkg = runCatching { session.currentControllerInfo.packageName }.getOrNull().orEmpty()
+        return when (pkg) {
+            "com.google.android.projection.gearhead" -> "Android Auto"
+            "com.android.bluetooth" -> "car Bluetooth"
+            "com.android.systemui" -> "phone"
+            "com.google.android.googlequicksearchbox", "com.google.android.carassistant" -> "Assistant"
+            packageName -> "Drive Music"
+            "" -> "unknown"
+            else -> pkg
+        }
+    }
+
+    /** One line per press, so drive logs show what the wheel / car screen really sends. */
+    private fun press(what: String, did: String) = DriveLog.log("BUTTON: $what from ${origin()} -> $did")
+
+    /** The radio was stopped from the car (wheel pause): the next play brings the radio back, not YouTube Music. */
+    private var radioPausedFromCar = false
+
     private val callback = object : MediaSession.Callback() {
-        override fun onPlay() { monitor()?.playByUser("Car media") }
+        /**
+         * Raw key presses (steering wheel, car buttons) before they become play / next / ...: logged with
+         * the key, long-press repeats and the device it came from, to learn what this car's buttons send.
+         */
+        override fun onMediaButtonEvent(intent: Intent): Boolean {
+            val ev: KeyEvent? = if (android.os.Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                else @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+            if (ev != null && (ev.action == KeyEvent.ACTION_DOWN || ev.repeatCount == 0)) {
+                val device = runCatching { android.view.InputDevice.getDevice(ev.deviceId)?.name }.getOrNull() ?: "id ${ev.deviceId}"
+                DriveLog.log("BUTTON KEY: ${KeyEvent.keyCodeToString(ev.keyCode)} ${if (ev.action == KeyEvent.ACTION_DOWN) "down" else "up"}" +
+                    (if (ev.repeatCount > 0) " (held, repeat ${ev.repeatCount})" else "") +
+                    (if (ev.isLongPress) " LONG" else "") + " · from ${origin()} · device '$device' · source 0x${Integer.toHexString(ev.source)}")
+            }
+            return super.onMediaButtonEvent(intent)
+        }
+        override fun onPlay() {
+            if (RadioPlayer.on) { press("play", "radio already on"); return }
+            if (radioPausedFromCar) {
+                radioPausedFromCar = false
+                val st = RadioPlayer.lastStation(this@DriveMediaService)
+                press("play", "radio back on (${st.name})"); RadioPlayer.play(this@DriveMediaService, st); return
+            }
+            press("play", "YouTube Music"); monitor()?.playByUser("Car media")
+        }
         // Through the monitor, so auto-resume knows you paused on purpose (it would restart the music otherwise).
-        override fun onPause() { monitor()?.pauseByUser("Car media") }
-        override fun onSkipToNext() { monitor()?.skipNext() }
-        override fun onSkipToPrevious() { monitor()?.skipPrevious() }
-        override fun onStop() { monitor()?.pauseByUser("Car media") }
-        override fun onSeekTo(pos: Long) { yt()?.transportControls?.seekTo(pos) }
+        override fun onPause() {
+            if (RadioPlayer.on) { press("pause", "radio off"); radioPausedFromCar = true; RadioPlayer.stop("you pressed pause in the car"); return }
+            press("pause", "YouTube Music"); monitor()?.pauseByUser("Car media")
+        }
+        override fun onSkipToNext() {
+            radioPausedFromCar = false
+            if (RadioPlayer.on) { press("next", "next station"); RadioPlayer.step(this@DriveMediaService, 1) }
+            else { press("next", "next song"); monitor()?.skipNext() }
+        }
+        override fun onSkipToPrevious() {
+            radioPausedFromCar = false
+            if (RadioPlayer.on) { press("previous", "previous station"); RadioPlayer.step(this@DriveMediaService, -1) }
+            else { press("previous", "previous song"); monitor()?.skipPrevious() }
+        }
+        override fun onStop() { onPause() }
+        override fun onSeekTo(pos: Long) { if (!RadioPlayer.on) yt()?.transportControls?.seekTo(pos) }
+        override fun onFastForward() { press("fast-forward (held next?)", "nothing yet") }
+        override fun onRewind() { press("rewind (held previous?)", "nothing yet") }
         override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) { menu(mediaId ?: return) }
         /** "Hey Google, play <song> on Drive Music" -> YouTube Music searches and plays it. */
         override fun onPlayFromSearch(query: String?, extras: Bundle?) {
@@ -116,6 +192,11 @@ class DriveMediaService : MediaBrowserService() {
     private fun menu(id: String) {
         val p = Prefs(this)
         DriveLog.log("Car media: tapped $id")
+        MediaMenu.radioIndex(id)?.let { i ->
+            radioPausedFromCar = false
+            Radio.decode(p.radioStations).getOrNull(i)?.let { RadioPlayer.toggle(this, it) }
+            return
+        }
         when (id) {
             MediaMenu.WELCOME -> WelcomeAnnouncer.run(this, monitor()?.currentSong(), recordAsGreeted = false)
             MediaMenu.RESUME -> {
@@ -175,6 +256,13 @@ class DriveMediaService : MediaBrowserService() {
     }
 
     private fun publishMetadata() {
+        RadioPlayer.station?.takeIf { RadioPlayer.on }?.let { st ->
+            session.setMetadata(MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_TITLE, st.name)
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, if (RadioPlayer.state == RadioPlayer.State.CONNECTING) "Tuning in…" else "Internet radio")
+                .putString(MediaMetadata.METADATA_KEY_ALBUM, "Drive Music radio").build())
+            return
+        }
         val md = mirrored?.metadata
         session.setMetadata(
             if (md != null) MediaMetadata.Builder(md).build()
@@ -187,16 +275,19 @@ class DriveMediaService : MediaBrowserService() {
 
     private fun publishState() {
         val src = mirrored?.playbackState
-        val p = Prefs(this)
         val resumeOn = ResumeToggle.isOnNow(this)
-        val state = PlaybackState.Builder()
-            // Keep YouTube Music's own timestamp, or the car's progress bar drifts by however old the update is.
-            .setState(src?.state ?: PlaybackState.STATE_PAUSED, src?.position ?: 0L, src?.playbackSpeed ?: 0f,
+        val radio = RadioPlayer.on
+        val b = PlaybackState.Builder()
+        if (radio) b.setState(if (RadioPlayer.state == RadioPlayer.State.CONNECTING) PlaybackState.STATE_BUFFERING else PlaybackState.STATE_PLAYING,
+            PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1f, android.os.SystemClock.elapsedRealtime())
+        // Keep YouTube Music's own timestamp, or the car's progress bar drifts by however old the update is.
+        else b.setState(src?.state ?: PlaybackState.STATE_PAUSED, src?.position ?: 0L, src?.playbackSpeed ?: 0f,
                 src?.lastPositionUpdateTime?.takeIf { it > 0 } ?: android.os.SystemClock.elapsedRealtime())
+        val state = b
             .setActions(
                 PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE or
                     PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS or
-                    PlaybackState.ACTION_SEEK_TO or PlaybackState.ACTION_PLAY_FROM_MEDIA_ID or PlaybackState.ACTION_PLAY_FROM_SEARCH
+                    PlaybackState.ACTION_SEEK_TO or PlaybackState.ACTION_FAST_FORWARD or PlaybackState.ACTION_REWIND or PlaybackState.ACTION_PLAY_FROM_MEDIA_ID or PlaybackState.ACTION_PLAY_FROM_SEARCH
             )
             .addCustomAction(PlaybackState.CustomAction.Builder(MediaMenu.WELCOME, "Welcome briefing", R.drawable.ic_stat_note).build())
             .addCustomAction(PlaybackState.CustomAction.Builder(MediaMenu.RESUME,
@@ -219,6 +310,10 @@ object MediaMenu {
     const val WEATHER = "weather"
     const val NEWS = "news"
     const val CAR = "car_status"
+    const val RADIO = "radio"
+    private const val RADIO_PREFIX = "radio:"
+    fun radioId(i: Int) = "$RADIO_PREFIX$i"
+    fun radioIndex(id: String): Int? = if (id.startsWith(RADIO_PREFIX)) id.removePrefix(RADIO_PREFIX).toIntOrNull()?.takeIf { it >= 0 } else null
 
     /** Android Auto, the system, and ourselves. Other apps can't browse or trigger the menu. */
     private val TRUSTED = setOf(
@@ -236,6 +331,7 @@ object MediaMenu {
         if (!monitorRunning) return listOf(Triple(PLAY, "Open Drive Music on your phone", "Finish setup to control your music here"))
         return listOfNotNull(
             Triple(PLAY, "▶  Play YouTube Music", "Continue where you left off"),
+            Triple(RADIO, "📻  Radio", "Your stations - the wheel changes station"),
             Triple(WELCOME, if (butler) "🎩  Welcome briefing" else "🔊  Welcome briefing", "Greeting, weather and roads"),
             Triple(RESUME, if (autoResume) "↻  Auto-resume: On" else "↻  Auto-resume: Off", "Tap to switch"),
             Triple(WEATHER, "☁  Weather", weather ?: "Updated on your next drive"),

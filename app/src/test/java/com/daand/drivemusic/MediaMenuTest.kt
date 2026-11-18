@@ -20,10 +20,18 @@ class MediaMenuTest {
 
     @Test fun menuShowsControlsAndCurrentSettings() {
         val items = MediaMenu.items(monitorRunning = true, autoResume = false, weather = "4° · overcast · 20% rain", butler = true)
-        assertEquals(listOf(MediaMenu.PLAY, MediaMenu.WELCOME, MediaMenu.RESUME, MediaMenu.WEATHER, MediaMenu.NEWS), items.map { it.first })
+        assertEquals(listOf(MediaMenu.PLAY, MediaMenu.RADIO, MediaMenu.WELCOME, MediaMenu.RESUME, MediaMenu.WEATHER, MediaMenu.NEWS), items.map { it.first })
         assertEquals("↻  Auto-resume: Off", items.first { it.first == MediaMenu.RESUME }.second)
         assertEquals("4° · overcast · 20% rain", items.first { it.first == MediaMenu.WEATHER }.third)
         assertTrue(items.first { it.first == MediaMenu.WELCOME }.second.startsWith("🎩"))
+    }
+
+    @Test fun radioStationsHaveTheirOwnIds() {
+        assertEquals(3, MediaMenu.radioIndex(MediaMenu.radioId(3)))
+        assertEquals(null, MediaMenu.radioIndex(MediaMenu.RADIO))
+        assertEquals(null, MediaMenu.radioIndex("radio:-1"))
+        assertEquals(null, MediaMenu.radioIndex("radio:abc"))
+        assertEquals(null, MediaMenu.radioIndex(MediaMenu.WELCOME))
     }
 
     @Test fun withoutTheMonitorItSaysWhatToDo() {

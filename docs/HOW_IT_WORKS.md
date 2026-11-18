@@ -140,6 +140,14 @@ Landscape works too (side by side). Controls dip slightly and give a short vibra
 *Auto-resume* on/off, *Weather*, *Any news?*, and *Car status* (with the OBD adapter). Update
 questions appear there as a pop-up with *Go ahead* / *Not interested*.
 
+**Radio and the steering wheel:** Android doesn't let an app read the wheel - Android Auto sends its
+buttons to the media app open on the car screen. Open *Drive Music* there (instead of YouTube Music)
+and the wheel comes to us: with music it works as always (passed on to YouTube Music); with the radio
+on, next / previous change station, pause stops it and play brings the radio back. Its menu has a
+*📻 Radio* folder with your stations, and the car screen shows the station. Every press is logged
+(`BUTTON: next from Android Auto -> next station`, and raw keys as `BUTTON KEY: ...` with the device),
+so a drive log shows what this car's buttons really send.
+
 **Drive Music car app** (the other icon, so the phone can stay in its holder): *Play/Pause* (with
 what's playing), *Next*, *Find fuel* (nearest good price / cheapest, no motorway stations - one tap
 starts Waze on the car screen), *Navigate* (Home / Work, set on the phone's *Car screen* page),
