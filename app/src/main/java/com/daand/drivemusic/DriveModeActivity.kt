@@ -121,8 +121,8 @@ class DriveModeActivity : Activity() {
         listOf(R.drawable.ic_music to "Music", R.drawable.ic_navigate to "Go", R.drawable.ic_radio to "Radio", R.drawable.ic_gauge to "Car").forEachIndexed { i, (icon, label) ->
             val tv = TextView(this).apply {
                 // Four tabs: one line each, shrinking a little on narrow phones rather than wrapping.
-                text = label; textSize = if (wide) 18f else 19f; gravity = Gravity.CENTER; setPadding(dp(4), 0, dp(4), 0)
-                maxLines = 1; setAutoSizeTextTypeUniformWithConfiguration(12, if (wide) 18 else 19, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
+                text = label; textSize = if (wide) 17f else 15f; gravity = Gravity.CENTER
+                setPadding(dp(4), dp(if (wide) 0 else 6), dp(4), dp(if (wide) 0 else 6)); maxLines = 1
                 tag = icon  // the icon goes inline, right next to the word (see highlightTab)
                 setOnClickListener { pager.goTo(i) }
                 Feel.press(this, 0.97f)
@@ -154,14 +154,14 @@ class DriveModeActivity : Activity() {
             val on = idx == i
             // Selected tab: raised card, accent icon (the accent is kept for what matters most).
             tv.setTextColor(if (on) Style.TEXT else Style.TEXT2)
-            val label = tv.text.toString().trim()
-            val icon = dp(if (wide) 24 else 28)
+            val icon = dp(if (wide) 22 else 26)
             val d = getDrawable(tv.tag as Int)!!.mutate().apply {
                 setBounds(0, 0, icon, icon); setTint(if (on) Style.PRIMARY else Style.TEXT2)
             }
-            tv.text = android.text.SpannableString("  $label").apply {
-                setSpan(android.text.style.ImageSpan(d, android.text.style.DynamicDrawableSpan.ALIGN_CENTER), 0, 1, 0)
-            }
+            // Portrait: icon above the word (four tabs fit side by side); landscape: beside it.
+            // (An icon inside the text pushed the word onto a hidden second line on narrow tabs.)
+            if (wide) tv.setCompoundDrawablesRelative(d, null, null, null) else tv.setCompoundDrawablesRelative(null, d, null, null)
+            tv.compoundDrawablePadding = dp(if (wide) 8 else 2)
             tv.setTypeface(null, if (on) Typeface.BOLD else Typeface.NORMAL)
             // Both are solid buttons; the selected one is raised with a red bar along its bottom.
             val r = dp(Style.R_CARD).toFloat()
@@ -416,8 +416,8 @@ class DriveModeActivity : Activity() {
             else -> add(goRow("⛽", if (dutch) "Tanken" else "Find fuel", if (dutch) "Tankstations zoeken…" else "Looking for fuel near you…", onClick = null))
         }
 
-        for ((label, enc) in listOf((if (dutch) "Naar huis" else "Home") to p.placeHome, (if (dutch) "Naar werk" else "Work") to p.placeWork)) {
-            val icon = if (enc == p.placeHome) "🏠" else "💼"
+        for ((icon, label, enc) in listOf(Triple("🏠", if (dutch) "Naar huis" else "Home", p.placeHome),
+                Triple("💼", if (dutch) "Naar werk" else "Work", p.placeWork))) {
             val place = Shortcuts.decodePlace(enc)
             if (place == null) add(goRow(icon, label, if (dutch) "Nog niet ingesteld: app → Car screen" else "Not set yet: in the app → Car screen", onClick = null))
             else add(goRow(icon, label, if (dutch) "Waze op het autoscherm" else "Waze on the car screen") {
