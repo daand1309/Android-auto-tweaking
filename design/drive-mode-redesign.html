@@ -1,0 +1,82 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Drive Mode redesign</title>
+<style>
+:root{--bg:#0e0f12;--s:#1a1c21;--s2:#262930;--p:#e53935;--t:#f2f3f5;--t2:#9aa0aa;--g:#32d74b;--a:#ffb020}
+body{margin:0;background:#050506;color:var(--t);font-family:system-ui,Roboto,sans-serif;padding:24px}
+h1{font-size:22px;margin:0 0 4px}.sub{color:var(--t2);margin:0 0 24px;font-size:14px}
+.row{display:flex;gap:36px;flex-wrap:wrap;align-items:flex-start}
+.col h2{font-size:17px;margin:0 0 6px}.col p{color:var(--t2);font-size:13px;max-width:330px;margin:0 0 12px}
+.phone{width:330px;height:690px;background:var(--bg);border-radius:34px;border:6px solid #2b2d33;padding:14px;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.land{width:690px;height:330px;flex-direction:row}
+.strip{display:flex;gap:6px}.strip div{flex:1;background:var(--s);border-radius:14px;padding:8px 6px;text-align:center}
+.strip b{display:block;font-size:22px;font-variant-numeric:tabular-nums}.strip span{font-size:11px;color:var(--t2)}
+.song{display:flex;gap:12px;align-items:center;background:var(--s);border-radius:20px;padding:12px}
+.cover{width:84px;height:84px;border-radius:14px;background:linear-gradient(135deg,#7b2ff7,#f107a3);flex:none}
+.song .ti{font-weight:700;font-size:20px;line-height:1.15}.song .ar{color:var(--t2);font-size:15px;margin-top:3px}
+.thumbs{display:flex;gap:8px;margin-top:8px}.thumbs span{background:var(--s2);border-radius:10px;padding:5px 12px;font-size:15px}
+.tx{display:flex;gap:10px;flex:1.3}.tx div{flex:1;background:var(--s2);border-radius:24px;display:flex;align-items:center;justify-content:center;font-size:40px}
+.tx .play{flex:1.35;background:var(--p)}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;flex:1.4}
+.tile{background:var(--s);border-radius:18px;padding:10px 12px;display:flex;flex-direction:column;justify-content:center}
+.tile .ic{font-size:26px}.tile .l{font-weight:700;font-size:17px;margin-top:2px}.tile .d{color:var(--t2);font-size:12px}
+.foot{display:flex;gap:8px}.foot div{flex:1;background:var(--s2);border-radius:14px;text-align:center;padding:10px 0;font-size:13px}
+.foot .on{background:var(--g);color:#111;font-weight:700}
+.tabs{display:flex;gap:6px}.tabs div{flex:1;text-align:center;background:var(--s);border-radius:14px;padding:12px 0;font-size:15px;color:var(--t2)}
+.tabs .on{background:var(--s2);color:var(--t);font-weight:700;box-shadow:inset 0 -4px 0 var(--p)}
+.big{flex:1;display:flex;flex-direction:column;gap:10px}.bt{flex:1;background:var(--s);border-radius:20px;display:flex;align-items:center;gap:14px;padding:0 18px}
+.bt .ic{font-size:34px}.bt .l{font-weight:700;font-size:20px}.bt .d{color:var(--t2);font-size:13px}
+.prompt{background:var(--s);border:2px solid var(--a);border-radius:18px;padding:10px;font-size:15px}
+.prompt .b{display:flex;gap:8px;margin-top:8px}.prompt .b span{flex:1;text-align:center;padding:10px;border-radius:12px;font-weight:700}
+.rec{color:var(--g);font-weight:700}
+</style></head><body>
+<h1>Drive Mode redesign: two options</h1>
+<p class="sub">Built for the phone in its holder: one glance, big targets, and the new features (fuel, navigate, call, like) on the first screen. Colours follow your theme.</p>
+<div class="row">
+
+<div class="col"><h2>A · One screen <span class="rec">(recommended)</span></h2>
+<p>Everything on one screen, no tabs. Live car numbers at the top (tap them for the full car page). Song with like/dislike, big transport buttons, then four shortcut tiles. Questions slide in over the tiles.</p>
+<div class="phone">
+ <div class="strip"><div><b>87</b><span>km/h</span></div><div><b>412</b><span>km range</span></div><div><b>91°</b><span>engine</span></div><div><b>12.6</b><span>volt</span></div></div>
+ <div class="song"><div class="cover"></div><div><div class="ti">Waiting Room</div><div class="ar">Overgrown</div><div class="thumbs"><span>👍</span><span>👎</span></div></div></div>
+ <div class="tx"><div>⏮</div><div class="play">⏸</div><div>⏭</div></div>
+ <div class="tiles">
+  <div class="tile"><div class="ic">⛽</div><div class="l">Find fuel</div><div class="d">€2.039 · 4.0 km</div></div>
+  <div class="tile"><div class="ic">🏠</div><div class="l">Home</div><div class="d">Waze on the car screen</div></div>
+  <div class="tile"><div class="ic">💼</div><div class="l">Work</div><div class="d">Waze on the car screen</div></div>
+  <div class="tile"><div class="ic">📞</div><div class="l">Call</div><div class="d">Mum · Anna · Tom</div></div>
+ </div>
+ <div class="foot"><div>🔊 Welcome</div><div class="on">↻ Resume on</div><div>✕ Close</div></div>
+</div></div>
+
+<div class="col"><h2>A · landscape (phone sideways)</h2>
+<p>Same parts: the song and controls on the left, the car numbers and tiles on the right.</p>
+<div class="phone land">
+ <div style="flex:1.1;display:flex;flex-direction:column;gap:10px">
+  <div class="song"><div class="cover" style="width:70px;height:70px"></div><div><div class="ti">Waiting Room</div><div class="ar">Overgrown</div><div class="thumbs"><span>👍</span><span>👎</span></div></div></div>
+  <div class="tx"><div>⏮</div><div class="play">⏸</div><div>⏭</div></div>
+  <div class="foot"><div>🔊 Welcome</div><div class="on">↻ Resume on</div><div>✕</div></div>
+ </div>
+ <div style="flex:1;display:flex;flex-direction:column;gap:10px">
+  <div class="strip"><div><b>87</b><span>km/h</span></div><div><b>412</b><span>range</span></div><div><b>91°</b><span>engine</span></div></div>
+  <div class="tiles"><div class="tile"><div class="l">⛽ Fuel</div></div><div class="tile"><div class="l">🏠 Home</div></div><div class="tile"><div class="l">💼 Work</div></div><div class="tile"><div class="l">📞 Call</div></div></div>
+ </div>
+</div>
+<h2 style="margin-top:20px">A · with a question</h2>
+<div class="phone" style="height:330px">
+ <div class="song"><div class="cover" style="width:60px;height:60px"></div><div><div class="ti">Waiting Room</div><div class="ar">Overgrown</div></div></div>
+ <div class="tx"><div>⏮</div><div class="play">⏸</div><div>⏭</div></div>
+ <div class="prompt">Would you care for the weather forecast, sir?<div class="b"><span style="background:var(--g);color:#111">✓ Yes</span><span style="background:var(--p)">✕ No</span></div></div>
+</div></div>
+
+<div class="col"><h2>B · Three tabs</h2>
+<p>Closer to today: Music · Go · Car tabs. Bigger buttons per tab, but you need a tap or swipe to switch, and you can't see the car numbers while on music.</p>
+<div class="phone">
+ <div class="tabs"><div>🎵 Music</div><div class="on">🧭 Go</div><div>📟 Car</div></div>
+ <div class="big">
+  <div class="bt"><div class="ic">⛽</div><div><div class="l">Nearest good price</div><div class="d">Tango · €2.039 · 4.0 km</div></div></div>
+  <div class="bt"><div class="ic">💶</div><div><div class="l">Cheapest</div><div class="d">Fieten Olie · €1.989 · 9.2 km</div></div></div>
+  <div class="bt"><div class="ic">🏠</div><div><div class="l">Home</div><div class="d">Waze on the car screen</div></div></div>
+  <div class="bt"><div class="ic">💼</div><div><div class="l">Work</div></div></div>
+  <div class="bt"><div class="ic">📞</div><div><div class="l">Mum</div></div></div>
+ </div>
+</div></div>
+</div></body></html>
