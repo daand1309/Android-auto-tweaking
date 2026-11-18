@@ -288,6 +288,13 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("service_reminder_on", true)
         set(v) = sp.edit().putBoolean("service_reminder_on", v).apply()
     /** Synced with the car's dashboard: when, and the km / days it showed then (0 = never synced). */
+    /** The dashboard's ODO when you typed it in, and when - the app adds your drives to it. */
+    var odoKm: Int
+        get() = sp.getInt("odo_km", 0)
+        set(v) = sp.edit().putInt("odo_km", v).apply()
+    var odoAt: Long
+        get() = sp.getLong("odo_at", 0L)
+        set(v) = sp.edit().putLong("odo_at", v).apply()
     var serviceSyncAt: Long
         get() = sp.getLong("service_sync_at", 0L)
         set(v) = sp.edit().putLong("service_sync_at", v).apply()

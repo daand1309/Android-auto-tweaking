@@ -1419,6 +1419,11 @@ class MainActivity : Activity() {
                 left.first <= 0 || left.second <= 0 -> "service due now"
                 else -> "≈ %,d km · %d days left".format(java.util.Locale.ROOT, left.first, left.second)
             }, "Sync") { syncServiceWithCar() }
+            com.daand.drivemusic.obd.TripHistory.odometer(trips, prefs.odoKm, prefs.odoAt)?.let { odo ->
+                statRow("Odometer now", "≈ %,d km".format(java.util.Locale.ROOT, odo))
+                // Odometer now + km left now: right even when the two were typed in on different days.
+                left?.let { statRow("Next service at", "≈ %,d km".format(java.util.Locale.ROOT, odo + maxOf(0, it.first))) }
+            }
             text("The ASX keeps its own service reminder in the instrument cluster, which an OBD adapter can't read " +
                 "(and the app never writes to the car). Type in what the dashboard shows and the app counts down " +
                 "with your drives, so both remind you at the same time. After a service, sync again.")
@@ -2237,6 +2242,13 @@ class MainActivity : Activity() {
             prefs.serviceSyncAt = System.currentTimeMillis(); prefs.lastServiceReminder = 0L
             DriveLog.log("Setting changed: service synced with the dashboard ($km km, $days days)")
             render()
+            // The ODO line under it (optional): the app keeps it up to date with your drives.
+            askText("Odometer (ODO) - optional", "e.g. 168815 (leave empty to skip)", "") { odoIn ->
+                val odo = odoIn.filter { it.isDigit() }.toIntOrNull()?.takeIf { it in 1..2_000_000 } ?: return@askText
+                prefs.odoKm = odo; prefs.odoAt = System.currentTimeMillis()
+                DriveLog.log("Setting changed: odometer synced with the dashboard")   // the reading itself isn't logged
+                render()
+            }
         }
     }
 

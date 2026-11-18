@@ -141,6 +141,13 @@ object TripHistory {
     }
 
     fun kmSince(list: List<TripRecord>, since: Long) = list.filter { it.at >= since }.sumOf { it.km }
+
+    /**
+     * The odometer now: what the dashboard said when you typed it in, plus the drives since (with the
+     * adapter). Null when never typed in. Drives without the adapter aren't counted - sync now and then.
+     */
+    fun odometer(list: List<TripRecord>, odoKm: Int, odoAt: Long): Int? =
+        if (odoKm <= 0 || odoAt <= 0) null else odoKm + Math.round(kmSince(list, odoAt)).toInt()
 }
 
 /** Range left on the current tank. Pure, unit tested. */
