@@ -666,6 +666,7 @@ class MainActivity : Activity() {
         }
         if (stations.size < Radio.MAX_STATIONS) button("Add a station") { addRadioStation() }
         if (prefs.radioStations.isNotBlank()) button("Back to the Dutch stations") { prefs.radioStations = ""; render() }
+        switch("Radio on when I parked: start it again next drive", prefs.radioResume) { prefs.radioResume = it }
 
         header("Sound")
         button("Open the equalizer") { openEqualizer() }
@@ -1539,11 +1540,31 @@ class MainActivity : Activity() {
             runOnUiThread {
                 if (found.isEmpty()) { toast("No station found for \"$q\" (or no signal)"); return@runOnUiThread }
                 AlertDialog.Builder(this).setTitle("Pick a station")
-                    .setItems(found.map { it.name }.toTypedArray()) { _, i ->
-                        prefs.radioStations = Radio.encode(Radio.add(Radio.decode(prefs.radioStations), found[i]))
-                        DriveLog.log("Setting changed: radio station '${found[i].name}' added")
-                        toast("${found[i].name} added"); render()
-                    }.show()
+                    .setItems(found.map { it.name }.toTypedArray()) { _, i -> addCheckedStation(found[i]) }.show()
+            }
+        }.start()
+    }
+
+    /**
+     * Android only plays encrypted (https) streams. Many stations list an http address but answer on
+     * https too: try that; a station that really only streams unencrypted can't be added.
+     */
+    private fun addCheckedStation(found: Radio.Station) {
+        toast("Checking ${found.name}...")
+        Thread {
+            val url = Radio.httpsVariant(found.url)
+            val ok = try {
+                val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                c.connectTimeout = 5000; c.readTimeout = 5000; c.setRequestProperty("User-Agent", "DriveMusic/1.0")
+                try { c.responseCode in 200..299 && c.contentType.orEmpty().let { it.startsWith("audio") || it.contains("mpegurl") || it.contains("octet") } }
+                finally { c.disconnect() }
+            } catch (e: Exception) { false }
+            runOnUiThread {
+                if (!ok) { toast("${found.name} only streams unencrypted (or isn't answering) - Android won't play that. Try another."); return@runOnUiThread }
+                val st = Radio.Station(found.name, url)
+                prefs.radioStations = Radio.encode(Radio.add(Radio.decode(prefs.radioStations), st))
+                DriveLog.log("Setting changed: radio station '${st.name}' added")
+                toast("${st.name} added"); render()
             }
         }.start()
     }

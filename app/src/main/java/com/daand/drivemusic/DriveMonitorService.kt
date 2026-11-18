@@ -367,6 +367,12 @@ class DriveMonitorService : NotificationListenerService() {
                 when {
                     !prefs.autoStart -> DriveLog.log("Auto-start is turned off in settings")
                     other != null -> DriveLog.log("START: skipped - $other is already playing, not taking over")
+                    prefs.radioWasOn && prefs.radioResume -> {
+                        // The radio was on when you parked: that again, not YouTube Music.
+                        prefs.radioWasOn = false
+                        DriveLog.log("START: the radio was on when you parked - starting it again")
+                        RadioPlayer.play(this, RadioPlayer.lastStation(this))
+                    }
                     else -> startMusic("Android Auto connected")
                 }
             }
@@ -380,7 +386,8 @@ class DriveMonitorService : NotificationListenerService() {
                 else -> handler.postDelayed({
                     // Greeting first, then the music (startMusic checks we're still in the car).
                     if (carConnected && gen == connectGen) {
-                        val song = currentSong()
+                        // Radio coming back: no "up first: <YouTube Music song>".
+                        val song = if (prefs.radioWasOn && prefs.radioResume) null else currentSong()
                         announceSongAfterStart = song == null && prefs.announceSong && prefs.autoStart && other == null
                         if (song != null) DriveLog.log("Queued song: ${song.title} - ${song.artist}")
                         // If Android Auto auto-started music, pause it so the welcome is heard clearly,
@@ -418,8 +425,10 @@ class DriveMonitorService : NotificationListenerService() {
             suppressPauseUntil = 0L
             getSystemService(NotificationManager::class.java).cancel(DRIVE_MODE_NOTIFICATION)
             pausedAtDrop = false
+            // The radio is a car thing: off when you leave, whatever the YouTube Music setting says.
+            prefs.radioWasOn = RadioPlayer.on
+            RadioPlayer.stop("you left the car (or Android Auto dropped)")
             if (prefs.pauseOnDisconnect) {
-                RadioPlayer.stop("you left the car (or Android Auto dropped)")
                 val c = findYtm()
                 if (c?.playbackState?.state == PlaybackState.STATE_PLAYING) {
                     c.transportControls.pause()

@@ -182,6 +182,11 @@ class DriveMediaService : MediaBrowserService() {
         override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) { menu(mediaId ?: return) }
         /** "Hey Google, play <song> on Drive Music" -> YouTube Music searches and plays it. */
         override fun onPlayFromSearch(query: String?, extras: Bundle?) {
+            // "Play Radio 2 on Drive Music": one of your stations, if the words name one.
+            Radio.match(query.orEmpty(), Radio.decode(Prefs(this@DriveMediaService).radioStations))?.let { st ->
+                radioPausedFromCar = false
+                press("voice", "radio ${st.name}"); RadioPlayer.play(this@DriveMediaService, st); return
+            }
             DriveLog.log("Car media: voice search")
             MediaMenu.playFromSearch(yt(), monitor(), query, extras)
         }
@@ -259,7 +264,10 @@ class DriveMediaService : MediaBrowserService() {
         RadioPlayer.station?.takeIf { RadioPlayer.on }?.let { st ->
             session.setMetadata(MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, st.name)
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, if (RadioPlayer.state == RadioPlayer.State.CONNECTING) "Tuning in…" else "Internet radio")
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, when {
+                    RadioPlayer.state == RadioPlayer.State.CONNECTING -> if (RadioPlayer.problem.isNotBlank()) "Signal lost - ${RadioPlayer.problem}" else "Tuning in…"
+                    else -> RadioPlayer.nowPlaying ?: "Internet radio"
+                })
                 .putString(MediaMetadata.METADATA_KEY_ALBUM, "Drive Music radio").build())
             return
         }

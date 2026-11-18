@@ -226,6 +226,14 @@ class Prefs(context: Context) {
     var radioLast: String
         get() = sp.getString("radio_last", "") ?: ""
         set(v) = sp.edit().putString("radio_last", v).apply()
+    /** Start the radio again on the next drive when it was on as you parked. */
+    var radioResume: Boolean
+        get() = sp.getBoolean("radio_resume", true)
+        set(v) = sp.edit().putBoolean("radio_resume", v).apply()
+    /** The radio was playing when the last drive ended. */
+    var radioWasOn: Boolean
+        get() = sp.getBoolean("radio_was_on", false)
+        set(v) = sp.edit().putBoolean("radio_was_on", v).apply()
     var radioStations: String
         get() = sp.getString("radio_stations", "") ?: ""
         set(v) = sp.edit().putString("radio_stations", v).apply()

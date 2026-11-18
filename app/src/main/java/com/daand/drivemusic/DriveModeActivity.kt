@@ -530,8 +530,10 @@ class DriveModeActivity : Activity() {
             RadioPlayer.backToMusic(this) }, LinearLayout.LayoutParams(-1, h).apply { bottomMargin = dp(10) })
         if (st != null && state != RadioPlayer.State.OFF) {
             val (line, color) = when (state) {
-                RadioPlayer.State.CONNECTING -> (if (dutch) "Verbinden…" else "Tuning in…") to Style.TEXT2
-                RadioPlayer.State.PLAYING -> (if (dutch) "Speelt nu - tik om te stoppen" else "Playing - tap to stop") to Style.GREEN
+                RadioPlayer.State.CONNECTING -> (if (RadioPlayer.problem.isNotBlank()) (if (dutch) "Signaal kwijt - " else "Signal lost - ") + RadioPlayer.problem + "…"
+                    else if (dutch) "Verbinden…" else "Tuning in…") to Style.TEXT2
+                RadioPlayer.State.PLAYING -> ((RadioPlayer.nowPlaying?.let { "♪ $it · " } ?: "") +
+                    (if (dutch) "tik om te stoppen" else "tap to stop")) to Style.GREEN
                 else -> ((if (dutch) "Lukt niet: " else "Didn't work: ") + RadioPlayer.problem + (if (dutch) ". Tik om opnieuw te proberen." else ". Tap to try again.")) to Style.AMBER
             }
             radioList.addView(goRow(if (state == RadioPlayer.State.PLAYING) "⏹" else "📻", st.name, line,
@@ -828,10 +830,11 @@ class DriveModeActivity : Activity() {
         val radio = RadioPlayer.station?.takeIf { RadioPlayer.on }
         val statusText2 = when {
             radio == null -> statusText
-            RadioPlayer.state == RadioPlayer.State.CONNECTING -> "📻 Tuning in… YouTube Music plays until it's there"
+            RadioPlayer.state == RadioPlayer.State.CONNECTING -> if (RadioPlayer.problem.isNotBlank()) "📻 Signal lost - ${RadioPlayer.problem}…"
+                else "📻 Tuning in… YouTube Music plays until it's there"
             else -> "📻 Radio · ⏮ ⏭ change station · YouTube Music waits in the background"
         }
-        val songText2 = if (radio != null) "📻 ${radio.name}\nRadio" else songText
+        val songText2 = if (radio != null) "📻 ${radio.name}\n${RadioPlayer.nowPlaying ?: "Radio"}" else songText
         val playing = s?.isPlaying() == true || radio != null
         val resumeOn = ResumeToggle.isOnNow(this)
         val speaking = Voice.speaking

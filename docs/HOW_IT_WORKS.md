@@ -118,7 +118,13 @@ Go - tap them for the Car tab.
   stop. Switching is seamless: YouTube Music keeps playing until the station actually sounds, then waits
   paused in the background (same song and spot; auto-resume leaves it alone). The Music tab has a
   one-tap switch ("📻 Radio 2" / "🎵 Back to YouTube Music"), and while the radio is on its big buttons
-  work for the radio: ⏮ ⏭ change station, ⏸ stops it. Our own voice and navigation dip the radio. Add stations in
+  work for the radio: ⏮ ⏭ change station, ⏸ stops it.
+  It shows the song the station is playing (when the station sends it, as NPO and Talpa do), keeps
+  playing with the phone locked, and rides out tunnels: a dropped stream is retried (2, 4, 8, 15 s);
+  if the station stays gone, YouTube Music takes over so the car doesn't go silent. Radio on when you
+  parked? It starts again next drive (switch in *Music & driving → Radio*). "Hey Google, play Radio 2
+  on Drive Music" picks the station. Stations that only stream unencrypted (http) can't be added -
+  Android won't play them; most also answer on https, which the app tries first. Our own voice and navigation dip the radio. Add stations in
   *Music & driving → Radio* (searched in the free radio-browser.info directory). ~60 MB an hour.
 - **Car tab** (with the OBD adapter): speed, RPM, engine temperature (blue cold / green good / red hot),
   fuel use now, this trip (km and L/100), battery, range left, outside and intake temperature.

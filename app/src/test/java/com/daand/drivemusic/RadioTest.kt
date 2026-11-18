@@ -41,4 +41,37 @@ class RadioTest {
         assertEquals(emptyList<Station>(), Radio.parseSearch("not json"))
         assertTrue(Radio.searchUrl("radio west").contains("name=radio+west"))
     }
+
+    // ---- song titles (real ICY blocks from 18 Nov 2026)
+
+    @Test fun songTitleFromTheStream() {
+        assertEquals("Ozzy Osbourne - Dreamer", IcyMeta.parse("StreamTitle='Ozzy Osbourne - Dreamer';StreamUrl='';\u0000\u0000"))
+        assertEquals("Breakfast At Tiffany's - DEEP BLUE SOMETHING", IcyMeta.parse("StreamTitle='Breakfast At Tiffany's - DEEP BLUE SOMETHING';"))
+        assertEquals("Armin Van Buuren, Chef'special - Larger Than Life", IcyMeta.parse("StreamTitle='Armin Van Buuren, Chef'special - Larger Than Life';StreamUrl='x';"))
+        assertEquals(null, IcyMeta.parse("StreamTitle='';"))
+        assertEquals(null, IcyMeta.parse("StreamTitle=' - ';"))
+        assertEquals(null, IcyMeta.parse("StreamTitle='Advertisement';"))
+        assertEquals(null, IcyMeta.parse("nothing here"))
+        assertEquals("no markup or control characters", "a b c", IcyMeta.parse("StreamTitle='a<b>\u0007c';"))
+    }
+
+    // ---- "Hey Google, play ... on Drive Music"
+
+    @Test fun voiceFindsTheStation() {
+        val list = Radio.DEFAULTS
+        assertEquals("NPO Radio 2", Radio.match("radio 2", list)?.name)
+        assertEquals("NPO Radio 2", Radio.match("NPO Radio 2", list)?.name)
+        assertEquals("NPO 3FM", Radio.match("3FM", list)?.name)
+        assertEquals("Radio 538", Radio.match("538", list)?.name)
+        assertEquals("Qmusic", Radio.match("play qmusic", list)?.name)
+        assertEquals("100% NL", Radio.match("100% NL", list)?.name)
+        assertEquals("Sky Radio", Radio.match("sky radio", list)?.name)
+        assertEquals("a song name goes to YouTube Music", null, Radio.match("Bohemian Rhapsody", list))
+        assertEquals(null, Radio.match("", list))
+    }
+
+    @Test fun httpStationsAreTriedOverHttps() {
+        assertEquals("https://stream.slam.nl/slam", Radio.httpsVariant("http://stream.slam.nl/slam"))
+        assertEquals("https://a/b", Radio.httpsVariant("https://a/b"))
+    }
 }

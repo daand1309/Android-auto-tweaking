@@ -1,0 +1,59 @@
+package com.daand.drivemusic
+
+import android.os.SystemClock
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assume.assumeTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+
+/**
+ * The radio on a real Android: a real station tunes in, plays, changes station and stops. Skipped
+ * (not failed) when the emulator has no internet - the stream itself isn't what's being tested then.
+ */
+@RunWith(AndroidJUnit4::class)
+class RadioPlaybackTest {
+    private val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+    private fun onMain(block: () -> Unit) = InstrumentationRegistry.getInstrumentation().runOnMainSync(block)
+
+    private fun online(): Boolean = try {
+        val c = java.net.URL("https://icecast.omroep.nl/radio2-bb-mp3").openConnection() as java.net.HttpURLConnection
+        c.connectTimeout = 5000; c.readTimeout = 5000
+        try { c.responseCode == 200 } finally { c.disconnect() }
+    } catch (e: Exception) { false }
+
+    private fun waitFor(what: String, ms: Long, ok: () -> Boolean) {
+        val end = SystemClock.elapsedRealtime() + ms
+        while (SystemClock.elapsedRealtime() < end) { if (ok()) return; SystemClock.sleep(250) }
+        throw AssertionError("timed out waiting for $what (state ${RadioPlayer.state}, ${RadioPlayer.problem})")
+    }
+
+    @After fun off() = onMain { RadioPlayer.stop("test over") }
+
+    @Test fun tunesInChangesStationAndStops() {
+        assumeTrue("no internet on this emulator", online())
+        Prefs(ctx).radioStations = ""
+        val r2 = Radio.DEFAULTS.first { it.name == "NPO Radio 2" }
+        onMain { RadioPlayer.play(ctx, r2) }
+        waitFor("NPO Radio 2 to play", 25_000) { RadioPlayer.state == RadioPlayer.State.PLAYING }
+        assertEquals("remembered for the one-tap switch", r2, RadioPlayer.lastStation(ctx))
+        SystemClock.sleep(3_000)
+        assertEquals("still playing after 3 s", RadioPlayer.State.PLAYING, RadioPlayer.state)
+
+        onMain { RadioPlayer.step(ctx, 1) }     // ⏭ = the next station in the list
+        assertEquals("NPO 3FM", RadioPlayer.station?.name)
+        waitFor("3FM to play", 25_000) { RadioPlayer.state == RadioPlayer.State.PLAYING }
+
+        onMain { RadioPlayer.stop("you pressed stop") }
+        assertEquals(RadioPlayer.State.OFF, RadioPlayer.state)
+    }
+
+    @Test fun aDeadStationSaysSoInsteadOfHanging() {
+        assumeTrue("no internet on this emulator", online())
+        onMain { RadioPlayer.play(ctx, Radio.Station("Nowhere FM", "https://icecast.omroep.nl/this-station-does-not-exist-mp3")) }
+        waitFor("the error", 50_000) { RadioPlayer.state == RadioPlayer.State.ERROR }
+        assertEquals("Nowhere FM", RadioPlayer.station?.name)
+    }
+}

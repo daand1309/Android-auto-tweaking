@@ -69,6 +69,24 @@ object Radio {
         }.distinctBy { it.url }
     } catch (e: Exception) { emptyList() }
 
+    /**
+     * "Hey Google, play Radio 2 on Drive Music": the station whose name best matches the words, or
+     * null (then the words go to YouTube Music). Spaces, case and "NPO"/"radio" fillers don't matter.
+     */
+    fun match(query: String, list: List<Station>): Station? {
+        fun norm(x: String) = x.lowercase().replace("%", "procent").replace(Regex("[^a-z0-9]"), "")
+        val q = norm(query.removePrefix("play ").removePrefix("speel "))
+        if (q.length < 2) return null
+        val core = { x: String -> norm(x).removePrefix("npo").removePrefix("radio") }
+        return list.firstOrNull { norm(it.name) == q }
+            ?: list.firstOrNull { core(it.name) == core(query) && core(query).isNotEmpty() }
+            ?: list.filter { norm(it.name).contains(q) || (q.contains(norm(it.name)) && norm(it.name).length >= 3) }
+                .minByOrNull { kotlin.math.abs(norm(it.name).length - q.length) }
+    }
+
+    /** Android blocks unencrypted (http) streams: the same address over https, which most servers also answer. */
+    fun httpsVariant(url: String) = if (url.startsWith("http://")) "https://" + url.removePrefix("http://") else url
+
     fun searchUrl(query: String) = "https://all.api.radio-browser.info/json/stations/search?name=" +
         URLEncoder.encode(query.trim(), "UTF-8") + "&hidebroken=true&order=votes&reverse=true&limit=15"
 
@@ -82,6 +100,39 @@ object Radio {
     } catch (e: Exception) { emptyList() }
 }
 
+/**
+ * The song a station is playing right now, from its "ICY" metadata (sent in the stream by NPO, Talpa
+ * and most others). Read with a short separate request about once a minute - a few MB an hour.
+ */
+object IcyMeta {
+    /** "StreamTitle='Artist - Song';StreamUrl='';" -> "Artist - Song" (null when empty or just an ad marker). */
+    fun parse(block: String): String? {
+        val t = Regex("""StreamTitle='(.*?)';""", RegexOption.DOT_MATCHES_ALL).find(block)?.groupValues?.get(1) ?: return null
+        val clean = GreetingText.cleanMeta(t).trim(' ', '-')
+        return clean.takeIf { it.length >= 3 && !it.equals("advertisement", true) && !it.startsWith("adw_") }
+    }
+
+    /** Off the main thread. Reads up to the first metadata block (at most ~130 KB), then hangs up. */
+    fun read(url: String): String? = try {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        conn.connectTimeout = 5000; conn.readTimeout = 8000
+        conn.setRequestProperty("Icy-MetaData", "1")
+        conn.setRequestProperty("User-Agent", "DriveMusic/1.0")
+        try {
+            val every = conn.getHeaderField("icy-metaint")?.toIntOrNull()?.takeIf { it in 1..131_072 } ?: return null
+            val input = java.io.DataInputStream(conn.inputStream.buffered())
+            input.skipNBytesCompat(every.toLong())
+            val len = input.read() * 16
+            if (len <= 0) null else ByteArray(len).also { input.readFully(it) }.toString(Charsets.UTF_8).let { parse(it) }
+        } finally { conn.disconnect() }
+    } catch (e: Exception) { null }
+
+    private fun java.io.InputStream.skipNBytesCompat(n: Long) {
+        var left = n
+        while (left > 0) { val k = skip(left); if (k <= 0) { if (read() < 0) throw java.io.EOFException(); left-- } else left -= k }
+    }
+}
+
 /** Plays one station at a time through the car, like any music app. Main thread. */
 object RadioPlayer {
     enum class State { OFF, CONNECTING, PLAYING, ERROR }
@@ -89,12 +140,21 @@ object RadioPlayer {
     @Volatile var state = State.OFF; private set
     @Volatile var station: Radio.Station? = null; private set
     @Volatile var problem = ""; private set
+    /** The song the station says it's playing (null: not sent / not known yet). */
+    @Volatile var nowPlaying: String? = null; private set
     val on get() = state == State.CONNECTING || state == State.PLAYING
+
+    /** Dropped streams (a tunnel, a dead zone): this many tries, this far apart, before giving up. */
+    private val RETRY_MS = longArrayOf(2_000, 4_000, 8_000, 15_000)
+    private const val META_EVERY_MS = 45_000L
 
     private val main = Handler(Looper.getMainLooper())
     private var player: MediaPlayer? = null
     private var focus: AudioFocusRequest? = null
     private var appCtx: Context? = null
+    /** It has played this session: a drop is then a reconnect, and giving up hands back to YouTube Music. */
+    private var everPlayed = false
+    private var retries = 0
     private val listeners = mutableSetOf<() -> Unit>()
     fun addListener(l: () -> Unit) { listeners += l }
     fun removeListener(l: () -> Unit) { listeners -= l }
@@ -124,35 +184,92 @@ object RadioPlayer {
     fun play(ctx: Context, st: Radio.Station) {
         val app = ctx.applicationContext
         appCtx = app
-        release()
-        station = st; state = State.CONNECTING; problem = ""
+        releasePlayer(); abandonFocus()
+        everPlayed = false; retries = 0
+        station = st; state = State.CONNECTING; problem = ""; nowPlaying = null
         Prefs(app).radioLast = st.encode()
         DriveLog.log("RADIO: tuning in to ${st.name}")
         changed()
+        connect(app, st)
+    }
+
+    private fun connect(app: Context, st: Radio.Station) {
         val mp = MediaPlayer()
         player = mp
         try {
             mp.setAudioAttributes(attrs)
+            // Keeps the phone's processor awake while it plays: with the screen off / phone locked the
+            // stream would otherwise stall after a while.
+            mp.setWakeMode(app, android.os.PowerManager.PARTIAL_WAKE_LOCK)
             mp.setDataSource(st.url)
             mp.setOnPreparedListener { p ->
                 if (player !== p) return@setOnPreparedListener
-                // Ready: hand over. YouTube Music off - counted as your choice, so it isn't auto-resumed over the radio.
-                DriveMonitorService.instance?.let { if (it.isPlaying()) it.pauseByUser("Radio", stopVoice = false) }
-                val audio = app.getSystemService(AudioManager::class.java)
-                val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(attrs)
-                    .setOnAudioFocusChangeListener(focusListener, main).setWillPauseWhenDucked(false).build()
-                focus = req
-                if (audio.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_FAILED) { fail(st, "the car's audio is busy (a call?)"); return@setOnPreparedListener }
-                p.start(); state = State.PLAYING
-                DriveLog.log("RADIO: playing ${st.name}")
+                if (focus == null) {
+                    // Ready: hand over. YouTube Music off - counted as your choice, so it isn't auto-resumed over the radio.
+                    DriveMonitorService.instance?.let { if (it.isPlaying()) it.pauseByUser("Radio", stopVoice = false) }
+                    val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(attrs)
+                        .setOnAudioFocusChangeListener(focusListener, main).setWillPauseWhenDucked(false).build()
+                    if (app.getSystemService(AudioManager::class.java).requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_FAILED) {
+                        giveUp(st, "the car's audio is busy (a call?)"); return@setOnPreparedListener
+                    }
+                    focus = req
+                }
+                p.start(); state = State.PLAYING; problem = ""
+                DriveLog.log(if (everPlayed) "RADIO: ${st.name} back (reconnected)" else "RADIO: playing ${st.name}")
+                everPlayed = true; retries = 0
                 changed()
+                pollMeta(st)
             }
-            mp.setOnErrorListener { p, what, extra -> if (player === p) fail(st, "the stream stopped ($what/$extra) - no signal?"); true }
-            mp.setOnCompletionListener { if (player === it) fail(st, "the stream ended") }
+            mp.setOnErrorListener { p, what, extra -> if (player === p) dropped(app, st, "the stream stopped ($what/$extra)"); true }
+            mp.setOnCompletionListener { if (player === it) dropped(app, st, "the stream ended") }
             mp.prepareAsync()
-            // A stream that never starts (dead station, no signal): give up after 20 s instead of hanging.
-            main.postDelayed({ if (player === mp && state == State.CONNECTING) fail(st, "it didn't answer within 20 s") }, 20_000)
-        } catch (e: Exception) { fail(st, e.message ?: e.javaClass.simpleName) }
+            // A stream that never starts (dead station, no signal): don't hang on it.
+            main.postDelayed({ if (player === mp && state == State.CONNECTING) dropped(app, st, "no answer within 20 s") }, 20_000)
+        } catch (e: Exception) { dropped(app, st, e.message ?: e.javaClass.simpleName) }
+    }
+
+    /**
+     * The stream went away. Playing before (a tunnel, a dead zone): try again a few times, keeping the
+     * sound ours so YouTube Music doesn't jump in. Never played: one more try, then say so.
+     */
+    private fun dropped(app: Context, st: Radio.Station, why: String) {
+        releasePlayer()
+        val tries = if (everPlayed) RETRY_MS.size else 1
+        if (retries < tries) {
+            val wait = RETRY_MS[retries]
+            retries++
+            state = State.CONNECTING; problem = "reconnecting ($retries/$tries)"
+            DriveLog.log("RADIO: ${st.name} - $why - trying again in ${wait / 1000}s ($retries/$tries)")
+            changed()
+            main.postDelayed({ if (station == st && state == State.CONNECTING && player == null) connect(app, st) }, wait)
+            return
+        }
+        giveUp(st, "$why - no signal?")
+    }
+
+    /** Couldn't (re)connect. If it had been playing, YouTube Music takes over so the car doesn't go silent. */
+    private fun giveUp(st: Radio.Station, why: String) {
+        DriveLog.log("RADIO: ${st.name} - $why")
+        val hadPlayed = everPlayed
+        releasePlayer(); abandonFocus()
+        station = st; state = State.ERROR; problem = why; nowPlaying = null
+        changed()
+        if (hadPlayed) DriveMonitorService.instance?.let {
+            DriveLog.log("RADIO: lost ${st.name} - back to YouTube Music")
+            it.playByUser("Radio lost")
+        }
+    }
+
+    /** About once a minute while playing: the song title, if the station sends it. */
+    private fun pollMeta(st: Radio.Station) {
+        Thread({
+            val t = IcyMeta.read(st.url)
+            main.post {
+                if (station != st || state != State.PLAYING) return@post
+                if (t != nowPlaying) { nowPlaying = t; changed() }
+                main.postDelayed({ if (station == st && state == State.PLAYING && player != null) pollMeta(st) }, META_EVERY_MS)
+            }
+        }, "radio-meta").start()
     }
 
     /** The station you had last (or the first of your list) - for the one-tap switch back to radio. */
@@ -165,8 +282,8 @@ object RadioPlayer {
     /** ⏮ / ⏭ while the radio is on: the station before / after in your list (wrapping round). */
     fun step(ctx: Context, by: Int) {
         val list = Radio.decode(Prefs(ctx).radioStations)
-        val i = list.indexOf(station).coerceAtLeast(0)
-        play(ctx, list[Math.floorMod(i + by, list.size)])
+        val i = list.indexOf(station)
+        play(ctx, list[Math.floorMod(if (i < 0) (if (by > 0) -1 else 0) + by else i + by, list.size)])
     }
 
     /** Radio off and YouTube Music back where it was - one tap, no gap (it takes the sound and the radio stops). */
@@ -179,23 +296,19 @@ object RadioPlayer {
         main.postDelayed({ if (on) stop("you switched back to music") }, 2_500)
     }
 
-    private fun fail(st: Radio.Station, why: String) {
-        DriveLog.log("RADIO: ${st.name} - $why")
-        release()
-        station = st; state = State.ERROR; problem = why
-        changed()
-    }
-
     fun stop(why: String) {
         if (state == State.OFF) return
         station?.let { DriveLog.log("RADIO: ${it.name} off ($why)") }
-        release()
-        state = State.OFF; problem = ""
+        releasePlayer(); abandonFocus()
+        state = State.OFF; problem = ""; nowPlaying = null
         changed()
     }
 
-    private fun release() {
+    private fun releasePlayer() {
         player?.let { p -> player = null; runCatching { p.stop() }; runCatching { p.release() } }
+    }
+
+    private fun abandonFocus() {
         focus?.let { f -> appCtx?.getSystemService(AudioManager::class.java)?.let { runCatching { it.abandonAudioFocusRequest(f) } } }
         focus = null
     }
