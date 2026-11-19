@@ -65,4 +65,22 @@ class RadioPlaybackTest {
             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
         waitFor("the voice request to pick a station", 10_000) { RadioPlayer.station?.name == "NPO Radio 2" && RadioPlayer.state != RadioPlayer.State.OFF }
     }
+
+    /** "Near you" for real: radio-browser around Noordwijk, then the most-listened one plays. */
+    @Test fun stationsNearNoordwijkPlay() {
+        assumeTrue("no internet on this emulator", online())
+        val near = Radio.nearby(52.24, 4.44)
+        assumeTrue("radio-browser didn't answer", near.isNotEmpty())
+        org.junit.Assert.assertTrue("only a few: ${near.size}", near.size >= 8)
+        org.junit.Assert.assertTrue(near.all { it.station.url.startsWith("https://") && it.km <= 80 })
+        // The first one that plays within the time limit (a station can be down - that's what the app skips).
+        var played: String? = null
+        for (n in near.take(4)) {
+            onMain { RadioPlayer.play(ctx, n.station) }
+            val end = SystemClock.elapsedRealtime() + 25_000
+            while (SystemClock.elapsedRealtime() < end && RadioPlayer.state == RadioPlayer.State.CONNECTING) SystemClock.sleep(250)
+            if (RadioPlayer.state == RadioPlayer.State.PLAYING) { played = n.station.name; break }
+        }
+        org.junit.Assert.assertNotNull("none of the 4 nearest-popular stations played", played)
+    }
 }

@@ -543,11 +543,38 @@ class DriveModeActivity : Activity() {
                 if (state == RadioPlayer.State.ERROR) RadioPlayer.play(this, st) else RadioPlayer.stop("you pressed stop")
             }, LinearLayout.LayoutParams(-1, dp(if (wide) 72 else 92)).apply { bottomMargin = dp(14) })
         }
-        for (s in Radio.decode(Prefs(this).radioStations)) {
+        val mine = Radio.decode(Prefs(this).radioStations)
+        // Listening to a station that isn't in your list (one near you): one tap keeps it.
+        if (st != null && RadioPlayer.on && mine.none { it.url == st.url } && mine.size < Radio.MAX_STATIONS)
+            radioList.addView(goRow("➕", (if (dutch) "Bewaar " else "Keep ") + st.name, if (dutch) "Bij je eigen zenders zetten" else "Add it to your stations") {
+                Prefs(this).radioStations = Radio.encode(Radio.add(mine, st))
+                DriveLog.log("RADIO: '${st.name}' added to your stations")
+                refreshRadio()
+            }, LinearLayout.LayoutParams(-1, h).apply { bottomMargin = dp(10) })
+        for (s in mine) {
             val playing = s == st && RadioPlayer.on
             radioList.addView(goRow("📻", s.name, if (playing) (if (dutch) "Speelt nu" else "On now") else "",
                 accent = if (playing) Style.GREEN else null) { RadioPlayer.toggle(this, s) },
                 LinearLayout.LayoutParams(-1, h).apply { bottomMargin = dp(10) })
+        }
+        // Stations near you: looked up as the tab opens (again after 15 min or ~15 km).
+        radioList.addView(TextView(this).apply {
+            text = if (dutch) "📍  Bij jou in de buurt" else "📍  Near you"
+            setTextColor(Style.TEXT2); textSize = 15f; setTypeface(typeface, Typeface.BOLD); setPadding(dp(6), dp(10), dp(6), dp(8))
+        })
+        RadioNearby.refresh(this) { if (!isFinishing) refreshRadio() }
+        val near = RadioNearby.current()
+        when {
+            near == null || (near.isEmpty() && RadioNearby.looking) -> radioList.addView(goRow("📍", if (dutch) "Zoeken…" else "Looking…",
+                if (dutch) "Zenders bij jou in de buurt" else "Stations near you", onClick = null), LinearLayout.LayoutParams(-1, h).apply { bottomMargin = dp(10) })
+            near.isEmpty() -> radioList.addView(goRow("📍", if (dutch) "Niets gevonden" else "Nothing found",
+                if (dutch) "Locatie uit, of geen bereik" else "Location off, or no signal", onClick = null), LinearLayout.LayoutParams(-1, h).apply { bottomMargin = dp(10) })
+            else -> for (n in near.filter { nb -> mine.none { it.url == nb.station.url } }) {
+                val playing = n.station == st && RadioPlayer.on
+                radioList.addView(goRow("📍", n.station.name, (if (playing) (if (dutch) "Speelt nu · " else "On now · ") else "") + "${n.km} km",
+                    accent = if (playing) Style.GREEN else null) { RadioPlayer.toggle(this, n.station) },
+                    LinearLayout.LayoutParams(-1, h).apply { bottomMargin = dp(10) })
+            }
         }
         radioList.addView(TextView(this).apply {
             text = if (dutch) "Stations toevoegen of weghalen: in de app → Music & driving → Radio. Radio gebruikt ~60 MB per uur."

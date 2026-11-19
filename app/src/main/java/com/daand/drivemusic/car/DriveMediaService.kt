@@ -21,6 +21,7 @@ import com.daand.drivemusic.News
 import com.daand.drivemusic.Prefs
 import com.daand.drivemusic.R
 import com.daand.drivemusic.Radio
+import com.daand.drivemusic.RadioNearby
 import com.daand.drivemusic.RadioPlayer
 import com.daand.drivemusic.ResumeToggle
 import com.daand.drivemusic.WelcomeAnnouncer
@@ -61,6 +62,7 @@ class DriveMediaService : MediaBrowserService() {
     private val radioChanged: () -> Unit = {
         publishMetadata(); publishState()
         notifyChildrenChanged(MediaMenu.RADIO)
+        notifyChildrenChanged(MediaMenu.RADIO_NEAR)
     }
 
     override fun onDestroy() {
@@ -87,10 +89,25 @@ class DriveMediaService : MediaBrowserService() {
         val p = Prefs(this)
         if (parentId == MediaMenu.RADIO) {
             val playing = RadioPlayer.station.takeIf { RadioPlayer.on }
-            result.sendResult(Radio.decode(p.radioStations).mapIndexed { i, st ->
+            val near = MediaBrowser.MediaItem(MediaDescription.Builder().setMediaId(MediaMenu.RADIO_NEAR).setTitle("📍  Near you")
+                .setSubtitle("Local stations where you are now").build(), MediaBrowser.MediaItem.FLAG_BROWSABLE)
+            result.sendResult((listOf(near) + Radio.decode(p.radioStations).mapIndexed { i, st ->
                 MediaBrowser.MediaItem(MediaDescription.Builder().setMediaId(MediaMenu.radioId(i)).setTitle("📻  ${st.name}")
                     .setSubtitle(if (st == playing) "On now" else "Internet radio").build(), MediaBrowser.MediaItem.FLAG_PLAYABLE)
-            }.toMutableList())
+            }).toMutableList())
+            return
+        }
+        if (parentId == MediaMenu.RADIO_NEAR) {
+            // Looked up off the main thread (position + radio-browser); the car shows its spinner meanwhile.
+            result.detach()
+            Thread({
+                val playing = RadioPlayer.station.takeIf { RadioPlayer.on }
+                val items = RadioNearby.blocking(this).mapIndexed { i, n ->
+                    MediaBrowser.MediaItem(MediaDescription.Builder().setMediaId(MediaMenu.nearId(i)).setTitle("📍  ${n.station.name}")
+                        .setSubtitle((if (n.station == playing) "On now · " else "") + "${n.km} km").build(), MediaBrowser.MediaItem.FLAG_PLAYABLE)
+                }
+                handler.post { runCatching { result.sendResult(items.toMutableList()) } }
+            }, "car-radio-near").start()
             return
         }
         if (parentId != MediaMenu.ROOT) { result.sendResult(mutableListOf()); return }
@@ -192,6 +209,11 @@ class DriveMediaService : MediaBrowserService() {
     private fun menu(id: String) {
         val p = Prefs(this)
         DriveLog.log("Car media: tapped $id")
+        MediaMenu.nearIndex(id)?.let { i ->
+            radioPausedFromCar = false
+            RadioNearby.current()?.getOrNull(i)?.let { RadioPlayer.toggle(this, it.station) }
+            return
+        }
         MediaMenu.radioIndex(id)?.let { i ->
             radioPausedFromCar = false
             Radio.decode(p.radioStations).getOrNull(i)?.let { RadioPlayer.toggle(this, it) }
@@ -316,6 +338,10 @@ object MediaMenu {
     const val RADIO = "radio"
     private const val RADIO_PREFIX = "radio:"
     fun radioId(i: Int) = "$RADIO_PREFIX$i"
+    const val RADIO_NEAR = "radio_near"
+    private const val NEAR_PREFIX = "near:"
+    fun nearId(i: Int) = "$NEAR_PREFIX$i"
+    fun nearIndex(id: String): Int? = if (id.startsWith(NEAR_PREFIX)) id.removePrefix(NEAR_PREFIX).toIntOrNull()?.takeIf { it >= 0 } else null
     fun radioIndex(id: String): Int? = if (id.startsWith(RADIO_PREFIX)) id.removePrefix(RADIO_PREFIX).toIntOrNull()?.takeIf { it >= 0 } else null
 
     /** Android Auto, the system, and ourselves. Other apps can't browse or trigger the menu. */

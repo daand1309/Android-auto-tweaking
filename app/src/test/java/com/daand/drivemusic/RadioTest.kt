@@ -74,4 +74,33 @@ class RadioTest {
         assertEquals("https://stream.slam.nl/slam", Radio.httpsVariant("http://stream.slam.nl/slam"))
         assertEquals("https://a/b", Radio.httpsVariant("https://a/b"))
     }
+
+    // ---- stations near you (shapes from radio-browser.info, 19 Nov 2026)
+
+    @Test fun nearbyKeepsPlayableStationsOnceEach() {
+        val json = """[
+          {"name":"Radio 538","url_resolved":"http://playerservices.streamtheworld.com/api/livestream-redirect/RADIO538.mp3","codec":"MP3","geo_distance":32512.3},
+          {"name":"BNR Nieuwsradio","url_resolved":"https://stream.bnr.nl/bnr_mp3_128_20","codec":"MP3","geo_distance":34700.1},
+          {"name":"Radio Rijnmond (AAC+)","url_resolved":"https://d2e9xgjjdd9cr5.cloudfront.net/icecast/rijnmond/radio-aac","codec":"AAC+","geo_distance":37500},
+          {"name":"BNR nieuwsradio - http","url_resolved":"https://stream.bnr.nl/bnr_mp3_128_20","codec":"MP3","geo_distance":32000},
+          {"name":"Hardcore Power Radio","url_resolved":"https://loa.beheerstream.nl:8011/stream","codec":"MP3","geo_distance":28400},
+          {"name":"Hardcore Power Radio (2nd server)","url_resolved":"https://loa.beheerstream.nl:8012/stream","codec":"MP3","geo_distance":28400},
+          {"name":"WDR5","url_resolved":"https://wdr.example/wdr5/master.m3u8","codec":"UNKNOWN","geo_distance":1000},
+          {"name":"","url_resolved":"https://x/y","codec":"MP3"}]"""
+        val near = Radio.parseNearby(json)
+        assertEquals(listOf("BNR Nieuwsradio", "Radio Rijnmond (AAC+)", "Hardcore Power Radio"), near.map { it.station.name })
+        assertEquals(listOf(34, 37, 28), near.map { it.km })
+        assertEquals(emptyList<Radio.Nearby>(), Radio.parseNearby("<html>"))
+    }
+
+    @Test fun nearbyOnlySendsARoundedPosition() {
+        val u = Radio.nearbyUrl(52.2417, 4.4431, 40)
+        assertTrue(u, u.contains("geo_lat=52.2&") && u.contains("geo_long=4.4&") && u.contains("geo_distance=40000"))
+    }
+
+    @Test fun carIdsForNearbyStations() {
+        assertEquals(4, com.daand.drivemusic.car.MediaMenu.nearIndex(com.daand.drivemusic.car.MediaMenu.nearId(4)))
+        assertEquals(null, com.daand.drivemusic.car.MediaMenu.nearIndex(com.daand.drivemusic.car.MediaMenu.radioId(4)))
+        assertEquals(null, com.daand.drivemusic.car.MediaMenu.radioIndex(com.daand.drivemusic.car.MediaMenu.nearId(4)))
+    }
 }

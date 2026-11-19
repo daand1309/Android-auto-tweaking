@@ -124,7 +124,13 @@ Go - tap them for the Car tab.
   if the station stays gone, YouTube Music takes over so the car doesn't go silent. Radio on when you
   parked? It starts again next drive (switch in *Music & driving → Radio*). "Hey Google, play Radio 2
   on Drive Music" picks the station. Stations that only stream unencrypted (http) can't be added -
-  Android won't play them; most also answer on https, which the app tries first. Our own voice and navigation dip the radio. Add stations in
+  Android won't play them; most also answer on https, which the app tries first.
+  **📍 Near you** (Radio tab, and a folder in the car's Radio menu): local stations within 40 km of
+  where you are (80 km where there are few), anywhere in Europe, from radio-browser.info - most
+  listened first, with the distance; tap to listen, *Keep* to add it to your stations. Only your
+  position rounded to ~10 km is sent; looked up again after 10 minutes on the road. Checked 19 Nov:
+  12-15 of the top 15 play around Noordwijk, Utrecht, Antwerp and Düsseldorf; the north has fewer.
+  A station that fails is hidden for the rest of the day. Our own voice and navigation dip the radio. Add stations in
   *Music & driving → Radio* (searched in the free radio-browser.info directory). ~60 MB an hour.
 - **Car tab** (with the OBD adapter): speed, RPM, engine temperature (blue cold / green good / red hot),
   fuel use now, this trip (km and L/100), battery, range left, outside and intake temperature.

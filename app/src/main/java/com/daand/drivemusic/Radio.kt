@@ -87,6 +87,53 @@ object Radio {
     /** Android blocks unencrypted (http) streams: the same address over https, which most servers also answer. */
     fun httpsVariant(url: String) = if (url.startsWith("http://")) "https://" + url.removePrefix("http://") else url
 
+    // ---- stations near you (radio-browser.info geo search: Europe-wide, free and made for apps)
+
+    data class Nearby(val station: Station, val km: Int)
+
+    /** Your position rounded to ~10 km (like the weather) - the exact spot never leaves the phone. */
+    fun nearbyUrl(lat: Double, lon: Double, km: Int) = "https://all.api.radio-browser.info/json/stations/search?has_geo_info=true" +
+        "&geo_lat=${Weather.round(lat)}&geo_long=${Weather.round(lon)}&geo_distance=${km * 1000}" +
+        "&order=clickcount&reverse=true&hidebroken=true&limit=60"
+
+    /**
+     * Playable ones only (https MP3/AAC - Android won't play unencrypted streams), each station once
+     * (no "2nd server" copies), most-listened first, at most [max]. Checked 19 Nov: in the Randstad,
+     * Antwerp and Düsseldorf 12-15 of the top 15 play.
+     */
+    fun parseNearby(json: String, max: Int = 15): List<Nearby> = try {
+        val a = JSONArray(json)
+        val seen = HashSet<String>()
+        (0 until a.length()).mapNotNull { i ->
+            val o = a.optJSONObject(i) ?: return@mapNotNull null
+            val url = o.optString("url_resolved").trim()
+            val codec = o.optString("codec").uppercase()
+            val name = o.optString("name").trim().replace(Regex("\\s+"), " ").take(40)
+            val key = name.lowercase().filter { it.isLetterOrDigit() }.take(12)
+            when {
+                name.isBlank() || !url.startsWith("https://") || !validUrl(url) || codec !in setOf("MP3", "AAC", "AAC+") -> null
+                !seen.add(key) || !seen.add(url) -> null
+                else -> Nearby(Station(name, url), Math.round(o.optDouble("geo_distance", 0.0).takeIf { it.isFinite() } ?: 0.0).toInt() / 1000)
+            }
+        }.take(max)
+    } catch (e: Exception) { emptyList() }
+
+    /** Off the main thread. 40 km; where that finds few (the north), 80 km. */
+    fun nearby(lat: Double, lon: Double): List<Nearby> {
+        fun get(km: Int) = try {
+            val conn = URL(nearbyUrl(lat, lon, km)).openConnection() as HttpURLConnection
+            conn.connectTimeout = 5000; conn.readTimeout = 10000
+            conn.setRequestProperty("User-Agent", "DriveMusic/1.0")
+            try { if (conn.responseCode == 200) parseNearby(conn.inputStream.bufferedReader().use { it.readText().take(500_000) }) else emptyList() }
+            finally { conn.disconnect() }
+        } catch (e: Exception) { emptyList() }
+        val near = get(40)
+        return if (near.size >= 8) near else get(80).ifEmpty { near }
+    }
+
+    /** Streams that failed this session: not offered again until the app restarts. */
+    val failed: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
+
     fun searchUrl(query: String) = "https://all.api.radio-browser.info/json/stations/search?name=" +
         URLEncoder.encode(query.trim(), "UTF-8") + "&hidebroken=true&order=votes&reverse=true&limit=15"
 
@@ -250,6 +297,7 @@ object RadioPlayer {
     /** Couldn't (re)connect. If it had been playing, YouTube Music takes over so the car doesn't go silent. */
     private fun giveUp(st: Radio.Station, why: String) {
         DriveLog.log("RADIO: ${st.name} - $why")
+        Radio.failed += st.url
         val hadPlayed = everPlayed
         releasePlayer(); abandonFocus()
         station = st; state = State.ERROR; problem = why; nowPlaying = null
