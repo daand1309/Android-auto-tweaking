@@ -13,6 +13,9 @@ object RadioNearby {
     @Volatile var looking = false; private set
     @Volatile private var at = 0L
     @Volatile private var where: Pair<Double, Double>? = null
+    const val FRESH_MS = 10 * 60_000L
+    /** A look-up that found nothing (no signal): try again after a minute, not after the full 10. */
+    private const val RETRY_MS = 60_000L
     private val main = Handler(Looper.getMainLooper())
 
     /** The stations near you minus the ones that failed today; null while not looked up yet. */
@@ -23,7 +26,7 @@ object RadioNearby {
         if (looking) return
         // Fresh enough: nothing to do (and no callback - the caller redraws on callbacks, so calling
         // back every time would loop).
-        val fresh = System.currentTimeMillis() - at < 10 * 60_000L
+        val fresh = System.currentTimeMillis() - at < FRESH_MS
         if (fresh && list != null) return
         looking = true
         Thread({
@@ -34,11 +37,16 @@ object RadioNearby {
                 looking = false
                 val before = list
                 // A failed look-up (no signal) keeps the stations you already had.
-                if (result != null && (result.isNotEmpty() || list.isNullOrEmpty())) {
+                if (!result.isNullOrEmpty()) {
                     list = result; where = here
                     DriveLog.log("RADIO: ${result.size} stations near you")
-                } else if (list == null) list = emptyList()   // no position: say "nothing found", don't keep asking
-                at = System.currentTimeMillis()
+                    at = System.currentTimeMillis()
+                } else {
+                    // Nothing (no position / no signal): keep what we had; say "nothing found" only if we
+                    // had nothing, and try again in a minute.
+                    if (list == null) list = emptyList()
+                    at = System.currentTimeMillis() - FRESH_MS + RETRY_MS
+                }
                 if (list != before) done()
             }
         }, "radio-near").start()
@@ -46,10 +54,13 @@ object RadioNearby {
 
     /** Blocking (car screen, off the main thread): the list now, looked up if needed. */
     fun blocking(ctx: Context): List<Radio.Nearby> {
-        current()?.let { if (System.currentTimeMillis() - at < 15 * 60_000L) return it }
+        current()?.let { if (System.currentTimeMillis() - at < FRESH_MS) return it }
         val here = Here.position(ctx.applicationContext) ?: return current().orEmpty()
         val r = Radio.nearby(here.first, here.second)
-        list = r; at = System.currentTimeMillis(); where = here
+        if (r.isNotEmpty()) { list = r; at = System.currentTimeMillis(); where = here }   // no signal: keep the old list
         return current().orEmpty()
     }
+
+    /** The station behind a car-screen entry - by its stream, so a list that changed meanwhile can't mix them up. */
+    fun byUrl(url: String): Radio.Station? = list?.firstOrNull { it.station.url == url }?.station
 }

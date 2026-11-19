@@ -102,6 +102,8 @@ class DriveModeActivity : Activity() {
             val onCar = ::pager.isInitialized && pager.current == TAB_CAR
             if (onCar) updateCarPage() else updateDynamic()
             updateStrip()
+            // On the Radio tab: the stations near you follow you (looked up again when 10 minutes are up).
+            if (::pager.isInitialized && pager.current == TAB_RADIO) RadioNearby.refresh(this@DriveModeActivity) { if (!isFinishing) refreshRadio() }
             // Live car data (car tab, or the numbers above the tabs): every second. Otherwise every 3 s.
             val live = (onCar || stripShown) && Prefs(this@DriveModeActivity).obdEnabled && com.daand.drivemusic.obd.ObdManager.live() != null
             handler.postDelayed(this, if (live) 1000L else 3000L)
@@ -557,7 +559,7 @@ class DriveModeActivity : Activity() {
                 accent = if (playing) Style.GREEN else null) { RadioPlayer.toggle(this, s) },
                 LinearLayout.LayoutParams(-1, h).apply { bottomMargin = dp(10) })
         }
-        // Stations near you: looked up as the tab opens (again after 15 min or ~15 km).
+        // Stations near you: looked up as the tab opens (again after 10 minutes, or 1 minute after a failed try).
         radioList.addView(TextView(this).apply {
             text = if (dutch) "📍  Bij jou in de buurt" else "📍  Near you"
             setTextColor(Style.TEXT2); textSize = 15f; setTypeface(typeface, Typeface.BOLD); setPadding(dp(6), dp(10), dp(6), dp(8))

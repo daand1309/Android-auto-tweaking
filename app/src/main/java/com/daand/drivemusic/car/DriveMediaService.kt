@@ -102,8 +102,8 @@ class DriveMediaService : MediaBrowserService() {
             result.detach()
             Thread({
                 val playing = RadioPlayer.station.takeIf { RadioPlayer.on }
-                val items = RadioNearby.blocking(this).mapIndexed { i, n ->
-                    MediaBrowser.MediaItem(MediaDescription.Builder().setMediaId(MediaMenu.nearId(i)).setTitle("📍  ${n.station.name}")
+                val items = RadioNearby.blocking(this).map { n ->
+                    MediaBrowser.MediaItem(MediaDescription.Builder().setMediaId(MediaMenu.nearId(n.station.url)).setTitle("📍  ${n.station.name}")
                         .setSubtitle((if (n.station == playing) "On now · " else "") + "${n.km} km").build(), MediaBrowser.MediaItem.FLAG_PLAYABLE)
                 }
                 handler.post { runCatching { result.sendResult(items.toMutableList()) } }
@@ -209,9 +209,9 @@ class DriveMediaService : MediaBrowserService() {
     private fun menu(id: String) {
         val p = Prefs(this)
         DriveLog.log("Car media: tapped $id")
-        MediaMenu.nearIndex(id)?.let { i ->
+        MediaMenu.nearUrl(id)?.let { url ->
             radioPausedFromCar = false
-            RadioNearby.current()?.getOrNull(i)?.let { RadioPlayer.toggle(this, it.station) }
+            RadioNearby.byUrl(url)?.let { RadioPlayer.toggle(this, it) } ?: DriveLog.log("Car media: that station isn't near you any more")
             return
         }
         MediaMenu.radioIndex(id)?.let { i ->
@@ -340,8 +340,9 @@ object MediaMenu {
     fun radioId(i: Int) = "$RADIO_PREFIX$i"
     const val RADIO_NEAR = "radio_near"
     private const val NEAR_PREFIX = "near:"
-    fun nearId(i: Int) = "$NEAR_PREFIX$i"
-    fun nearIndex(id: String): Int? = if (id.startsWith(NEAR_PREFIX)) id.removePrefix(NEAR_PREFIX).toIntOrNull()?.takeIf { it >= 0 } else null
+    /** By the station's stream, not its place in the list: the list can change between showing and tapping. */
+    fun nearId(url: String) = "$NEAR_PREFIX$url"
+    fun nearUrl(id: String): String? = if (id.startsWith(NEAR_PREFIX)) id.removePrefix(NEAR_PREFIX).takeIf { it.startsWith("https://") } else null
     fun radioIndex(id: String): Int? = if (id.startsWith(RADIO_PREFIX)) id.removePrefix(RADIO_PREFIX).toIntOrNull()?.takeIf { it >= 0 } else null
 
     /** Android Auto, the system, and ourselves. Other apps can't browse or trigger the menu. */

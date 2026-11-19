@@ -99,8 +99,10 @@ class RadioTest {
     }
 
     @Test fun carIdsForNearbyStations() {
-        assertEquals(4, com.daand.drivemusic.car.MediaMenu.nearIndex(com.daand.drivemusic.car.MediaMenu.nearId(4)))
-        assertEquals(null, com.daand.drivemusic.car.MediaMenu.nearIndex(com.daand.drivemusic.car.MediaMenu.radioId(4)))
-        assertEquals(null, com.daand.drivemusic.car.MediaMenu.radioIndex(com.daand.drivemusic.car.MediaMenu.nearId(4)))
+        val url = "https://stream.bnr.nl/bnr_mp3_128_20"
+        assertEquals("by the stream, not the place in the list", url, com.daand.drivemusic.car.MediaMenu.nearUrl(com.daand.drivemusic.car.MediaMenu.nearId(url)))
+        assertEquals(null, com.daand.drivemusic.car.MediaMenu.nearUrl(com.daand.drivemusic.car.MediaMenu.radioId(4)))
+        assertEquals(null, com.daand.drivemusic.car.MediaMenu.radioIndex(com.daand.drivemusic.car.MediaMenu.nearId(url)))
+        assertEquals("never anything but a stream", null, com.daand.drivemusic.car.MediaMenu.nearUrl("near:intent://x"))
     }
 }

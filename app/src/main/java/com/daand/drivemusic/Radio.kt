@@ -297,7 +297,9 @@ object RadioPlayer {
     /** Couldn't (re)connect. If it had been playing, YouTube Music takes over so the car doesn't go silent. */
     private fun giveUp(st: Radio.Station, why: String) {
         DriveLog.log("RADIO: ${st.name} - $why")
-        Radio.failed += st.url
+        // Never started: hide it from "near you" today. One that played and then lost the signal (a
+        // tunnel) is fine - it stays.
+        if (!everPlayed) Radio.failed += st.url
         val hadPlayed = everPlayed
         releasePlayer(); abandonFocus()
         station = st; state = State.ERROR; problem = why; nowPlaying = null
@@ -329,7 +331,10 @@ object RadioPlayer {
 
     /** ⏮ / ⏭ while the radio is on: the station before / after in your list (wrapping round). */
     fun step(ctx: Context, by: Int) {
-        val list = Radio.decode(Prefs(ctx).radioStations)
+        val mine = Radio.decode(Prefs(ctx).radioStations)
+        // Listening to a station near you (not one of yours): ⏮ ⏭ go through the ones near you.
+        val near = RadioNearby.current()?.map { it.station }.orEmpty()
+        val list = if (station != null && station !in mine && station in near) near else mine
         val i = list.indexOf(station)
         play(ctx, list[Math.floorMod(if (i < 0) (if (by > 0) -1 else 0) + by else i + by, list.size)])
     }
