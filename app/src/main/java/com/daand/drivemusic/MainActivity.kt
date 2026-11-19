@@ -2479,6 +2479,26 @@ class MainActivity : Activity() {
         line("This month", monthStart)
         line("All time", 0)
         if (price <= 0) text("Set the fuel price under Car data (OBD) → Your car to see costs.")
+
+        // Fill-ups the adapter saw (the fuel level jumped between two drives).
+        header("Fill-ups")
+        val fills = com.daand.drivemusic.obd.FuelLog.decode(prefs.fuelLog)
+        if (fills.isEmpty()) text("Seen by the adapter: when the fuel level is 10+ points higher at the start of a drive than " +
+            "where the last one ended. After two fill-ups you'll see what the car really uses.")
+        else {
+            val real = com.daand.drivemusic.obd.FuelLog.consumption(fills, prefs.tankLitres, { a, b -> trips.filter { it.at in a until b }.sumOf { it.km } })
+            real?.let { c ->
+                statRow("Real consumption", "%.1f L/100 over %.0f km".format(java.util.Locale.ROOT, c.per100, c.km))
+                com.daand.drivemusic.obd.FuelLog.costPerKm(c, price.takeIf { it > 0 } ?: fills.last().price)?.let {
+                    statRow("Fuel per km", "€%.3f".format(java.util.Locale.ROOT, it))
+                }
+            } ?: text("After the next fill-up (and 100+ km in between) you'll see what the car really uses.")
+            val fmt = java.text.SimpleDateFormat("d MMM", java.util.Locale.getDefault())
+            fills.takeLast(5).reversed().forEach { f ->
+                statRow(fmt.format(java.util.Date(f.at)), "%d%% → %d%% · ≈ %.0f L".format(java.util.Locale.ROOT, f.beforePct, f.afterPct, f.litres) +
+                    if (f.price > 0) " · ≈ €%.0f".format(java.util.Locale.ROOT, f.cost) else "")
+            }
+        }
         header("Recent drives")
         val fmt = java.text.SimpleDateFormat("EEE d MMM, HH:mm", java.util.Locale.getDefault())
         for (t in trips.sortedBy { it.at }.takeLast(30).reversed()) {  // newest first

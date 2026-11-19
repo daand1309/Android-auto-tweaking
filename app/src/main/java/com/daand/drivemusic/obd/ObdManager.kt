@@ -84,6 +84,10 @@ object ObdManager {
     /** Typical L/100 from trip history (for the range), loaded at the start of the drive. */
     @Volatile var typicalPer100: Double? = null; private set
     @Volatile private var tankLitres = 60.0
+    /** This connection's first fuel level was compared with where the last drive ended (fill-up check). */
+    @Volatile private var fuelChecked = false
+    /** The last few fuel levels - the median is saved at the end (one odd reading on a slope doesn't count). */
+    private val recentFuel = java.util.ArrayDeque<Int>()
     @Volatile private var batteryLogged = false
     @Volatile private var restingMax: Double? = null
 
@@ -104,6 +108,28 @@ object ObdManager {
         p.catalystLog = CatalystLog.add(p.catalystLog, System.currentTimeMillis(), c.closeness)
         DriveLog.log("OBD: catalytic converter self-test$`when` - %d%% of its limit (%s)".format(java.util.Locale.ROOT,
             Math.round(c.closeness * 100), if (c.passes) "passes" else "FAILS"))
+    }
+
+    /**
+     * The first fuel level of a connection against where the last drive ended: a jump is a fill-up.
+     * After that, the level is kept so the end of this drive can be saved.
+     */
+    private fun trackFuel(ctx: Context, pct: Int) {
+        synchronized(recentFuel) { recentFuel.addLast(pct); while (recentFuel.size > 3) recentFuel.removeFirst() }
+        if (fuelChecked) return
+        fuelChecked = true
+        val p = Prefs(ctx)
+        val fill = FuelLog.detect(p.lastFuelPct.takeIf { it >= 0 }, pct, tankLitres, p.fuelPriceQuoted, System.currentTimeMillis()) ?: return
+        p.fuelLog = FuelLog.encode(FuelLog.decode(p.fuelLog) + fill)
+        DriveLog.log("FUEL: fill-up seen - %d%% -> %d%%, about %.0f L".format(java.util.Locale.ROOT, fill.beforePct, fill.afterPct, fill.litres) +
+            if (fill.price > 0) " (€%.3f/L ≈ €%.0f)".format(java.util.Locale.ROOT, fill.price, fill.cost) else "")
+    }
+
+    /** Where this drive ended, for the next drive's fill-up check. */
+    private fun saveFuelLevel() {
+        val ctx = appCtx ?: return
+        val m = synchronized(recentFuel) { recentFuel.sorted() }.let { if (it.isEmpty()) null else it[it.size / 2] } ?: return
+        Prefs(ctx).lastFuelPct = m
     }
 
     /** The freeze frame, kept so the pages can show it while you're parked (logged once per change). */
@@ -171,6 +197,7 @@ object ObdManager {
         tankLitres = p.tankLitres
         appCtx = app
         batteryLogged = false; restingMax = null
+        fuelChecked = false; recentFuel.clear()
         typicalPer100 = runCatching { TripHistory.typicalPer100(TripHistory.load(ctx)) }.getOrNull()
         readySeconds = p.obdReadySeconds
         val now = System.currentTimeMillis()
@@ -184,6 +211,7 @@ object ObdManager {
     fun stop() {
         if (!running) return
         running = false
+        runCatching { saveFuelLevel() }
         alertSink = null
         // Closing the socket also aborts a connect() that's still waiting.
         runCatching { link?.close() }
@@ -318,6 +346,7 @@ object ObdManager {
                 session.recheckCatalyst()?.let { c -> appCtx?.let { ctx -> runCatching { saveCatalyst(ctx, c, " (completed during the drive)") } } }
             }
             latest = snap
+            snap.fuelPct?.takeIf { it in 0..100 }?.let { pct -> appCtx?.let { c -> runCatching { trackFuel(c, pct) } } }
             val answered = snap.coolantC != null || snap.rpm != null || snap.speedKmh != null
             if (answered) {
                 lastEcuAnswerAt = snap.at

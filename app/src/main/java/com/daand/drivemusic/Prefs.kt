@@ -264,6 +264,15 @@ class Prefs(context: Context) {
         get() = sp.getLong("last_rdw_reminder", 0L)
         set(v) = sp.edit().putLong("last_rdw_reminder", v).apply()
 
+    /** Fuel level (%) where the last drive ended (-1 = unknown) - a jump at the next start is a fill-up. */
+    var lastFuelPct: Int
+        get() = sp.getInt("last_fuel_pct", -1)
+        set(v) = sp.edit().putInt("last_fuel_pct", v).apply()
+    /** Fill-ups seen by the adapter ([com.daand.drivemusic.obd.FuelLog]). */
+    var fuelLog: String
+        get() = sp.getString("fuel_log", "") ?: ""
+        set(v) = sp.edit().putString("fuel_log", v).apply()
+
     var fuelType: String
         get() = sp.getString("fuel_type", FuelPrices.Fuel.EURO95.code) ?: FuelPrices.Fuel.EURO95.code
         set(v) = sp.edit().putString("fuel_type", v).apply()
