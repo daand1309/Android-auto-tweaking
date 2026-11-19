@@ -49,7 +49,7 @@ object Radio {
     fun decode(s: String): List<Station> = if (s.isBlank()) DEFAULTS else s.split(';').mapNotNull { e ->
         val i = e.indexOf('|')
         if (i <= 0) null else Station(e.substring(0, i), e.substring(i + 1)).takeIf { validUrl(it.url) }
-    }.take(MAX_STATIONS)
+    }.take(MAX_STATIONS).ifEmpty { DEFAULTS }   // never an empty list: "last station" / ⏭ need one
 
     fun encode(list: List<Station>) = list.take(MAX_STATIONS).joinToString(";") { it.encode() }
 

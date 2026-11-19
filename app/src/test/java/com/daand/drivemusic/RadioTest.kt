@@ -154,4 +154,9 @@ class RadioTest {
         assertEquals(listOf("Radio 538", "Radio Rijnmond"), kept.map { it.station.name })
         assertEquals("Rijnmond on its MP3 stream", "https://r/radio-mp3", kept[1].station.url)
     }
+
+    @Test fun aListWithNothingUsableFallsBackToTheDutchStations() {
+        // Drive Mode asks for "the last station" every few seconds and ⏭ divides by the list size.
+        assertEquals(Radio.DEFAULTS, Radio.decode("Broken|file:///x;Also|intent://y"))
+    }
 }
