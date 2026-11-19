@@ -131,4 +131,27 @@ class RadioTest {
         assertEquals("Radio Rijnmond", Radio.baseName("Radio Rijnmond (AAC+)"))
         assertEquals("SLAM!", Radio.baseName("SLAM! (128 kbps)"))
     }
+
+    // ---- the filter (19 Nov: Radio Rijnmond AAC+ and three silent stations reached the list)
+
+    @Test fun whatAStreamSendsDecidesIfItsListed() {
+        assertEquals(Radio.Probe.PLAYS, Radio.judge("audio/mpeg"))
+        assertEquals(Radio.Probe.PLAYS, Radio.judge("audio/aac; charset=x"))
+        assertEquals(Radio.Probe.AAC_PLUS, Radio.judge("audio/aacp"))
+        assertEquals(Radio.Probe.NO, Radio.judge("text/html"))
+        assertEquals("a playlist file isn't a stream", Radio.Probe.NO, Radio.judge("audio/x-mpegurl"))
+        assertEquals(Radio.Probe.NO, Radio.judge(null))
+    }
+
+    @Test fun nearYouOnlyListsStationsThatPlay() {
+        val n = { name: String, url: String -> Radio.Nearby(Station(name, url), 30) }
+        val list = listOf(n("Radio 538", "https://a/538.mp3"), n("Radio Rijnmond", "https://r/radio-aacp"),
+            n("All Day Jazz", "https://dead/stream"), n("SLAM! Housuh", "https://s/aacp-only"))
+        val answers = mapOf("https://a/538.mp3" to Radio.Probe.PLAYS, "https://r/radio-aacp" to Radio.Probe.AAC_PLUS,
+            "https://r/radio-mp3" to Radio.Probe.PLAYS, "https://s/aacp-only" to Radio.Probe.AAC_PLUS)
+        val kept = Radio.checked(list, test = { answers[it] ?: Radio.Probe.NO },
+            twin = { st -> if (st.name == "Radio Rijnmond") Station("Radio Rijnmond", "https://r/radio-mp3") else null })
+        assertEquals(listOf("Radio 538", "Radio Rijnmond"), kept.map { it.station.name })
+        assertEquals("Rijnmond on its MP3 stream", "https://r/radio-mp3", kept[1].station.url)
+    }
 }

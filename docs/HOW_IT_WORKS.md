@@ -130,7 +130,10 @@ Go - tap them for the Car tab.
   listened first, with the distance; tap to listen, *Keep* to add it to your stations. Only your
   position rounded to ~10 km is sent; looked up again after 10 minutes on the road. Checked 19 Nov:
   12-15 of the top 15 play around Noordwijk, Utrecht, Antwerp and Düsseldorf; the north has fewer.
-  A station that fails is hidden for the rest of the day. Our own voice and navigation dip the radio. Add stations in
+  Every station is tried before it's listed (a few KB each, in parallel): only ones that answer in
+  a format Android plays (MP3 / plain AAC) appear; an AAC+ stream (which Android's player can't
+  always open - Radio Rijnmond AAC+, 19 Nov) is swapped for the station's MP3 stream, or left out.
+  "Add a station" uses the same filter. A station that still fails is hidden for the rest of the day. Our own voice and navigation dip the radio. Add stations in
   *Music & driving → Radio* (searched in the free radio-browser.info directory). ~60 MB an hour.
 - **Car tab** (with the OBD adapter): speed, RPM, engine temperature (blue cold / green good / red hot),
   fuel use now, this trip (km and L/100), battery, range left, outside and intake temperature.

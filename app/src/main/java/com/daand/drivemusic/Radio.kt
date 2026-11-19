@@ -159,11 +159,65 @@ object Radio {
             val conn = URL(nearbyUrl(lat, lon, km)).openConnection() as HttpURLConnection
             conn.connectTimeout = 5000; conn.readTimeout = 10000
             conn.setRequestProperty("User-Agent", "DriveMusic/1.0")
-            try { if (conn.responseCode == 200) parseNearby(conn.inputStream.bufferedReader().use { it.readText().take(500_000) }) else emptyList() }
+            try { if (conn.responseCode == 200) parseNearby(conn.inputStream.bufferedReader().use { it.readText().take(500_000) }, max = 30) else emptyList() }
             finally { conn.disconnect() }
         } catch (e: Exception) { emptyList() }
-        val near = get(40)
-        return if (near.size >= 8) near else get(80).ifEmpty { near }
+        var near = checked(get(40))
+        if (near.size < 8) near = checked(get(80)).ifEmpty { near }
+        return near.take(15)
+    }
+
+    // ---- the filter: only stations that answer, in a format Android plays
+
+    /**
+     * What a stream sends: Android's player plays MP3 and plain AAC; it can't open some AAC+ (HE-AAC,
+     * "audio/aacp") streams - Radio Rijnmond AAC+ on 19 Nov. Anything else isn't a radio stream.
+     */
+    enum class Probe { PLAYS, AAC_PLUS, NO }
+
+    fun judge(contentType: String?): Probe {
+        val ct = contentType?.lowercase()?.substringBefore(';')?.trim() ?: return Probe.NO
+        return when (ct) {
+            "audio/mpeg", "audio/mp3", "audio/mpeg3", "audio/x-mpeg", "audio/aac", "audio/x-aac" -> Probe.PLAYS
+            "audio/aacp", "audio/x-aacp", "audio/aac+" -> Probe.AAC_PLUS
+            else -> Probe.NO
+        }
+    }
+
+    /** Off the main thread: does the stream answer (within 4 s), and with what. Reads a couple of KB at most. */
+    fun probe(url: String): Probe = try {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        conn.connectTimeout = 4000; conn.readTimeout = 4000
+        conn.setRequestProperty("User-Agent", "DriveMusic/1.0")
+        try {
+            if (conn.responseCode !in 200..299) Probe.NO
+            else judge(conn.contentType).also { if (it != Probe.NO) conn.inputStream.read(ByteArray(2048)) }   // it really sends audio
+        } finally { conn.disconnect() }
+    } catch (e: Exception) { Probe.NO }
+
+    /**
+     * The filter for "near you": every station is tried before it's listed (in parallel, a few seconds
+     * in all). AAC+ ones are swapped for the same station's MP3 stream if it has one, else left out;
+     * ones that don't answer are left out. [test] / [twin] are swappable for unit tests.
+     */
+    fun checked(list: List<Nearby>, test: (String) -> Probe = ::probe, twin: (Station) -> Station? = ::findMp3): List<Nearby> {
+        if (list.isEmpty()) return list
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(8)
+        try {
+            val jobs = list.map { n ->
+                pool.submit<Nearby?> {
+                    when (test(n.station.url)) {
+                        Probe.PLAYS -> n
+                        Probe.AAC_PLUS -> twin(n.station)?.takeIf { test(it.url) == Probe.PLAYS }?.let { n.copy(station = it.copy(name = n.station.name)) }
+                        Probe.NO -> null
+                    }
+                }
+            }
+            val kept = jobs.mapNotNull { runCatching { it.get(15, java.util.concurrent.TimeUnit.SECONDS) }.getOrNull() }
+            val dropped = list.size - kept.size
+            if (dropped > 0) DriveLog.log("RADIO: near you - $dropped of ${list.size} left out (no answer, or a format Android can't play)")
+            return kept.distinctBy { it.station.url }
+        } finally { pool.shutdownNow() }
     }
 
     /** Streams that didn't play but whose MP3 stream did (this session): used instead, everywhere. */

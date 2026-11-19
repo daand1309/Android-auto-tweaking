@@ -1574,16 +1574,16 @@ class MainActivity : Activity() {
     private fun addCheckedStation(found: Radio.Station) {
         toast("Checking ${found.name}...")
         Thread {
-            val url = Radio.httpsVariant(found.url)
-            val ok = try {
-                val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-                c.connectTimeout = 5000; c.readTimeout = 5000; c.setRequestProperty("User-Agent", "DriveMusic/1.0")
-                try { c.responseCode in 200..299 && c.contentType.orEmpty().let { it.startsWith("audio") || it.contains("mpegurl") || it.contains("octet") } }
-                finally { c.disconnect() }
-            } catch (e: Exception) { false }
+            // The same filter as "near you": it must answer, in a format Android plays (MP3 / plain AAC);
+            // an AAC+ stream is swapped for the station's MP3 stream if it has one.
+            val first = Radio.Station(found.name, Radio.httpsVariant(found.url))
+            val st = when (Radio.probe(first.url)) {
+                Radio.Probe.PLAYS -> first
+                Radio.Probe.AAC_PLUS -> Radio.findMp3(first)?.takeIf { Radio.probe(it.url) == Radio.Probe.PLAYS }?.copy(name = found.name)
+                Radio.Probe.NO -> null
+            }
             runOnUiThread {
-                if (!ok) { toast("${found.name} only streams unencrypted (or isn't answering) - Android won't play that. Try another."); return@runOnUiThread }
-                val st = Radio.Station(found.name, url)
+                if (st == null) { toast("${found.name} doesn't answer, or streams in a format Android can't play - try another."); return@runOnUiThread }
                 prefs.radioStations = Radio.encode(Radio.add(Radio.decode(prefs.radioStations), st))
                 DriveLog.log("Setting changed: radio station '${st.name}' added")
                 toast("${st.name} added"); render()
