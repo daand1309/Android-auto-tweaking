@@ -258,7 +258,7 @@ class CarAlerts(
     val storedTracker: CodeTracker = CodeTracker(),
     val pendingTracker: CodeTracker = CodeTracker(),
 ) {
-    enum class Kind { READY_TO_DRIVE, OVERHEAT, CHECK_ENGINE, EARLY_CODE, ICY_ROAD, LOW_BATTERY, WEAK_CHARGING, THERMOSTAT, ENGINE_WARM, LOW_FUEL, GEAR_HINT }
+    enum class Kind { READY_TO_DRIVE, OVERHEAT, CHECK_ENGINE, EARLY_CODE, ICY_ROAD, LOW_BATTERY, WEAK_CHARGING, THERMOSTAT, ENGINE_WARM, LOW_FUEL, GEAR_HINT, BATTERY_CHECK_READY, WEAK_CRANK }
     /** [timely] = only useful right now (say it as soon as possible, or not at all). */
     data class Alert(val kind: Kind, val urgent: Boolean, val value: Double? = null, val codes: List<String> = emptyList(),
                      val timely: Boolean = false)
@@ -613,6 +613,16 @@ class CarAlerts(
                     dutch -> "De motor is op temperatuur."
                     butler -> "The engine is warm now, sir. Do enjoy yourself."
                     else -> "Engine's warmed up. Go ahead and enjoy it."
+                }
+                Kind.BATTERY_CHECK_READY -> when {
+                    dutch -> "Accucontrole klaar. Start de motor maar."
+                    butler -> "The battery check is ready, sir. Do start the engine whenever you like."
+                    else -> "Battery check ready - go ahead and start the engine."
+                }
+                Kind.WEAK_CRANK -> when {
+                    dutch -> "Bij het starten zakte de accu naar ${volts(a.value)} volt. Hij wordt moe; laat hem testen voor het gaat vriezen."
+                    butler -> "Starting just now, the battery sank to ${volts(a.value)} volts, sir. It is tiring - best have it tested before the frost decides for us."
+                    else -> "Starting just now the battery dropped to ${volts(a.value)} volts - it's getting tired. Have it tested before the frost does."
                 }
                 Kind.GEAR_HINT -> {
                     val g = a.codes.firstOrNull()?.toIntOrNull()

@@ -2213,9 +2213,18 @@ class MainActivity : Activity() {
     /** Battery before each start: how long the car stood, adapter in or out, and the drain check. */
     private fun batterySection() {
         val events = prefs.batteryEvents
-        if (events.isEmpty()) return
         header("Battery")
         val dutch = prefs.greetingDutch
+        // The test that tells most: how far it dips while the starter turns.
+        val cranks = com.daand.drivemusic.obd.CrankCheck.decode(prefs.crankLog)
+        val dayFmt = java.text.SimpleDateFormat("EEE d MMM", java.util.Locale.getDefault())
+        cranks.takeLast(4).reversed().forEach { (day, v) ->
+            statRow("Start " + dayFmt.format(java.util.Date(day * 86_400_000L)), "dipped to %.2f V · %s".format(java.util.Locale.ROOT, v, com.daand.drivemusic.obd.CrankCheck.verdict(v)))
+        }
+        text("Starting test: with the adapter connected before you start (ignition on, wait ~20-30 s; in winter the " +
+            "voice says when it's ready, once a week), the app watches the voltage while the starter turns. " +
+            "10.0 V or higher is good, 9.6-10.0 V tired, below 9.6 V replace it soon.")
+        if (events.isEmpty()) return
         val fmt = java.text.SimpleDateFormat("EEE d MMM HH:mm", java.util.Locale.getDefault())
         events.takeLast(8).reversed().forEach { e ->
             statRow(fmt.format(java.util.Date(e.at)), "%.2f V · %s · %s".format(java.util.Locale.ROOT, e.volts,

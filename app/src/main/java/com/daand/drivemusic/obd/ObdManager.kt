@@ -126,6 +126,25 @@ object ObdManager {
             if (fill.price > 0) " (€%.3f/L ≈ €%.0f)".format(java.util.Locale.ROOT, fill.price, fill.cost) else "")
     }
 
+    /** Winter (Nov-Mar), once a week, adapter connected before the start: say the check is ready. */
+    private fun promptCrankCheck(ctx: Context, onAlert: (CarAlerts.Alert) -> Unit) {
+        val p = Prefs(ctx)
+        val month = java.time.LocalDate.now().monthValue
+        if (month in 4..10 || System.currentTimeMillis() - p.lastCrankPrompt < 7 * 86_400_000L) return
+        p.lastCrankPrompt = System.currentTimeMillis()
+        DriveLog.log("BATTERY: adapter connected before the start - battery check ready")
+        onAlert(CarAlerts.Alert(CarAlerts.Kind.BATTERY_CHECK_READY, urgent = false, timely = true))
+    }
+
+    private fun saveCrank(ctx: Context, r: CrankCheck.Result, onAlert: (CarAlerts.Alert) -> Unit) {
+        val p = Prefs(ctx)
+        p.crankLog = CrankCheck.add(p.crankLog, System.currentTimeMillis() / 86_400_000L, Math.round(r.minV * 100) / 100.0)
+        val verdict = CrankCheck.verdict(r.minV)
+        DriveLog.log("BATTERY: starting dipped from %.2f V to %.2f V (%s)".format(java.util.Locale.ROOT, r.restingV, r.minV, verdict))
+        if (verdict != "good" || CrankCheck.gettingWeaker(CrankCheck.decode(p.crankLog)))
+            onAlert(CarAlerts.Alert(CarAlerts.Kind.WEAK_CRANK, urgent = false, value = r.minV))
+    }
+
     /** Where this drive ended, for the next drive's fill-up check. */
     private fun saveFuelLevel() {
         val ctx = appCtx ?: return
@@ -314,6 +333,7 @@ object ObdManager {
         // the adapter struggles (17 Nov: 1366 of 3723 unanswered, cause unknown).
         var windowAt = System.currentTimeMillis(); var windowQ = 0; var windowMissed = 0
         var lastFullAt = 0L
+        val crank = CrankCheck(); val pollStartedAt = System.currentTimeMillis(); var crankPrompted = false
         var minuteAt = System.currentTimeMillis(); var minuteQ = 0; var minuteMissed = 0; var slowUntil = 0L
         var catalystChecks = 0
         var movingAt = 0L          // when the car last reported speed or a running engine
@@ -414,7 +434,18 @@ object ObdManager {
             n++
             // A steady rhythm: the wait includes the time the reading took.
             val interval = PollPace.interval(liveView, alerts.countingDown(), silent, slowed = System.currentTimeMillis() < slowUntil)
-            sleep((interval - (System.currentTimeMillis() - roundStart)).coerceAtLeast(200L))
+            // Ignition on, engine not running yet (first 5 minutes): instead of waiting, watch the battery
+            // voltage several times a second - the start shows as a dip then charging (the battery test).
+            val waitingToStart = !crank.done && silent == 0 && !snap.engineRunning && (snap.volts ?: 0.0) in 9.0..CrankCheck.RUNNING_V &&
+                System.currentTimeMillis() - pollStartedAt < 5 * 60_000L
+            if (waitingToStart) {
+                if (!crankPrompted) { crankPrompted = true; appCtx?.let { c -> runCatching { promptCrankCheck(c, onAlert) } } }
+                val end = roundStart + maxOf(interval, 8_000L)
+                while (alive(myGen) && System.currentTimeMillis() < end && !crank.done) {
+                    session.adapterVolts()?.let { v -> crank.add(System.currentTimeMillis(), v)?.let { r -> appCtx?.let { c -> runCatching { saveCrank(c, r, onAlert) } } } }
+                    sleep(150L)
+                }
+            } else sleep((interval - (System.currentTimeMillis() - roundStart)).coerceAtLeast(200L))
         }
     }
 

@@ -281,6 +281,14 @@ class Prefs(context: Context) {
         get() = sp.getString("gear_learned", "") ?: ""
         set(v) = sp.edit().putString("gear_learned", v).apply()
 
+    /** Voltage dip while starting, per day ([com.daand.drivemusic.obd.CrankCheck]) and when we last asked for one. */
+    var crankLog: String
+        get() = sp.getString("crank_log", "") ?: ""
+        set(v) = sp.edit().putString("crank_log", v).apply()
+    var lastCrankPrompt: Long
+        get() = sp.getLong("last_crank_prompt", 0L)
+        set(v) = sp.edit().putLong("last_crank_prompt", v).apply()
+
     var fuelType: String
         get() = sp.getString("fuel_type", FuelPrices.Fuel.EURO95.code) ?: FuelPrices.Fuel.EURO95.code
         set(v) = sp.edit().putString("fuel_type", v).apply()

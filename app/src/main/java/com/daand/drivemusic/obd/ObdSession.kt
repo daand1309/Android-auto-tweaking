@@ -235,6 +235,9 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
 
     fun close() { runCatching { link.close() } }
 
+    /** The battery voltage measured by the adapter itself (ATRV - fast, doesn't involve the car's computer). */
+    fun adapterVolts(): Double? = runCatching { Elm327.atrvVolts(Elm327.lines(link.send("ATRV", 600))) }.getOrNull()
+
     /**
      * The adapter stopped answering in the middle of a drive (cheap ELM327 clones get stuck when
      * answers pile up): reset it and set it up again, as at the start. True when the car answers again.
