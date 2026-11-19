@@ -247,6 +247,23 @@ class Prefs(context: Context) {
         get() = sp.getFloat("fm_frequency", 0f).toDouble().let { Math.round(it * 10) / 10.0 }.takeIf { FmTip.valid(it) } ?: 0.0
         set(v) = sp.edit().putFloat("fm_frequency", v.toFloat()).apply()
 
+    /** Your number plate (for the RDW's APK date and recalls) - on the phone only, never logged. */
+    var plate: String
+        get() = sp.getString("plate", "") ?: ""
+        set(v) = sp.edit().putString("plate", v).apply()
+    var apkDate: String
+        get() = sp.getString("apk_date", "") ?: ""
+        set(v) = sp.edit().putString("apk_date", v).apply()
+    var recalls: String
+        get() = sp.getString("recalls", "") ?: ""
+        set(v) = sp.edit().putString("recalls", v).apply()
+    var rdwCheckedAt: Long
+        get() = sp.getLong("rdw_checked_at", 0L)
+        set(v) = sp.edit().putLong("rdw_checked_at", v).apply()
+    var lastRdwReminder: Long
+        get() = sp.getLong("last_rdw_reminder", 0L)
+        set(v) = sp.edit().putLong("last_rdw_reminder", v).apply()
+
     var fuelType: String
         get() = sp.getString("fuel_type", FuelPrices.Fuel.EURO95.code) ?: FuelPrices.Fuel.EURO95.code
         set(v) = sp.edit().putString("fuel_type", v).apply()

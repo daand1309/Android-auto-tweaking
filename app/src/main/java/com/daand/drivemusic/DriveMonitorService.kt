@@ -614,6 +614,7 @@ class DriveMonitorService : NotificationListenerService() {
         val mins = (SystemClock.elapsedRealtime() - carConnectedAt) / 60000
         val brief = if (briefInterruptions > 0) ", $briefInterruptions brief blip(s) ignored" else ""
         DriveLog.log("=== CAR: drive ended ($reason) after ${mins} min. Pauses: $pausesThisDrive, auto-resumes: $resumesThisDrive$brief ===")
+        Rdw.checkIfDue(this)   // APK date / recalls, at most once a week (only the plate is sent)
         val tripLine = com.daand.drivemusic.obd.ObdManager.trip.summary(dutch = false).takeIf { it.isNotEmpty() }?.let { "\nCar: $it" } ?: ""
         prefs.lastDrive = java.text.SimpleDateFormat("EEE d MMM HH:mm", java.util.Locale.getDefault()).format(java.util.Date()) +
             " - ${mins} min, $pausesThisDrive pause(s), $resumesThisDrive auto-resume(s)" +

@@ -1403,7 +1403,45 @@ class MainActivity : Activity() {
     private fun renderService() {
         pageHeader()
         serviceSection(heading = false)
+        rdwSection()
         if (!prefs.obdEnabled) text("Counting down by km needs the OBD adapter (Car data); by date works without it.")
+    }
+
+    /** APK and recalls from the RDW's open data, by number plate. */
+    private fun rdwSection() {
+        header("APK & recalls (RDW)")
+        val plate = Rdw.plate(prefs.plate)
+        stepperLike("Number plate: " + (plate?.let { "set" } ?: "not set"), if (plate == null) "Set" else "Change") {
+            askText("Number plate", "e.g. AB-123-C", prefs.plate) { v ->
+                if (v.isBlank()) { prefs.plate = ""; prefs.apkDate = ""; prefs.recalls = ""; render(); return@askText }
+                val p = Rdw.plate(v)
+                if (p == null) toast("A Dutch plate has 6 letters and digits") else {
+                    prefs.plate = p; prefs.rdwCheckedAt = 0L
+                    DriveLog.log("Setting changed: number plate set")   // never the plate itself
+                    Rdw.checkIfDue(this, force = true) { render() }; render()
+                }
+            }
+        }
+        if (plate == null) {
+            text("With your plate the app reads the APK expiry date and any open recall from the RDW's open data, " +
+                "and reminds you in the greeting a month before the APK runs out. Only the plate is sent to the RDW.")
+            return
+        }
+        val apk = Rdw.date(prefs.apkDate)
+        val today = java.time.LocalDate.now()
+        statRow("APK valid until", apk?.let {
+            val days = java.time.temporal.ChronoUnit.DAYS.between(today, it)
+            "%d %s %d".format(it.dayOfMonth, it.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault()), it.year) +
+                if (days < 0) " - expired!" else " ($days days)"
+        } ?: if (prefs.rdwCheckedAt == 0L) "checking…" else "unknown")
+        val recalls = Rdw.decode(prefs.recalls)
+        if (recalls.isEmpty()) statRow("Open recalls", if (prefs.rdwCheckedAt == 0L) "checking…" else "none")
+        else recalls.forEach { warnCard("Open recall ${it.ref}: ${it.what}. The dealer fixes it free of charge.", action = "Details") {
+            try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.rdw.nl/terugroepacties"))) } catch (e: Exception) { }
+        } }
+        if (prefs.rdwCheckedAt > 0) text("Checked " + java.text.SimpleDateFormat("d MMM HH:mm", java.util.Locale.getDefault()).format(java.util.Date(prefs.rdwCheckedAt)) +
+            " - again weekly after a drive. Reminder in the greeting from 30 days before the APK date.")
+        button("Check now") { Rdw.checkIfDue(this, force = true) { render(); toast("Checked with the RDW") } }
     }
 
     /** [heading]: on Car data it needs one; on its own page the page title already says "Service". */
@@ -1489,6 +1527,7 @@ class MainActivity : Activity() {
             "• Notifications are never read. Logs stay on the phone unless you share them.\n" +
             "• Where's my car (optional): your parked spot is saved on the phone only, never sent anywhere.\n" +
             "• The premium voice (if you set it up) sends the spoken text to Microsoft, and nothing else.\n" +
+            "• APK & recalls (if you enter your plate): the plate is sent to the RDW's open data, weekly - never logged.\n" +
             "• FM tip: worked out on the phone from a built-in list of Dutch FM transmitters (frequencies: radios.nl; " +
             "places: © OpenStreetMap contributors) - nothing is sent.\n" +
             "• Car screen shortcuts: Home / Work and up to 3 favourite contacts you pick yourself - stored on the phone only, never logged.\n" +
