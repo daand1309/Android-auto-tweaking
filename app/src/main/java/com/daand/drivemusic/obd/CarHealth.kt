@@ -258,7 +258,7 @@ class CarAlerts(
     val storedTracker: CodeTracker = CodeTracker(),
     val pendingTracker: CodeTracker = CodeTracker(),
 ) {
-    enum class Kind { READY_TO_DRIVE, OVERHEAT, CHECK_ENGINE, EARLY_CODE, ICY_ROAD, LOW_BATTERY, WEAK_CHARGING, THERMOSTAT, ENGINE_WARM, LOW_FUEL }
+    enum class Kind { READY_TO_DRIVE, OVERHEAT, CHECK_ENGINE, EARLY_CODE, ICY_ROAD, LOW_BATTERY, WEAK_CHARGING, THERMOSTAT, ENGINE_WARM, LOW_FUEL, GEAR_HINT }
     /** [timely] = only useful right now (say it as soon as possible, or not at all). */
     data class Alert(val kind: Kind, val urgent: Boolean, val value: Double? = null, val codes: List<String> = emptyList(),
                      val timely: Boolean = false)
@@ -613,6 +613,15 @@ class CarAlerts(
                     dutch -> "De motor is op temperatuur."
                     butler -> "The engine is warm now, sir. Do enjoy yourself."
                     else -> "Engine's warmed up. Go ahead and enjoy it."
+                }
+                Kind.GEAR_HINT -> {
+                    val g = a.codes.firstOrNull()?.toIntOrNull()
+                    val gear = if (g == null) null else if (dutch) "de ${g}e" else when (g) { 2 -> "2nd"; 3 -> "3rd"; else -> "${g}th" }
+                    when {
+                        dutch -> if (gear != null) "Hier kan $gear ook, zuiniger." else "Hier kan een versnelling hoger, zuiniger."
+                        butler -> if (gear != null) "${gear.replaceFirstChar { it.uppercase() }} would do nicely here, sir." else "One gear up would do nicely here, sir."
+                        else -> if (gear != null) "$gear would do here - saves fuel." else "One gear up would do here - saves fuel."
+                    }
                 }
                 Kind.LOW_FUEL -> {
                     val range = a.codes.firstOrNull()?.toIntOrNull()   // range in km, if known

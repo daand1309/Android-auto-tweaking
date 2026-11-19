@@ -86,6 +86,7 @@ object ObdManager {
     @Volatile private var tankLitres = 60.0
     /** This connection's first fuel level was compared with where the last drive ended (fill-up check). */
     @Volatile private var fuelChecked = false
+    @Volatile private var gearCoach = GearCoach()
     /** The last few fuel levels - the median is saved at the end (one odd reading on a slope doesn't count). */
     private val recentFuel = java.util.ArrayDeque<Int>()
     @Volatile private var batteryLogged = false
@@ -198,6 +199,7 @@ object ObdManager {
         appCtx = app
         batteryLogged = false; restingMax = null
         fuelChecked = false; recentFuel.clear()
+        gearCoach = GearCoach(p.gearLearned)
         typicalPer100 = runCatching { TripHistory.typicalPer100(TripHistory.load(ctx)) }.getOrNull()
         readySeconds = p.obdReadySeconds
         val now = System.currentTimeMillis()
@@ -212,6 +214,7 @@ object ObdManager {
         if (!running) return
         running = false
         runCatching { saveFuelLevel() }
+        appCtx?.let { c -> runCatching { Prefs(c).gearLearned = gearCoach.save() } }
         alertSink = null
         // Closing the socket also aborts a connect() that's still waiting.
         runCatching { link?.close() }
@@ -371,6 +374,14 @@ object ObdManager {
                 }
             }
             trip.add(snap)
+            // Gears are learned from every drive; a hint only when it's on and the engine is warm.
+            gearCoach.add(snap, warm = (snap.coolantC ?: 0) >= 70)?.let { h ->
+                if (appCtx?.let { Prefs(it).gearCoach } == true) {
+                    DriveLog.log("OBD: gear hint - cruising at ${h.rpm} rpm" + (h.nextGear?.let { ", gear $it would do" } ?: ""))
+                    onAlert(CarAlerts.Alert(CarAlerts.Kind.GEAR_HINT, urgent = false, value = h.rpm.toDouble(),
+                        codes = listOfNotNull(h.nextGear?.toString()), timely = true))
+                }
+            }
             // Keep a copy on disk while driving, so a killed process doesn't take the drive with it.
             val draftNow = System.currentTimeMillis()
             if (draftNow - lastDraftAt > 30_000L && trip.km >= 0.3) {

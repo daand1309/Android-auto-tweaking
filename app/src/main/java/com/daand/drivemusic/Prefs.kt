@@ -273,6 +273,14 @@ class Prefs(context: Context) {
         get() = sp.getString("fuel_log", "") ?: ""
         set(v) = sp.edit().putString("fuel_log", v).apply()
 
+    /** Gear coach: on, and what it learned about the gears (km/h per 1000 rpm histogram). */
+    var gearCoach: Boolean
+        get() = sp.getBoolean("gear_coach", true)
+        set(v) = sp.edit().putBoolean("gear_coach", v).apply()
+    var gearLearned: String
+        get() = sp.getString("gear_learned", "") ?: ""
+        set(v) = sp.edit().putString("gear_learned", v).apply()
+
     var fuelType: String
         get() = sp.getString("fuel_type", FuelPrices.Fuel.EURO95.code) ?: FuelPrices.Fuel.EURO95.code
         set(v) = sp.edit().putString("fuel_type", v).apply()

@@ -911,6 +911,13 @@ class MainActivity : Activity() {
             DriveLog.log("Setting changed: adapter reminder = $it"); render()
         }
         text("Always: overheating, the check-engine light (with the fault code explained), a weak battery or charging.")
+        switch("Gear coach: \"4th would do here\" when cruising at high revs", prefs.gearCoach) { prefs.gearCoach = it }
+        if (prefs.gearCoach) {
+            val g = com.daand.drivemusic.obd.GearCoach(prefs.gearLearned).gears()
+            text(if (g.size >= 3) "Gears learned: " + g.joinToString(" · ") { "%.0f".format(java.util.Locale.ROOT, it) } +
+                " km/h per 1000 rpm. Only steady cruising above 2,900 rpm counts - pulling away with revs is fine for the MIVEC. At most 3 hints a drive."
+                else "Still learning your gears from steady driving (a few drives) - it stays quiet until then.")
+        }
         switch("When the engine is ready to drive (after a cold start)", prefs.obdReadySeconds > 0) {
             prefs.obdReadySeconds = if (it) 30 else 0; render()
         }
