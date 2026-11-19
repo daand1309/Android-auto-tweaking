@@ -1235,7 +1235,7 @@ object WelcomeAnnouncer {
                 butler = p.butler, firstDrive = p.lastGreetingAt == 0L, short = p.greetingShort,
                 askWeather = weather != null && p.weatherAsk,
                 reminder = listOfNotNull(earlyWarningToSay(ctx, p, recordAsGreeted), serviceReminderIfDue(ctx, p, recordAsGreeted),
-                    rdwReminderIfDue(p, recordAsGreeted))
+                    rdwReminderIfDue(p, recordAsGreeted), monthSummaryIfDue(ctx, p, recordAsGreeted))
                     .joinToString(" ").ifEmpty { null },
             )
             if (recordAsGreeted) p.lastGreetingAt = System.currentTimeMillis()
@@ -1308,6 +1308,18 @@ object WelcomeAnnouncer {
     } catch (e: Exception) { null }
 
     /** The service reminder when it's due and not said in the last week (only on real drives). */
+    /** The first greeting of a new month: last month in one sentence (once). */
+    private fun monthSummaryIfDue(ctx: Context, p: Prefs, realDrive: Boolean): String? = try {
+        val last = java.time.YearMonth.now().minusMonths(1)
+        val key = last.year * 100 + last.monthValue
+        if (p.lastMonthSummary == key) null else {
+            val trips = com.daand.drivemusic.obd.TripHistory.load(ctx)
+            val m = MonthlySummary.month(trips, last, p.fuelPriceQuoted)
+            MonthlySummary.text(m, MonthlySummary.month(trips, last.minusMonths(1), p.fuelPriceQuoted), p.greetingDutch, p.butler)
+                .also { if (realDrive) p.lastMonthSummary = key }
+        }
+    } catch (e: Exception) { null }
+
     /** APK running out / open recall (RDW): at most once a week. */
     private fun rdwReminderIfDue(p: Prefs, realDrive: Boolean): String? = try {
         val now = System.currentTimeMillis()

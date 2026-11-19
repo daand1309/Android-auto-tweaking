@@ -2490,6 +2490,12 @@ class MainActivity : Activity() {
             ).joinToString(" · ")
             statRow(label, if (fuel.isEmpty()) distance else "$distance\n$fuel")
         }
+        // Last month in a sentence (also said once in the first greeting of the month).
+        run {
+            val last = java.time.YearMonth.now().minusMonths(1)
+            MonthlySummary.text(MonthlySummary.month(trips, last, price), MonthlySummary.month(trips, last.minusMonths(1), price), prefs.greetingDutch, false)
+                ?.let { header("Last month"); text(it) }
+        }
         header("Totals")
         line("This week", weekStart)
         line("This month", monthStart)

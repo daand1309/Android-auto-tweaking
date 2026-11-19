@@ -289,6 +289,11 @@ class Prefs(context: Context) {
         get() = sp.getLong("last_crank_prompt", 0L)
         set(v) = sp.edit().putLong("last_crank_prompt", v).apply()
 
+    /** The month (yyyyMM) whose summary was last said in a greeting. */
+    var lastMonthSummary: Int
+        get() = sp.getInt("last_month_summary", 0)
+        set(v) = sp.edit().putInt("last_month_summary", v).apply()
+
     var fuelType: String
         get() = sp.getString("fuel_type", FuelPrices.Fuel.EURO95.code) ?: FuelPrices.Fuel.EURO95.code
         set(v) = sp.edit().putString("fuel_type", v).apply()

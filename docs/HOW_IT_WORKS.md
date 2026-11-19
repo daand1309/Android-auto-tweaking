@@ -232,6 +232,25 @@ starts, revs towards the red line and long idling cost points – not the motorw
 warm-up. The summary says what cost points). After parking a quiet
 notification sums it up. The *Trips & costs* page shows this week, month and all time.
 
+**Fill-ups** (*Trips & costs*): a fuel level 10+ points higher at the start of a drive than where the
+last ended is a fill-up (litres from the jump and the tank size, priced with the local price). After two:
+the real L/100 between fill-ups (fuel gone by the level / km driven) and fuel cost per km.
+
+**Last month** (*Trips & costs*, and once in the first greeting of a month): km, drives, litres, euros
+and the driving score, against the month before.
+
+**Gear coach** (Car data → What the voice tells you): learns the gears from your steady driving (km/h
+per 1000 rpm, one peak per gear) and, cruising steadily above 2,900 rpm in a gear with a higher one
+that still pulls, says "one gear up would do here". Never while accelerating (the MIVEC wants revs),
+at most 3 a drive; quiet until the gears are learned, and always on an automatic.
+
+**Starting test** (battery): with the adapter connected before the start, the voltage is watched
+while the starter turns - 10.0 V+ good, 9.6-10.0 tired, below 9.6 replace soon. In winter, once a
+week, the voice says when the check is ready. (The Senzo connects after the start, so wait 20-30 s.)
+
+**APK & recalls** (*Service*): with your number plate the RDW's open data gives the APK expiry date
+and open recalls; reminded in the greeting from 30 days before. Only the plate is sent, weekly.
+
 **Early warnings.** The app learns what's normal for your car and warns when something slowly changes,
 before a warning light: fuel mixture drifting (air leak, sensors), charging voltage sagging
 (alternator), idle getting shaky (plugs, coils), slower warm-up (thermostat), running hotter on the
