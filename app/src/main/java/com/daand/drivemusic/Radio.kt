@@ -103,20 +103,55 @@ object Radio {
      */
     fun parseNearby(json: String, max: Int = 15): List<Nearby> = try {
         val a = JSONArray(json)
-        val seen = HashSet<String>()
-        (0 until a.length()).mapNotNull { i ->
-            val o = a.optJSONObject(i) ?: return@mapNotNull null
-            val url = o.optString("url_resolved").trim()
+        data class Cand(val n: Nearby, val mp3: Boolean)
+        // Each station once; where it's listed with several streams, the MP3 one: Android's player
+        // can't open some AAC+ streams (Radio Rijnmond AAC+ on 19 Nov: error 1/-2147483648, its MP3 plays).
+        val byKey = LinkedHashMap<String, Cand>()
+        val urls = HashSet<String>()
+        for (i in 0 until a.length()) {
+            val o = a.optJSONObject(i) ?: continue
+            val raw = o.optString("url_resolved").trim()
+            // Unencrypted addresses: tried over https (most answer; the ones that don't fail once and are hidden).
+            val url = httpsVariant(raw)
             val codec = o.optString("codec").uppercase()
             val name = o.optString("name").trim().replace(Regex("\\s+"), " ").take(40)
+            if (name.isBlank() || !url.startsWith("https://") || !validUrl(url) || codec !in setOf("MP3", "AAC", "AAC+") || !urls.add(url)) continue
             val key = name.lowercase().filter { it.isLetterOrDigit() }.take(12)
-            when {
-                name.isBlank() || !url.startsWith("https://") || !validUrl(url) || codec !in setOf("MP3", "AAC", "AAC+") -> null
-                !seen.add(key) || !seen.add(url) -> null
-                else -> Nearby(Station(name, url), Math.round(o.optDouble("geo_distance", 0.0).takeIf { it.isFinite() } ?: 0.0).toInt() / 1000)
-            }
-        }.take(max)
+            val km = Math.round(o.optDouble("geo_distance", 0.0).takeIf { it.isFinite() } ?: 0.0).toInt() / 1000
+            val c = Cand(Nearby(Station(baseName(name), url), km), codec == "MP3")
+            val had = byKey[key]
+            if (had == null) byKey[key] = c else if (!had.mp3 && c.mp3) byKey[key] = c.copy(n = c.n.copy(km = had.n.km))
+        }
+        byKey.values.map { it.n }.take(max)
     } catch (e: Exception) { emptyList() }
+
+    /** "Radio Rijnmond (AAC+)" -> "Radio Rijnmond": the name to look a station's other streams up by. */
+    fun baseName(name: String) = name.replace(Regex("\\s*\\((AAC\\+?|MP3|HQ|LQ|\\d+\\s*k(bps)?)\\)$", RegexOption.IGNORE_CASE), "").trim()
+
+    /**
+     * The same station's MP3 stream (from a radio-browser search answer), other than [notUrl]: for when
+     * Android's player can't open a station's AAC+ stream. Same name ignoring "(AAC+)", https (or tried as).
+     */
+    fun mp3Alternative(json: String, name: String, notUrl: String): Station? = try {
+        val want = baseName(name).lowercase().filter { it.isLetterOrDigit() }
+        val a = JSONArray(json)
+        (0 until a.length()).mapNotNull { a.optJSONObject(it) }.firstNotNullOfOrNull { o ->
+            val url = httpsVariant(o.optString("url_resolved").trim())
+            val n = baseName(o.optString("name").trim())
+            if (o.optString("codec").uppercase() == "MP3" && url != notUrl && validUrl(url) && url.startsWith("https://") &&
+                n.lowercase().filter { it.isLetterOrDigit() } == want) Station(n.take(40), url) else null
+        }
+    } catch (e: Exception) { null }
+
+    /** Off the main thread: [mp3Alternative] looked up on radio-browser by the station's name. */
+    fun findMp3(st: Station): Station? = try {
+        val conn = URL("https://all.api.radio-browser.info/json/stations/search?name=" + URLEncoder.encode(baseName(st.name), "UTF-8") +
+            "&hidebroken=true&order=clickcount&reverse=true&limit=20").openConnection() as HttpURLConnection
+        conn.connectTimeout = 5000; conn.readTimeout = 8000
+        conn.setRequestProperty("User-Agent", "DriveMusic/1.0")
+        try { if (conn.responseCode == 200) mp3Alternative(conn.inputStream.bufferedReader().use { it.readText().take(300_000) }, st.name, st.url) else null }
+        finally { conn.disconnect() }
+    } catch (e: Exception) { null }
 
     /** Off the main thread. 40 km; where that finds few (the north), 80 km. */
     fun nearby(lat: Double, lon: Double): List<Nearby> {
@@ -130,6 +165,9 @@ object Radio {
         val near = get(40)
         return if (near.size >= 8) near else get(80).ifEmpty { near }
     }
+
+    /** Streams that didn't play but whose MP3 stream did (this session): used instead, everywhere. */
+    val substitutes: MutableMap<String, Station> = java.util.concurrent.ConcurrentHashMap()
 
     /** Streams that failed this session: not offered again until the app restarts. */
     val failed: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
@@ -232,12 +270,14 @@ object RadioPlayer {
         val app = ctx.applicationContext
         appCtx = app
         releasePlayer(); abandonFocus()
-        everPlayed = false; retries = 0
-        station = st; state = State.CONNECTING; problem = ""; nowPlaying = null
-        Prefs(app).radioLast = st.encode()
+        everPlayed = false; retries = 0; triedAlternativeFor = null
+        // A stream that didn't play earlier but whose MP3 stream did: straight to that one.
+        val use = Radio.substitutes[st.url]?.copy(name = st.name) ?: st
+        station = use; state = State.CONNECTING; problem = ""; nowPlaying = null
+        Prefs(app).radioLast = use.encode()
         DriveLog.log("RADIO: tuning in to ${st.name}")
         changed()
-        connect(app, st)
+        connect(app, use)
     }
 
     private fun connect(app: Context, st: Radio.Station) {
@@ -295,7 +335,36 @@ object RadioPlayer {
     }
 
     /** Couldn't (re)connect. If it had been playing, YouTube Music takes over so the car doesn't go silent. */
+    /** The station we're trying the MP3 stream of (once per tune-in). */
+    private var triedAlternativeFor: String? = null
+
     private fun giveUp(st: Radio.Station, why: String) {
+        // Never started: Android's player can't open some AAC+ streams - try the same station's MP3 stream once.
+        val app = appCtx
+        if (!everPlayed && app != null && triedAlternativeFor != st.url) {
+            triedAlternativeFor = st.url
+            state = State.CONNECTING; problem = "trying another stream"; changed()
+            Thread({
+                val alt = Radio.findMp3(st)
+                main.post {
+                    if (station != st || state != State.CONNECTING) return@post   // you picked something else meanwhile
+                    if (alt == null) { triedAlternativeFor = null; finallyGiveUp(st, why); return@post }
+                    DriveLog.log("RADIO: ${st.name} - $why - trying its MP3 stream")
+                    val use = alt.copy(name = st.name)
+                    Radio.substitutes[st.url] = use      // the list keeps showing it; taps go to the MP3 stream
+                    releasePlayer(); retries = 0
+                    station = use; problem = ""
+                    triedAlternativeFor = use.url
+                    Prefs(app).radioLast = use.encode()
+                    connect(app, use)
+                }
+            }, "radio-alt").start()
+            return
+        }
+        finallyGiveUp(st, why)
+    }
+
+    private fun finallyGiveUp(st: Radio.Station, why: String) {
         DriveLog.log("RADIO: ${st.name} - $why")
         // Never started: hide it from "near you" today. One that played and then lost the signal (a
         // tunnel) is fine - it stays.

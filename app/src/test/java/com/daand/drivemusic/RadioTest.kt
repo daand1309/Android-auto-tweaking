@@ -88,8 +88,10 @@ class RadioTest {
           {"name":"WDR5","url_resolved":"https://wdr.example/wdr5/master.m3u8","codec":"UNKNOWN","geo_distance":1000},
           {"name":"","url_resolved":"https://x/y","codec":"MP3"}]"""
         val near = Radio.parseNearby(json)
-        assertEquals(listOf("BNR Nieuwsradio", "Radio Rijnmond (AAC+)", "Hardcore Power Radio"), near.map { it.station.name })
-        assertEquals(listOf(34, 37, 28), near.map { it.km })
+        // 538's http address is tried over https; "(AAC+)" isn't part of the name; copies are dropped.
+        assertEquals(listOf("Radio 538", "BNR Nieuwsradio", "Radio Rijnmond", "Hardcore Power Radio"), near.map { it.station.name })
+        assertEquals(listOf(32, 34, 37, 28), near.map { it.km })
+        assertTrue(near.all { it.station.url.startsWith("https://") })
         assertEquals(emptyList<Radio.Nearby>(), Radio.parseNearby("<html>"))
     }
 
@@ -104,5 +106,29 @@ class RadioTest {
         assertEquals(null, com.daand.drivemusic.car.MediaMenu.nearUrl(com.daand.drivemusic.car.MediaMenu.radioId(4)))
         assertEquals(null, com.daand.drivemusic.car.MediaMenu.radioIndex(com.daand.drivemusic.car.MediaMenu.nearId(url)))
         assertEquals("never anything but a stream", null, com.daand.drivemusic.car.MediaMenu.nearUrl("near:intent://x"))
+    }
+
+    @Test fun nearbyPrefersTheMp3StreamOfAStation() {
+        // Real listings, 19 Nov: the AAC+ stream fails in Android's player, the MP3 one plays.
+        val json = """[
+          {"name":"Radio Rijnmond (AAC+)","url_resolved":"https://d2e9xgjjdd9cr5.cloudfront.net/icecast/rijnmond/radio-aacp","codec":"AAC+","geo_distance":37500},
+          {"name":"Radio Rijnmond","url_resolved":"http://d2e9xgjjdd9cr5.cloudfront.net/icecast/rijnmond/radio-mp3","codec":"MP3","geo_distance":37400}]"""
+        val near = Radio.parseNearby(json)
+        assertEquals(1, near.size)
+        assertEquals("https://d2e9xgjjdd9cr5.cloudfront.net/icecast/rijnmond/radio-mp3", near.single().station.url)
+        assertEquals("Radio Rijnmond", near.single().station.name)
+    }
+
+    @Test fun aFailingAacStreamFindsItsMp3Twin() {
+        // radio-browser's answer for "Radio Rijnmond" (19 Nov).
+        val json = """[
+          {"name":"Radio Rijnmond","url_resolved":"http://d2e9xgjjdd9cr5.cloudfront.net/icecast/rijnmond/radio-mp3","codec":"MP3"},
+          {"name":"Radio Rijnmond (AAC+)","url_resolved":"https://d2e9xgjjdd9cr5.cloudfront.net/icecast/rijnmond/radio-aacp","codec":"AAC+"},
+          {"name":"Radio Rijnmond Extra","url_resolved":"https://d2e9xgjjdd9cr5.cloudfront.net/icecast/rijnmond/radio-extra-mp3","codec":"MP3"}]"""
+        val alt = Radio.mp3Alternative(json, "Radio Rijnmond (AAC+)", "https://d2e9xgjjdd9cr5.cloudfront.net/icecast/rijnmond/radio-aacp")
+        assertEquals("the same station, not 'Extra'", "https://d2e9xgjjdd9cr5.cloudfront.net/icecast/rijnmond/radio-mp3", alt?.url)
+        assertEquals(null, Radio.mp3Alternative(json, "Radio West", "x"))
+        assertEquals("Radio Rijnmond", Radio.baseName("Radio Rijnmond (AAC+)"))
+        assertEquals("SLAM!", Radio.baseName("SLAM! (128 kbps)"))
     }
 }

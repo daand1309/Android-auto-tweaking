@@ -83,4 +83,13 @@ class RadioPlaybackTest {
         }
         org.junit.Assert.assertNotNull("none of the 4 nearest-popular stations played", played)
     }
+
+    /** 19 Nov on the phone: Radio Rijnmond's AAC+ stream failed (1/-2147483648). Now it must end up playing. */
+    @Test fun rijnmondAacPlaysOneWayOrAnother() {
+        assumeTrue("no internet on this emulator", online())
+        val aac = Radio.Station("Radio Rijnmond (AAC+)", "https://d2e9xgjjdd9cr5.cloudfront.net/icecast/rijnmond/radio-aacp")
+        onMain { RadioPlayer.play(ctx, aac) }
+        waitFor("Rijnmond to play (AAC+ or its MP3 stream)", 60_000) { RadioPlayer.state == RadioPlayer.State.PLAYING }
+        android.util.Log.i("DriveMusic", "Rijnmond played from ${RadioPlayer.station?.url}")
+    }
 }

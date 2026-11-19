@@ -20,6 +20,7 @@ object RadioNearby {
 
     /** The stations near you minus the ones that failed today; null while not looked up yet. */
     fun current(): List<Radio.Nearby>? = list?.filterNot { it.station.url in Radio.failed }
+        ?.map { n -> Radio.substitutes[n.station.url]?.let { n.copy(station = it.copy(name = n.station.name)) } ?: n }
 
     /** Look up again if stale; [done] runs on the main thread when there's a new list. */
     fun refresh(ctx: Context, done: () -> Unit = {}) {
@@ -62,5 +63,5 @@ object RadioNearby {
     }
 
     /** The station behind a car-screen entry - by its stream, so a list that changed meanwhile can't mix them up. */
-    fun byUrl(url: String): Radio.Station? = list?.firstOrNull { it.station.url == url }?.station
+    fun byUrl(url: String): Radio.Station? = (current().orEmpty() + list.orEmpty()).firstOrNull { it.station.url == url }?.station
 }
