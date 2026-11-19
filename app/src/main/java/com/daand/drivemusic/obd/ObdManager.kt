@@ -120,7 +120,9 @@ object ObdManager {
         if (fuelChecked) return
         fuelChecked = true
         val p = Prefs(ctx)
-        val fill = FuelLog.detect(p.lastFuelPct.takeIf { it >= 0 }, pct, tankLitres, p.fuelPriceQuoted, System.currentTimeMillis()) ?: return
+        // Stamped with this drive's start (not now): the km between two fill-ups are the drives from the one
+        // after the first fill-up up to the one before the next - by their start times.
+        val fill = FuelLog.detect(p.lastFuelPct.takeIf { it >= 0 }, pct, tankLitres, p.fuelPriceQuoted, trip.startedAt) ?: return
         p.fuelLog = FuelLog.encode(FuelLog.decode(p.fuelLog) + fill)
         DriveLog.log("FUEL: fill-up seen - %d%% -> %d%%, about %.0f L".format(java.util.Locale.ROOT, fill.beforePct, fill.afterPct, fill.litres) +
             if (fill.price > 0) " (€%.3f/L ≈ €%.0f)".format(java.util.Locale.ROOT, fill.price, fill.cost) else "")
@@ -441,8 +443,19 @@ object ObdManager {
             if (waitingToStart) {
                 if (!crankPrompted) { crankPrompted = true; appCtx?.let { c -> runCatching { promptCrankCheck(c, onAlert) } } }
                 val end = roundStart + maxOf(interval, 8_000L)
+                var misses = 0
                 while (alive(myGen) && System.currentTimeMillis() < end && !crank.done) {
-                    session.adapterVolts()?.let { v -> crank.add(System.currentTimeMillis(), v)?.let { r -> appCtx?.let { c -> runCatching { saveCrank(c, r, onAlert) } } } }
+                    val v = session.adapterVolts()
+                    if (v == null) misses++ else misses = 0
+                    v?.let { crank.add(System.currentTimeMillis(), it)?.let { r -> appCtx?.let { c -> runCatching { saveCrank(c, r, onAlert) } } } }
+                    // The starter pulls the OBD port's power down too: a cheap adapter can restart mid-crank
+                    // and come back with its factory settings (echo on...). Set it up again, once.
+                    if (crank.done || misses >= 3) {
+                        val ok = session.resetAdapter()
+                        DriveLog.log("OBD: adapter set up again after the start" + if (ok) "" else " - not answering yet")
+                        if (!crank.done) crank.giveUp()
+                        break
+                    }
                     sleep(150L)
                 }
             } else sleep((interval - (System.currentTimeMillis() - roundStart)).coerceAtLeast(200L))

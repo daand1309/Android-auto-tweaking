@@ -659,6 +659,9 @@ class DriveMonitorService : NotificationListenerService() {
             return
         }
         if (alert.kind == com.daand.drivemusic.obd.CarAlerts.Kind.ENGINE_WARM && !prefs.obdWarmup) return
+        // Waited behind the greeting and you've started meanwhile: "start the engine" would be nonsense.
+        if (alert.kind == com.daand.drivemusic.obd.CarAlerts.Kind.BATTERY_CHECK_READY &&
+            com.daand.drivemusic.obd.ObdManager.live()?.engineRunning == true) { DriveLog.log("OBD: battery check prompt skipped - the engine is already running"); return }
         if (alert.kind == com.daand.drivemusic.obd.CarAlerts.Kind.LOW_FUEL && !prefs.obdFuel) return
         if (alert.kind == com.daand.drivemusic.obd.CarAlerts.Kind.READY_TO_DRIVE && prefs.obdReadySeconds == 0) return
         val blocker = resumeBlocker() ?: if (WelcomeAnnouncer.isBusy || UpdatePrompt.question != null) "something else is speaking" else null

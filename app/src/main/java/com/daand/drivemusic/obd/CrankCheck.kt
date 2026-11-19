@@ -37,6 +37,9 @@ class CrankCheck {
     var done = false; private set
 
     /** One voltage sample (ms, volts). Returns the result once, when a start is seen. */
+    /** The adapter dropped out during the start: no result this time (and no more watching). */
+    fun giveUp() { done = true }
+
     fun add(at: Long, v: Double): Result? {
         if (done || v !in 5.0..16.0) return null
         samples.addLast(at to v)
