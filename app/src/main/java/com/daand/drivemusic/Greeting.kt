@@ -197,7 +197,10 @@ object GreetingText {
     }
 
     fun cleanMeta(raw: String): String =
-        raw.replace(Regex("""[\p{Cntrl}\u2028\u2029<>]"""), " ").replace(Regex("""\s+"""), " ").trim().take(150)
+        // Also the invisible direction controls (text from radio stations / the internet could use them
+        // to make a line read differently than it is).
+        raw.replace(Regex("""[\p{Cntrl}\u2028\u2029<>]"""), " ").replace(Regex("""[\u200E\u200F\u202A-\u202E\u2066-\u2069]"""), "")
+            .replace(Regex("""\s+"""), " ").trim().take(150)
 
     /** Compact form for the home tile and car screen, e.g. "4° · overcast · 20% rain". */
     fun tileWeather(w: WeatherNow, dutch: Boolean): String {
@@ -860,7 +863,7 @@ object Weather {
         conn.setRequestProperty("User-Agent", "DriveMusic")
         try {
             if (conn.responseCode != 200) throw IllegalStateException("weather service returned HTTP ${conn.responseCode}")
-            return conn.inputStream.bufferedReader().use { it.readText().take(200_000) }
+            return conn.inputStream.readCapped(200_000)
         } finally {
             conn.disconnect()
         }

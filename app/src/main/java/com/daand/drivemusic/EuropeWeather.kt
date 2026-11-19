@@ -152,7 +152,7 @@ private object EuropeHttp {
         conn.setRequestProperty("Accept", "application/json")
         try {
             if (conn.responseCode != 200) throw IllegalStateException("returned HTTP ${conn.responseCode}")
-            return conn.inputStream.bufferedReader().use { it.readText().take(400_000) }
+            return conn.inputStream.readCapped(400_000)
         } finally {
             conn.disconnect()
         }

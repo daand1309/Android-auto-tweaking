@@ -63,7 +63,7 @@ object Radio {
             val o = a.optJSONObject(i) ?: return@mapNotNull null
             val url = o.optString("url_resolved").ifBlank { o.optString("url") }
             val codec = o.optString("codec").uppercase()
-            val name = o.optString("name").trim().replace(Regex("\\s+"), " ")
+            val name = GreetingText.cleanMeta(o.optString("name"))
             if (name.isBlank() || !validUrl(url) || (codec.isNotBlank() && codec !in setOf("MP3", "AAC", "AAC+"))) null
             else Station(name.take(40), url)
         }.distinctBy { it.url }
@@ -114,7 +114,7 @@ object Radio {
             // Unencrypted addresses: tried over https (most answer; the ones that don't fail once and are hidden).
             val url = httpsVariant(raw)
             val codec = o.optString("codec").uppercase()
-            val name = o.optString("name").trim().replace(Regex("\\s+"), " ").take(40)
+            val name = GreetingText.cleanMeta(o.optString("name")).take(40)
             if (name.isBlank() || !url.startsWith("https://") || !validUrl(url) || codec !in setOf("MP3", "AAC", "AAC+") || !urls.add(url)) continue
             val key = name.lowercase().filter { it.isLetterOrDigit() }.take(12)
             val km = Math.round(o.optDouble("geo_distance", 0.0).takeIf { it.isFinite() } ?: 0.0).toInt() / 1000
@@ -137,7 +137,7 @@ object Radio {
         val a = JSONArray(json)
         (0 until a.length()).mapNotNull { a.optJSONObject(it) }.firstNotNullOfOrNull { o ->
             val url = httpsVariant(o.optString("url_resolved").trim())
-            val n = baseName(o.optString("name").trim())
+            val n = baseName(GreetingText.cleanMeta(o.optString("name")))
             if (o.optString("codec").uppercase() == "MP3" && url != notUrl && validUrl(url) && url.startsWith("https://") &&
                 n.lowercase().filter { it.isLetterOrDigit() } == want) Station(n.take(40), url) else null
         }
@@ -149,7 +149,7 @@ object Radio {
             "&hidebroken=true&order=clickcount&reverse=true&limit=20").openConnection() as HttpURLConnection
         conn.connectTimeout = 5000; conn.readTimeout = 8000
         conn.setRequestProperty("User-Agent", "DriveMusic/1.0")
-        try { if (conn.responseCode == 200) mp3Alternative(conn.inputStream.bufferedReader().use { it.readText().take(300_000) }, st.name, st.url) else null }
+        try { if (conn.responseCode == 200) mp3Alternative(conn.inputStream.readCapped(300_000), st.name, st.url) else null }
         finally { conn.disconnect() }
     } catch (e: Exception) { null }
 
@@ -159,7 +159,7 @@ object Radio {
             val conn = URL(nearbyUrl(lat, lon, km)).openConnection() as HttpURLConnection
             conn.connectTimeout = 5000; conn.readTimeout = 10000
             conn.setRequestProperty("User-Agent", "DriveMusic/1.0")
-            try { if (conn.responseCode == 200) parseNearby(conn.inputStream.bufferedReader().use { it.readText().take(500_000) }, max = 30) else emptyList() }
+            try { if (conn.responseCode == 200) parseNearby(conn.inputStream.readCapped(500_000), max = 30) else emptyList() }
             finally { conn.disconnect() }
         } catch (e: Exception) { emptyList() }
         var near = checked(get(40))
@@ -234,7 +234,7 @@ object Radio {
         val conn = URL(searchUrl(query)).openConnection() as HttpURLConnection
         conn.connectTimeout = 5000; conn.readTimeout = 8000
         conn.setRequestProperty("User-Agent", "DriveMusic/1.0")
-        try { if (conn.responseCode == 200) parseSearch(conn.inputStream.bufferedReader().use { it.readText().take(300_000) }) else emptyList() }
+        try { if (conn.responseCode == 200) parseSearch(conn.inputStream.readCapped(300_000)) else emptyList() }
         finally { conn.disconnect() }
     } catch (e: Exception) { emptyList() }
 }

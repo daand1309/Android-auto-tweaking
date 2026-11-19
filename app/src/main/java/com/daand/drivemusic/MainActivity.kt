@@ -1716,7 +1716,9 @@ class MainActivity : Activity() {
         header("What a backup holds")
         text("Your name, voice, location, car and adapter details, service intervals and every switch - " +
             "so you don't have to set the app up again after a reinstall or a new phone.\n" +
-            "Not in it: your trips, battery history, logs and pictures (those are yours, and they stay on the phone).")
+            "Your radio stations are in it too.\n" +
+            "Not in it: your trips, battery history, fuel log, logs and pictures (those stay on the phone), and nothing " +
+            "personal - no number plate, no Home / Work, no favourite contacts (set those again on a new phone).")
 
         header("Save")
         button("Save settings to a file", accent = true) {

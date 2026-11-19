@@ -588,6 +588,13 @@ class Prefs(context: Context) {
         // (restoring it would show another town's price as if it were measured here).
         "adapter_prompt_pending", "fsi_nag_dismissed",
         "fuel_quoted", "fuel_quoted_at", "fuel_quoted_src", "fuel_tried_at",
+        // Personal: where you live / work, who you call, your plate - never in a backup file (a backup is
+        // often shared or kept in the cloud). Set them again on a new phone.
+        "place_home", "place_work", "favourites", "plate",
+        // This car's own history and the app's working state: not for another phone / car.
+        "apk_date", "recalls", "rdw_checked_at", "last_rdw_reminder", "crank_log", "last_crank_prompt",
+        "fuel_log", "last_fuel_pct", "gear_learned", "radio_last", "radio_was_on", "last_month_summary",
+        "odo_km", "odo_at",
     )
 
     /**
@@ -608,6 +615,9 @@ class Prefs(context: Context) {
         "name_pronunciation" to "string", "theme" to "string", "tts_engine" to "string", "voice_name" to "string",
         "weather_place" to "string", "greeting_style" to "string", "azure_region" to "string", "azure_voice" to "string",
         "obd_device" to "string", "obd_device_name" to "string",
+        // Radio and the new switches (stations are checked again when read: Radio.decode).
+        "radio_stations" to "string", "radio_resume" to "bool", "radio_fallback" to "bool", "gear_coach" to "bool",
+        "fm_frequency" to "float",
     )
 
     /** All settings as JSON (each value tagged with its type so it restores exactly). */
@@ -636,7 +646,8 @@ class Prefs(context: Context) {
             val item = settings.optJSONObject(k) ?: continue
             val type = item.optString("t")
             if (restorable[k] != type) continue  // unknown setting or wrong type: skip it
-            if (type == "string" && item.optString("v").length > 500) continue
+            // Strings are short - except your radio station list (up to 20 stations with their addresses).
+            if (type == "string" && item.optString("v").length > (if (k == "radio_stations") 6000 else 500)) continue
             val ok = runCatching {  // a single bad value is skipped, not the whole restore
                 when (type) {
                     "bool" -> e.putBoolean(k, item.getBoolean("v"))

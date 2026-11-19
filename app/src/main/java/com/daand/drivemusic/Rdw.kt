@@ -49,7 +49,7 @@ object Rdw {
         val c = URL("https://opendata.rdw.nl/resource/$dataset.json?$query").openConnection() as HttpURLConnection
         c.connectTimeout = 6000; c.readTimeout = 8000
         c.setRequestProperty("User-Agent", "DriveMusic/1.0")
-        try { if (c.responseCode != 200) throw IllegalStateException("RDW answered ${c.responseCode}"); return c.inputStream.bufferedReader().use { it.readText().take(200_000) } }
+        try { if (c.responseCode != 200) throw IllegalStateException("RDW answered ${c.responseCode}"); return c.inputStream.readCapped(200_000) }
         finally { c.disconnect() }
     }
 

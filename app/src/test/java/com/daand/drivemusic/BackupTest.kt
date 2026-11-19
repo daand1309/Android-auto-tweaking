@@ -95,4 +95,21 @@ class BackupTest {
     fun rejectsFilesThatAreNotABackup() {
         Prefs(ctx).importJson("""{"something":"else"}""")
     }
+
+    /** Red team, 19 Nov: plate, home/work and favourites' numbers went into backup files (and weren't even restored). */
+    @Test fun personalDataStaysOutOfBackupsAndRadioStationsComeBack() {
+        val p = Prefs(ctx)
+        p.plate = "GZR90H"
+        p.placeHome = Shortcuts.Place("Home", 52.24, 4.44).encode()
+        p.favourites = Shortcuts.encodeFavourites(listOf(Shortcuts.Favourite("Mum", "0612345678")))
+        p.fuelLog = "1|20|90|44.1|2.070"
+        val stations = (1..20).map { Radio.Station("Station number $it", "https://stream.example.org/live/station-$it/high-quality.mp3") }
+        p.radioStations = Radio.encode(stations)
+        val json = p.exportJson()
+        for (secret in listOf("GZR90H", "52.24", "0612345678", "44.1")) assertFalse("'$secret' must not be in a backup", json.contains(secret))
+
+        ctx.getSharedPreferences("drive_music", Context.MODE_PRIVATE).edit().clear().commit()
+        Prefs(ctx).importJson(json)
+        assertEquals("all 20 stations back (a long string)", stations, Radio.decode(Prefs(ctx).radioStations))
+    }
 }

@@ -237,7 +237,7 @@ object FuelPrices {
         conn.setRequestProperty("Accept", "application/json")
         try {
             if (conn.responseCode != 200) throw IllegalStateException("fuel service returned HTTP ${conn.responseCode}")
-            return conn.inputStream.bufferedReader().use { it.readText().take(3_000_000) }
+            return conn.inputStream.readCapped(3_000_000)
         } finally {
             conn.disconnect()
         }

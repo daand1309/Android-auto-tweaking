@@ -123,7 +123,7 @@ object Buienradar {
         conn.setRequestProperty("User-Agent", "DriveMusic")
         try {
             if (conn.responseCode != 200) throw IllegalStateException("Buienradar returned HTTP ${conn.responseCode}")
-            return conn.inputStream.bufferedReader().use { it.readText().take(maxChars) }
+            return conn.inputStream.readCapped(maxChars)
         } finally {
             conn.disconnect()
         }

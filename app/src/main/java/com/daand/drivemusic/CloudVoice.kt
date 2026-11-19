@@ -94,7 +94,12 @@ object CloudVoice {
                 429 -> "too many requests right now"
                 else -> "Azure answered $code"
             })
-            val bytes = c.inputStream.use { it.readBytes() }
+            // At most 5 MB (a spoken sentence is ~50 KB): never read an endless answer into memory.
+            val bytes = c.inputStream.use { input ->
+                val out = java.io.ByteArrayOutputStream(); val buf = ByteArray(16 * 1024)
+                while (out.size() <= 5_000_000) { val n = input.read(buf); if (n < 0) break; out.write(buf, 0, n) }
+                if (out.size() > 5_000_000) throw IOException("audio too large") else out.toByteArray()
+            }
             if (bytes.size < 500) throw IOException("empty audio")
             return bytes
         } finally { c.disconnect() }

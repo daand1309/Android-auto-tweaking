@@ -159,4 +159,11 @@ class RadioTest {
         // Drive Mode asks for "the last station" every few seconds and ⏭ divides by the list size.
         assertEquals(Radio.DEFAULTS, Radio.decode("Broken|file:///x;Also|intent://y"))
     }
+
+    /** Red team: a station name from the internet with hidden direction controls and markup. */
+    @Test fun stationNamesFromTheInternetAreCleaned() {
+        val json = """[{"name":"Evil\u202E FM <b>x</b>\n\tline2","url_resolved":"https://e/x.mp3","codec":"MP3"}]"""
+        val name = Radio.parseSearch(json).single().name
+        assertTrue(name, name.none { it == '\u202E' || it == '<' || it == '\n' })
+    }
 }

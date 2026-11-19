@@ -268,7 +268,7 @@ object Updater {
         val conn = open(url)
         try {
             return when (conn.responseCode) {
-                200 -> conn.inputStream.bufferedReader().use { it.readText().take(1_000_000) }
+                200 -> conn.inputStream.readCapped(1_000_000)
                 404 -> null
                 else -> throw UpdateException("GitHub returned HTTP ${conn.responseCode}")
             }
