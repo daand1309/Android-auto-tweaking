@@ -55,11 +55,19 @@ object RadioNearby {
 
     /** Blocking (car screen, off the main thread): the list now, looked up if needed. */
     fun blocking(ctx: Context): List<Radio.Nearby> {
+        // The phone is already looking (Drive Mode's Radio tab): wait for that answer instead of a second
+        // look-up with its own 30 stream checks (20 Nov: two in 3 seconds).
+        val until = System.currentTimeMillis() + 45_000
+        while (looking && System.currentTimeMillis() < until) Thread.sleep(250)
         current()?.let { if (System.currentTimeMillis() - at < FRESH_MS) return it }
-        val here = Here.position(ctx.applicationContext) ?: return current().orEmpty()
-        val r = Radio.nearby(here.first, here.second)
-        if (r.isNotEmpty()) { list = r; at = System.currentTimeMillis(); where = here }   // no signal: keep the old list
-        return current().orEmpty()
+        if (looking) return current().orEmpty()
+        looking = true      // the phone's refresh waits for this one too
+        try {
+            val here = Here.position(ctx.applicationContext) ?: return current().orEmpty()
+            val r = Radio.nearby(here.first, here.second)
+            if (r.isNotEmpty()) { list = r; at = System.currentTimeMillis(); where = here }   // no signal: keep the old list
+            return current().orEmpty()
+        } finally { looking = false }
     }
 
     /** The station behind a car-screen entry - by its stream, so a list that changed meanwhile can't mix them up. */

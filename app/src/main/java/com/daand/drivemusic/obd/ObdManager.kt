@@ -338,7 +338,7 @@ object ObdManager {
         val crank = CrankCheck(); val pollStartedAt = System.currentTimeMillis(); var crankPrompted = false
         var minuteAt = System.currentTimeMillis(); var minuteQ = 0; var minuteMissed = 0; var slowUntil = 0L
         var catalystChecks = 0
-        var movingAt = 0L          // when the car last reported speed or a running engine
+        var movingAt = 0L          // when the car last reported real speed (not idling: parking then switching off is normal)
         var lastReset = 0L
         var lastCatalystCheck = System.currentTimeMillis()
         while (alive(myGen)) {
@@ -377,7 +377,9 @@ object ObdManager {
                 lastEcuAnswerAt = snap.at
                 silent = 0
                 toldQuiet = false
-                if ((snap.speedKmh ?: 0) > 3 || (snap.rpm ?: 0) > 400) movingAt = System.currentTimeMillis()
+                // Speed only: idling counted too, so every normal switch-off (park, idle, key off) looked like a
+                // stuck adapter "while driving" and got a pointless reset (20 Nov 10:02).
+                if ((snap.speedKmh ?: 0) > 5) movingAt = System.currentTimeMillis()
             } else {
                 silent++
                 // Silent right after driving or a running engine: the ignition isn't off that fast - the
