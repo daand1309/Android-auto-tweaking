@@ -34,11 +34,9 @@ class DriveModeActivity : Activity() {
     private val thumbButtons = mutableListOf<View>()
     private lateinit var sourceBtn: Button
     private lateinit var playBtn: android.widget.ImageButton
-    private lateinit var resumeBtn: Button
     private lateinit var rootFrame: android.widget.FrameLayout
     private var promptView: View? = null
     /** The bottom-left button: plays the welcome - and cuts it short while it's talking. */
-    private lateinit var welcomeBtn: Button
 
     /** "There is an update" -> big green / red buttons over the whole screen until you answer. */
     private val promptChanged: () -> Unit = {
@@ -133,7 +131,7 @@ class DriveModeActivity : Activity() {
             bar.addView(tv, LinearLayout.LayoutParams(0, tabHeight, 1f).apply { setMargins(dp(3), 0, dp(3), 0) })
         }
         column.addView(buildStrip(), LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
-        column.addView(bar, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
+        // The tabs go at the bottom (added below): that's where the thumb is with the phone in a holder.
         pager = SwipePager(this)
         pager.addPage(buildUi())
         pager.addPage(buildGoPage())
@@ -149,6 +147,8 @@ class DriveModeActivity : Activity() {
             handler.removeCallbacks(tick); handler.post(tick)
         }
         column.addView(pager, LinearLayout.LayoutParams(-1, 0, 1f))
+        bar.setPadding(dp(12), dp(4), dp(12), dp(10))
+        column.addView(bar, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
         highlightTab(0)
         return column
     }
@@ -183,6 +183,8 @@ class DriveModeActivity : Activity() {
     /** Test hook: which tab is showing / switch tab. */
     @androidx.annotation.VisibleForTesting internal fun currentTab() = pager.current
     @androidx.annotation.VisibleForTesting internal fun pagerForTest() = pager
+    @androidx.annotation.VisibleForTesting internal fun showMoreForTest() = showMore()
+    @androidx.annotation.VisibleForTesting internal fun closeSheetForTest() = closeSheet()
 
     // ---------------------------------------------------------------- live numbers above the tabs
 
@@ -365,11 +367,9 @@ class DriveModeActivity : Activity() {
     private var fuelLooking = false
 
     private fun buildGoPage(): View {
-        goList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(6), dp(14), dp(14)) }
-        return android.widget.ScrollView(this).apply {
-            setBackgroundColor(Style.BG); isFillViewport = true
-            addView(goList, android.widget.FrameLayout.LayoutParams(-1, -2))
-        }
+        // Four big tiles that fill the page: nothing to scroll.
+        goList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Style.BG); setPadding(dp(10), dp(8), dp(10), dp(4)) }
+        return goList
     }
 
     /** One big row: icon, title, a smaller line under it. No [onClick] = just information. */
@@ -401,37 +401,95 @@ class DriveModeActivity : Activity() {
         val dutch = p.greetingDutch
         if (!fuelLooking && (fuelResult == null || System.currentTimeMillis() - fuelAt > 10 * 60_000L)) lookForFuel()
         goList.removeAllViews()
-        val h = dp(if (wide) 72 else 88)
-        fun add(v: View) = goList.addView(v, LinearLayout.LayoutParams(-1, h).apply { bottomMargin = dp(10) })
 
-        when (val r = fuelResult) {
+        val fuelTile = when (val r = fuelResult) {
             is FuelStops.Choice -> {
-                fun line(st: FuelStops.Stop) = "%s · €%.3f · %.1f km".format(java.util.Locale.ROOT, st.station.name, st.price, st.km)
                 val good = if (dutch) "Dichtbij, goede prijs" else "Nearest good price"
                 val cheap = if (dutch) "Goedkoopste" else "Cheapest"
-                if (r.nearestGood == r.cheapest) add(goRow("⛽", "$good · $cheap", line(r.cheapest)) { navigate(r.cheapest, "$good · $cheap") })
-                else {
-                    add(goRow("⛽", good, line(r.nearestGood)) { navigate(r.nearestGood, good) })
-                    add(goRow("💶", cheap, line(r.cheapest)) { navigate(r.cheapest, cheap) })
+                fun line(st: FuelStops.Stop) = "%s · €%.3f · %.1f km".format(java.util.Locale.ROOT, st.station.name, st.price, st.km)
+                tile("⛽", if (dutch) "Tanken" else "Fuel", "%s €%.3f\n%.1f km".format(java.util.Locale.ROOT, r.nearestGood.station.name, r.nearestGood.price, r.nearestGood.km)) {
+                    if (r.nearestGood == r.cheapest) navigate(r.cheapest, "$good · $cheap")
+                    else showSheet(if (dutch) "Tanken" else "Fuel", listOf(
+                        SheetItem("⛽", good, line(r.nearestGood)) { navigate(r.nearestGood, good) },
+                        SheetItem("💶", cheap, line(r.cheapest)) { navigate(r.cheapest, cheap) }))
                 }
             }
-            is String -> add(goRow("⛽", if (dutch) "Tanken" else "Find fuel", r + (if (dutch) " Tik om opnieuw te zoeken." else " Tap to try again.")) {
-                fuelResult = null; refreshGo() })
-            else -> add(goRow("⛽", if (dutch) "Tanken" else "Find fuel", if (dutch) "Tankstations zoeken…" else "Looking for fuel near you…", onClick = null))
+            is String -> tile("⛽", if (dutch) "Tanken" else "Fuel", if (dutch) "Lukt nu niet - tik opnieuw" else "Not now - tap to retry") { fuelResult = null; refreshGo() }
+            else -> tile("⛽", if (dutch) "Tanken" else "Fuel", if (dutch) "Zoeken…" else "Looking…", onClick = null)
         }
-
-        for ((icon, label, enc) in listOf(Triple("🏠", if (dutch) "Naar huis" else "Home", p.placeHome),
-                Triple("💼", if (dutch) "Naar werk" else "Work", p.placeWork))) {
-            val place = Shortcuts.decodePlace(enc)
-            if (place == null) add(goRow(icon, label, if (dutch) "Nog niet ingesteld: app → Car screen" else "Not set yet: in the app → Car screen", onClick = null))
-            else add(goRow(icon, label, if (dutch) "Waze op het autoscherm" else "Waze on the car screen") {
-                navigate(place.lat, place.lon, "NAVIGATE: to $label")   // never where it is
-            })
+        fun placeTile(icon: String, label: String, enc: String) = Shortcuts.decodePlace(enc).let { place ->
+            if (place == null) tile(icon, label, if (dutch) "Nog niet ingesteld (app → Car screen)" else "Not set (app → Car screen)", onClick = null)
+            else tile(icon, label, if (dutch) "Waze, autoscherm" else "Waze, car screen") { navigate(place.lat, place.lon, "NAVIGATE: to $label") }
         }
-
         val favs = Shortcuts.decodeFavourites(p.favourites)
-        if (favs.isEmpty()) add(goRow("📞", if (dutch) "Bellen" else "Call", if (dutch) "Kies tot 3 favorieten in de app → Car screen" else "Pick up to 3 favourites in the app → Car screen", onClick = null))
-        favs.forEachIndexed { i, fav -> add(goRow("📞", fav.name, if (dutch) "Bellen, handsfree via de auto" else "Call, hands-free through the car") { call(fav, i) }) }
+        val callTile = tile("📞", if (dutch) "Bellen" else "Call",
+            favs.joinToString(" · ") { it.name }.ifEmpty { if (dutch) "Kies favorieten in de app" else "Pick favourites in the app" }) {
+            if (favs.isEmpty()) showSheet(if (dutch) "Bellen" else "Call", listOf(SheetItem("📞",
+                if (dutch) "Nog geen favorieten" else "No favourites yet", if (dutch) "Kies er tot 3 in de app → Car screen" else "Pick up to 3 in the app → Car screen", null)))
+            else showSheet(if (dutch) "Bellen" else "Call", favs.mapIndexed { i, fav ->
+                SheetItem("📞", fav.name, if (dutch) "Handsfree via de auto" else "Hands-free through the car") { call(fav, i) } })
+        }
+        val rows = listOf(listOf(fuelTile, placeTile("🏠", if (dutch) "Naar huis" else "Home", p.placeHome)),
+            listOf(placeTile("💼", if (dutch) "Naar werk" else "Work", p.placeWork), callTile))
+        for (row in rows) {
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            for (t in row) r.addView(t, hLp(1f))
+            goList.addView(r, LinearLayout.LayoutParams(-1, 0, 1f))
+        }
+    }
+
+    /** A big square-ish tile: icon, word, one or two small lines. No [onClick] = just information. */
+    private fun tile(icon: String?, label: String, sub: String, selected: Boolean = false, onClick: (() -> Unit)?) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(8), dp(8), dp(8), dp(8))
+        val r = dp(Style.R_BIG).toFloat()
+        background = when {
+            selected -> android.graphics.drawable.GradientDrawable().apply { setColor(Style.SURFACE); cornerRadius = r; setStroke(dp(3), Style.GREEN) }
+            onClick != null -> Style.button(Style.SURFACE, r)
+            else -> Style.rounded(Style.SURFACE, r)
+        }
+        if (icon != null) addView(TextView(this@DriveModeActivity).apply { text = icon; textSize = if (wide) 26f else 34f; gravity = Gravity.CENTER })
+        addView(TextView(this@DriveModeActivity).apply {
+            text = label; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD); gravity = Gravity.CENTER
+            maxLines = 2; fitText(14, if (wide) 18 else 21, 2)
+        }, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
+        if (sub.isNotBlank()) addView(TextView(this@DriveModeActivity).apply {
+            text = sub; setTextColor(if (selected) Style.GREEN else Style.TEXT2); textSize = if (wide) 12f else 13f; gravity = Gravity.CENTER
+            maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; fontFeatureSettings = Style.TABULAR
+        })
+        if (onClick != null) { setOnClickListener { onClick() }; Feel.press(this, 0.97f) }
+        contentDescription = "$label. $sub"
+    }
+
+    // ---------------------------------------------------------------- the pop-up panel (⋯, Call, Near you, All stations)
+
+    private class SheetItem(val icon: String, val title: String, val sub: String, val onClick: (() -> Unit)?)
+    private var sheetView: View? = null
+
+    private fun closeSheet() { sheetView?.let { rootFrame.removeView(it) }; sheetView = null }
+
+    /** Back (gesture or button) closes an open panel first, Drive Mode only after that. */
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (sheetView != null) closeSheet() else @Suppress("DEPRECATION") super.onBackPressed()
+    }
+
+    /** Full-screen panel with big rows; a tap acts and closes it. One big Close at the bottom (thumb reach). */
+    private fun showSheet(title: String, items: List<SheetItem>) {
+        closeSheet()
+        val dutch = Prefs(this).greetingDutch
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setBackgroundColor(Style.BG); setPadding(dp(14), dp(18), dp(14), dp(12))
+            isClickable = true   // taps don't fall through to Drive Mode underneath
+        }
+        box.addView(TextView(this).apply { text = title; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD); textSize = 24f; setPadding(dp(6), 0, dp(6), dp(12)) })
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        for (it in items) list.addView(goRow(it.icon, it.title, it.sub, onClick = it.onClick?.let { act -> { closeSheet(); act() } }),
+            LinearLayout.LayoutParams(-1, dp(if (wide) 68 else 84)).apply { bottomMargin = dp(10) })
+        box.addView(android.widget.ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        box.addView(answerButton(R.drawable.ic_answer_no, if (dutch) "Sluiten" else "Close", Style.SURFACE2) { closeSheet() },
+            LinearLayout.LayoutParams(-1, dp(if (wide) 60 else 72)).apply { topMargin = dp(8) })
+        sheetView = box
+        rootFrame.addView(box, android.widget.FrameLayout.LayoutParams(-1, -1))
     }
 
     private fun lookForFuel() {
@@ -513,76 +571,86 @@ class DriveModeActivity : Activity() {
     private val radioChanged: () -> Unit = { refreshRadio(); lastShown = ""; updateDynamic() }
 
     private fun buildRadioPage(): View {
-        radioList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(6), dp(14), dp(14)) }
+        radioList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Style.BG); setPadding(dp(10), dp(8), dp(10), dp(4)) }
         RadioPlayer.addListener(radioChanged)
-        return android.widget.ScrollView(this).apply {
-            setBackgroundColor(Style.BG); isFillViewport = true
-            addView(radioList, android.widget.FrameLayout.LayoutParams(-1, -2))
-        }
+        return radioList
     }
 
-    /** What's on (with a big Stop), then your stations: tap one to tune in, tap the one playing to stop. */
+    /** What's on (with stop / keep), your first six stations as tiles, then "near you" and "all stations". */
     private fun refreshRadio() {
         if (!::radioList.isInitialized) return
         val dutch = Prefs(this).greetingDutch
         radioList.removeAllViews()
-        val h = dp(if (wide) 64 else 76)
         val st = RadioPlayer.station
         val state = RadioPlayer.state
-        if (RadioPlayer.on) radioList.addView(goRow("🎵", if (dutch) "Terug naar YouTube Music" else "Back to YouTube Music",
-            if (dutch) "Op dezelfde plek, zonder stilte" else "Same song and spot, no silence in between") {
-            RadioPlayer.backToMusic(this) }, LinearLayout.LayoutParams(-1, h).apply { bottomMargin = dp(10) })
-        if (st != null && state != RadioPlayer.State.OFF) {
-            val (line, color) = when (state) {
-                RadioPlayer.State.CONNECTING -> (if (RadioPlayer.problem.isNotBlank()) (if (dutch) "Signaal kwijt - " else "Signal lost - ") + RadioPlayer.problem + "…"
-                    else if (dutch) "Verbinden…" else "Tuning in…") to Style.TEXT2
-                RadioPlayer.State.PLAYING -> ((RadioPlayer.nowPlaying?.let { "♪ $it · " } ?: "") +
-                    (if (dutch) "tik om te stoppen" else "tap to stop")) to Style.GREEN
-                else -> ((if (dutch) "Lukt niet: " else "Didn't work: ") + RadioPlayer.problem + (if (dutch) ". Tik om opnieuw te proberen." else ". Tap to try again.")) to Style.AMBER
-            }
-            radioList.addView(goRow(if (state == RadioPlayer.State.PLAYING) "⏹" else "📻", st.name, line,
-                accent = if (state == RadioPlayer.State.ERROR) Style.AMBER else color) {
-                if (state == RadioPlayer.State.ERROR) RadioPlayer.play(this, st) else RadioPlayer.stop("you pressed stop")
-            }, LinearLayout.LayoutParams(-1, dp(if (wide) 72 else 92)).apply { bottomMargin = dp(14) })
-        }
         val mine = Radio.decode(Prefs(this).radioStations)
-        // Listening to a station that isn't in your list (one near you): one tap keeps it.
-        if (st != null && RadioPlayer.on && mine.none { it.url == st.url } && mine.size < Radio.MAX_STATIONS)
-            radioList.addView(goRow("➕", (if (dutch) "Bewaar " else "Keep ") + st.name, if (dutch) "Bij je eigen zenders zetten" else "Add it to your stations") {
-                Prefs(this).radioStations = Radio.encode(Radio.add(mine, st))
-                DriveLog.log("RADIO: '${st.name}' added to your stations")
-                refreshRadio()
-            }, LinearLayout.LayoutParams(-1, h).apply { bottomMargin = dp(10) })
-        for (s in mine) {
-            val playing = s == st && RadioPlayer.on
-            radioList.addView(goRow("📻", s.name, if (playing) (if (dutch) "Speelt nu" else "On now") else "",
-                accent = if (playing) Style.GREEN else null) { RadioPlayer.toggle(this, s) },
-                LinearLayout.LayoutParams(-1, h).apply { bottomMargin = dp(10) })
-        }
-        // Stations near you: looked up as the tab opens (again after 10 minutes, or 1 minute after a failed try).
-        radioList.addView(TextView(this).apply {
-            text = if (dutch) "📍  Bij jou in de buurt" else "📍  Near you"
-            setTextColor(Style.TEXT2); textSize = 15f; setTypeface(typeface, Typeface.BOLD); setPadding(dp(6), dp(10), dp(6), dp(8))
-        })
-        RadioNearby.refresh(this) { if (!isFinishing) refreshRadio() }
-        val near = RadioNearby.current()
-        when {
-            near == null || (near.isEmpty() && RadioNearby.looking) -> radioList.addView(goRow("📍", if (dutch) "Zoeken…" else "Looking…",
-                if (dutch) "Zenders bij jou in de buurt" else "Stations near you", onClick = null), LinearLayout.LayoutParams(-1, h).apply { bottomMargin = dp(10) })
-            near.isEmpty() -> radioList.addView(goRow("📍", if (dutch) "Niets gevonden" else "Nothing found",
-                if (dutch) "Locatie uit, of geen bereik" else "Location off, or no signal", onClick = null), LinearLayout.LayoutParams(-1, h).apply { bottomMargin = dp(10) })
-            else -> for (n in near.filter { nb -> mine.none { it.url == nb.station.url } }) {
-                val playing = n.station == st && RadioPlayer.on
-                radioList.addView(goRow("📍", n.station.name, (if (playing) (if (dutch) "Speelt nu · " else "On now · ") else "") + "${n.km} km",
-                    accent = if (playing) Style.GREEN else null) { RadioPlayer.toggle(this, n.station) },
-                    LinearLayout.LayoutParams(-1, h).apply { bottomMargin = dp(10) })
+
+        // What's on: name and song (or what's happening), a big stop - and Keep for a station near you.
+        if (st != null && state != RadioPlayer.State.OFF) {
+            val line = when (state) {
+                RadioPlayer.State.CONNECTING -> if (RadioPlayer.problem.isNotBlank()) (if (dutch) "Signaal kwijt - " else "Signal lost - ") + RadioPlayer.problem + "…"
+                    else if (dutch) "Verbinden…" else "Tuning in…"
+                RadioPlayer.State.PLAYING -> RadioPlayer.nowPlaying?.let { "♪ $it" } ?: (if (dutch) "Speelt nu" else "Playing")
+                else -> (if (dutch) "Lukt niet: " else "Didn't work: ") + RadioPlayer.problem
             }
+            val now = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(16), dp(8), dp(8), dp(8))
+                background = Style.rounded(Style.SURFACE, dp(Style.R_BIG).toFloat())
+            }
+            now.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(TextView(this@DriveModeActivity).apply { text = st.name; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD); textSize = 19f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+                addView(TextView(this@DriveModeActivity).apply { text = line; textSize = 14f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                    setTextColor(when (state) { RadioPlayer.State.PLAYING -> Style.GREEN; RadioPlayer.State.ERROR -> Style.AMBER; else -> Style.TEXT2 }) })
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            if (RadioPlayer.on && mine.none { it.url == st.url } && mine.size < Radio.MAX_STATIONS)
+                now.addView(Button(this).apply {
+                    text = if (dutch) "Bewaar" else "Keep"; isAllCaps = false; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD)
+                    background = Style.button(Style.SURFACE2, dp(Style.R_CARD).toFloat()); stateListAnimator = null
+                    setOnClickListener { Prefs(this@DriveModeActivity).radioStations = Radio.encode(Radio.add(mine, st)); DriveLog.log("RADIO: '${st.name}' added to your stations"); refreshRadio() }
+                }, LinearLayout.LayoutParams(dp(84), dp(56)).apply { marginEnd = dp(8) })
+            now.addView(Button(this).apply {
+                text = if (state == RadioPlayer.State.ERROR) "↻" else "⏹"; textSize = 22f; setTextColor(Color.WHITE)
+                contentDescription = if (state == RadioPlayer.State.ERROR) "Try again" else "Stop the radio"
+                background = Style.button(Style.PRIMARY, dp(Style.R_CARD).toFloat()); stateListAnimator = null
+                setOnClickListener { if (state == RadioPlayer.State.ERROR) RadioPlayer.play(this@DriveModeActivity, st) else RadioPlayer.stop("you pressed stop") }
+            }, LinearLayout.LayoutParams(dp(68), dp(56)))
+            radioList.addView(now, LinearLayout.LayoutParams(-1, dp(if (wide) 64 else 78)).apply { bottomMargin = dp(8) })
         }
-        radioList.addView(TextView(this).apply {
-            text = if (dutch) "Stations toevoegen of weghalen: in de app → Music & driving → Radio. Radio gebruikt ~60 MB per uur."
-                else "Add or remove stations in the app: Music & driving → Radio. Radio uses about 60 MB an hour."
-            setTextColor(Style.TEXT2); textSize = 13f; gravity = Gravity.CENTER; setPadding(dp(8), dp(4), dp(8), dp(4))
-        })
+
+        // Your first six stations, big; the one playing has a green edge.
+        val six = mine.take(6)
+        for (pair in six.chunked(2)) {
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            for (s in pair) {
+                val playing = RadioPlayer.on && s == st
+                r.addView(tile(null, s.name.removePrefix("NPO ").removePrefix("Radio ").ifBlank { s.name }.let { if (it.length <= 3) s.name else it },
+                    if (playing) (if (dutch) "speelt nu" else "on now") else "", selected = playing) { RadioPlayer.toggle(this, s) }, hLp(1f))
+            }
+            if (pair.size == 1) r.addView(View(this), hLp(1f))
+            radioList.addView(r, LinearLayout.LayoutParams(-1, 0, 1f))
+        }
+
+        // Near you / all stations (and back to music while the radio plays): one tap away.
+        RadioNearby.refresh(this) { if (!isFinishing) refreshRadio() }
+        val near = RadioNearby.current()?.filter { nb -> mine.none { it.url == nb.station.url } }
+        val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        fun chip(label: String, onClick: () -> Unit) = Button(this).apply {
+            text = label; isAllCaps = false; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD); fitText(11, if (wide) 15 else 17, 1)
+            background = Style.button(Style.SURFACE2, dp(Style.R_CARD).toFloat()); stateListAnimator = null
+            setOnClickListener { onClick() }; Feel.press(this)
+        }
+        if (RadioPlayer.on) chips.addView(chip(if (dutch) "🎵 Muziek" else "🎵 Music") { RadioPlayer.backToMusic(this) }, hLp(0.8f))
+        chips.addView(chip("📍 " + (if (dutch) "Buurt" else "Near you") + when { near == null -> "…"; else -> " (${near.size})" }) {
+            showSheet(if (dutch) "📍 Bij jou in de buurt" else "📍 Near you",
+                near.orEmpty().map { n -> SheetItem("📍", n.station.name, "${n.km} km") { RadioPlayer.toggle(this, n.station) } }
+                    .ifEmpty { listOf(SheetItem("📍", if (dutch) "Nog niets" else "Nothing yet", if (dutch) "Locatie uit, of geen bereik" else "Location off, or no signal", null)) })
+        }, hLp(1f))
+        chips.addView(chip(if (dutch) "Alle zenders" else "All stations") {
+            showSheet(if (dutch) "📻 Jouw zenders" else "📻 Your stations", mine.map { s ->
+                SheetItem("📻", s.name, if (RadioPlayer.on && s == st) (if (dutch) "speelt nu" else "on now") else "") { RadioPlayer.toggle(this, s) } })
+        }, hLp(1f))
+        radioList.addView(chips, LinearLayout.LayoutParams(-1, dp(if (wide) 52 else 60)))
     }
 
     /** True once the car has been connected while this screen was open. */
@@ -759,40 +827,24 @@ class DriveModeActivity : Activity() {
     private fun buildUi(): View {
         nowPlaying = TextView(this).apply {
             setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD)
-            gravity = Gravity.CENTER; fitText(16, 30, 4)
+            gravity = Gravity.CENTER; fitText(16, 28, 3)
         }
-        cover = SquareImage(this, if (wide) 1f else 0.42f).apply {
+        cover = SquareImage(this, if (wide) 1f else 0.62f).apply {
             scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-            background = Style.rounded(Style.SURFACE, dp(Style.R_BIG).toFloat()); clipToOutline = true
+            background = Style.rounded(Style.SURFACE2, dp(Style.R_BIG).toFloat()); clipToOutline = true
             contentDescription = "Cover"; visibility = View.GONE
         }
-        thumbs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        for (up in listOf(true, false)) thumbs.addView(Button(this).apply {
-            text = if (up) "👍" else "👎"; textSize = if (wide) 18f else 22f; isAllCaps = false
-            contentDescription = if (up) "Like this song" else "Dislike this song and skip it"
-            background = Style.button(Style.SURFACE2, dp(Style.R_CARD).toFloat()); stateListAnimator = null
-            setOnClickListener {
-                val ok = svc()?.rate(up, "Drive Mode") == true
-                status.text = when { !ok -> "YouTube Music didn't take the ${if (up) "like" else "dislike"}"; up -> "👍 Liked"; else -> "👎 Disliked - skipping" }
-                lastShown = ""; handler.postDelayed({ updateDynamic() }, 2_500)
-            }
-            Feel.press(this)
-        }.also { thumbButtons += it }, LinearLayout.LayoutParams(0, dp(if (wide) 44 else 52), 1f).apply { setMargins(dp(6), 0, dp(6), 0) })
-        // One tap between the two: "📻 Radio 2" <-> "🎵 Back to YouTube Music" (YouTube Music keeps its place).
-        sourceBtn = Button(this).apply {
-            isAllCaps = false; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD); fitText(11, if (wide) 15 else 17, 1)
-            background = Style.button(Style.SURFACE2, dp(Style.R_CARD).toFloat()); stateListAnimator = null
-            setOnClickListener {
-                if (RadioPlayer.on) RadioPlayer.backToMusic(this@DriveModeActivity)
-                else RadioPlayer.play(this@DriveModeActivity, RadioPlayer.lastStation(this@DriveModeActivity))
-                lastShown = ""; handler.postDelayed({ updateDynamic() }, 400)
-            }
-            Feel.press(this)
-        }
-        thumbs.addView(sourceBtn, LinearLayout.LayoutParams(0, dp(if (wide) 44 else 52), 2.2f).apply { setMargins(dp(6), 0, dp(6), 0) })
         status = TextView(this).apply {
-            setTextColor(Style.TEXT2); textSize = 15f; gravity = Gravity.CENTER; maxLines = 2
+            setTextColor(Style.TEXT2); textSize = 13f; gravity = Gravity.CENTER; maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        // The song card: cover, title and artist, one small status line.
+        val songCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+            background = Style.rounded(Style.SURFACE, dp(Style.R_BIG).toFloat()); setPadding(dp(12), dp(12), dp(12), dp(10))
+            addView(cover, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, 0, 1.2f).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(8) })
+            addView(nowPlaying, LinearLayout.LayoutParams(-1, 0, 0.8f))
+            addView(status, LinearLayout.LayoutParams(-1, -2))
         }
 
         // Big transport row (horizontal: weight drives WIDTH, height fills the row).
@@ -803,60 +855,75 @@ class DriveModeActivity : Activity() {
         playBtn = bigButton(R.drawable.ic_play, "Play", accent = true) {
             if (RadioPlayer.on) RadioPlayer.stop("you pressed pause") else svc()?.playPause()
             handler.postDelayed({ updateDynamic() }, 300) }
-        controls.addView(playBtn, hLp(1.3f))
+        controls.addView(playBtn, hLp(1.4f))
         controls.addView(bigButton(R.drawable.ic_next, "Next", accent = false) {
             if (RadioPlayer.on) RadioPlayer.step(this, 1) else svc()?.skipNext(); flash() }, hLp(1f))
 
-        // Bottom row: icon on top, one short word underneath.
-        val bottom = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        bottom.addView(smallButton(R.drawable.ic_volume, "Welcome") {
-            if (Voice.speaking) Voice.stop("skip button in Drive Mode")
-            else WelcomeAnnouncer.run(this, svc()?.currentSong(), recordAsGreeted = false)
-            updateDynamic()
-        }.also { welcomeBtn = it }, hLp(1f))
-        resumeBtn = smallButton(R.drawable.ic_repeat, "") {
-            ResumeToggle.tapNow(this, "Drive Mode")   // for this drive only (see ResumeToggle)
-            updateDynamic()
-        }
-        bottom.addView(resumeBtn, hLp(1f))
-        bottom.addView(smallButton(R.drawable.ic_answer_no, "Close") { finish() }, hLp(0.8f))
-
-        val pad = if (wide) dp(12) else dp(20)
-        if (wide) {
-            // Landscape: song on the left, buttons on the right - nothing gets squashed.
-            val root = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setBackgroundColor(Style.BG); setPadding(pad, pad, pad, pad)
+        // One row: 👍 · 📻 radio switch · 👎 · ⋯ (Welcome, auto-resume and Close live behind ⋯).
+        thumbs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+        fun chipLp(w: Float) = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, w).apply { setMargins(dp(5), 0, dp(5), 0) }
+        fun thumb(up: Boolean) = Button(this).apply {
+            text = if (up) "👍" else "👎"; textSize = if (wide) 18f else 22f; isAllCaps = false
+            contentDescription = if (up) "Like this song" else "Dislike this song and skip it"
+            background = Style.button(Style.SURFACE2, dp(Style.R_CARD).toFloat()); stateListAnimator = null
+            setOnClickListener {
+                val ok = svc()?.rate(up, "Drive Mode") == true
+                status.text = when { !ok -> "YouTube Music didn't take the ${if (up) "like" else "dislike"}"; up -> "👍 Liked"; else -> "👎 Disliked - skipping" }
+                lastShown = ""; handler.postDelayed({ updateDynamic() }, 2_500)
             }
-            val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
-            left.addView(cover, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, 0, 1.3f).apply {
-                gravity = Gravity.CENTER_HORIZONTAL; setMargins(dp(6), dp(6), dp(6), dp(2)) })
-            left.addView(nowPlaying, vLp(weight = 1f))
-            left.addView(thumbs, vLp())
-            left.addView(status, vLp())
+            Feel.press(this)
+        }.also { thumbButtons += it }
+        thumbs.addView(thumb(true), chipLp(1f))
+        // One tap between the two: "📻 Radio 2" <-> "🎵 Music" (YouTube Music keeps its place).
+        sourceBtn = Button(this).apply {
+            isAllCaps = false; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD); fitText(11, if (wide) 15 else 17, 1)
+            background = Style.button(Style.SURFACE2, dp(Style.R_CARD).toFloat()); stateListAnimator = null
+            setOnClickListener {
+                if (RadioPlayer.on) RadioPlayer.backToMusic(this@DriveModeActivity)
+                else RadioPlayer.play(this@DriveModeActivity, RadioPlayer.lastStation(this@DriveModeActivity))
+                lastShown = ""; handler.postDelayed({ updateDynamic() }, 400)
+            }
+            Feel.press(this)
+        }
+        thumbs.addView(sourceBtn, chipLp(2f))
+        thumbs.addView(thumb(false), chipLp(1f))
+        thumbs.addView(Button(this).apply {
+            text = "⋯"; textSize = 24f; setTextColor(Style.TEXT); contentDescription = "More: welcome, auto-resume, close"
+            background = Style.button(Style.SURFACE2, dp(Style.R_CARD).toFloat()); stateListAnimator = null
+            setOnClickListener { showMore() }; Feel.press(this)
+        }, chipLp(1f))
+
+        val pad = if (wide) dp(10) else dp(14)
+        if (wide) {
+            // Landscape: the song on the left, the buttons on the right - nothing gets squashed.
+            val root = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setBackgroundColor(Style.BG); setPadding(pad, pad, pad, pad) }
             val right = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             right.addView(controls, vLp(weight = 2f))
-            right.addView(bottom, vLp(weight = 1f))
-            root.addView(left, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
-            root.addView(right, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1.4f))
+            right.addView(thumbs, vLp(weight = 0.8f))
+            root.addView(songCard, LinearLayout.LayoutParams(0, -1, 1f).apply { setMargins(dp(6), dp(6), dp(6), dp(6)) })
+            root.addView(right, LinearLayout.LayoutParams(0, -1, 1.3f))
             return root
         }
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Style.BG)
-            setPadding(pad, pad, pad, pad)
-        }
-        // Portrait: the cover beside the song (it hides itself when the music app gives none).
-        val songRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        songRow.addView(cover, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.MATCH_PARENT)
-            .apply { marginEnd = dp(14) })
-        songRow.addView(nowPlaying, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
-        root.addView(songRow, vLp(weight = 2f))
-        root.addView(thumbs, vLp())
-        root.addView(status, vLp())
-        root.addView(controls, vLp(weight = 3f))
-        root.addView(bottom, vLp(weight = 1.4f))
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Style.BG); setPadding(pad, dp(6), pad, dp(4)) }
+        root.addView(songCard, vLp(weight = 2.4f))
+        root.addView(controls, vLp(weight = 2f))
+        root.addView(thumbs, LinearLayout.LayoutParams(-1, dp(58)).apply { val m = dp(6); setMargins(m, m, m, m) })
         return root
+    }
+
+    /** ⋯ : what used to be the bottom row - Welcome (or Skip while it talks), auto-resume for this drive, Close. */
+    private fun showMore() {
+        val dutch = Prefs(this).greetingDutch
+        val speaking = Voice.speaking
+        val resumeOn = ResumeToggle.isOnNow(this)
+        showSheet(if (dutch) "Meer" else "More", listOf(
+            if (speaking) SheetItem("⏭", if (dutch) "Stem overslaan" else "Skip the voice", "") { Voice.stop("skip button in Drive Mode"); updateDynamic() }
+            else SheetItem("🔊", if (dutch) "Welkom opnieuw" else "Welcome", if (dutch) "Begroeting, weer en wegen" else "Greeting, weather and roads") {
+                WelcomeAnnouncer.run(this, svc()?.currentSong(), recordAsGreeted = false); updateDynamic() },
+            SheetItem("↻", (if (dutch) "Automatisch hervatten: " else "Auto-resume: ") + (if (resumeOn) (if (dutch) "aan" else "on") else (if (dutch) "uit" else "off")),
+                if (dutch) "Tik om te wisselen (deze rit)" else "Tap to switch (this drive)") { ResumeToggle.tapNow(this, "Drive Mode"); updateDynamic() },
+            SheetItem("✕", if (dutch) "Drive Mode sluiten" else "Close Drive Mode", "") { finish() },
+        ))
     }
 
     private var lastShown = ""
@@ -911,18 +978,9 @@ class DriveModeActivity : Activity() {
         val key = "$songText2|$statusText2|$playing|${RadioPlayer.lastStation(this).name}|$resumeOn|$speaking|${System.identityHashCode(art)}"
         if (key == lastShown) return
         lastShown = key
-        // While something is being said, this button cuts it short rather than starting another one.
-        if (::welcomeBtn.isInitialized) {
-            welcomeBtn.text = if (speaking) "Skip" else "Welcome"
-            val d = getDrawable(if (speaking) R.drawable.ic_answer_no else R.drawable.ic_volume)!!.mutate()
-                .apply { setBounds(0, 0, dp(26), dp(26)) }
-            // Same place as when it was built: beside the label in landscape, above it in portrait.
-            if (wide) welcomeBtn.setCompoundDrawablesRelative(d, null, null, null) else welcomeBtn.setCompoundDrawablesRelative(null, d, null, null)
-            welcomeBtn.contentDescription = if (speaking) "Skip the voice" else "Play the welcome"
-        }
         Motion.swapText(nowPlaying, songText2)
         if (::sourceBtn.isInitialized) {
-            sourceBtn.text = if (radio != null) "🎵  Back to YouTube Music" else "📻  ${RadioPlayer.lastStation(this).name}"
+            sourceBtn.text = if (radio != null) "🎵  Music" else "📻  ${RadioPlayer.lastStation(this).name.removePrefix("NPO ")}"
             sourceBtn.contentDescription = if (radio != null) "Switch back to YouTube Music" else "Switch to the radio"
             // Like / dislike are for YouTube Music's songs: not while the radio plays.
             thumbButtons.forEach { it.visibility = if (radio != null) View.GONE else View.VISIBLE }
@@ -939,12 +997,6 @@ class DriveModeActivity : Activity() {
         if (playBtn.tag != icon) { if (playBtn.tag != null) Motion.pop(playBtn); playBtn.tag = icon }
         playBtn.setImageResource(icon)
         playBtn.contentDescription = if (playing) "Pause" else "Play"
-        resumeBtn.text = if (resumeOn) "Resume on" else "Resume off"
-        resumeBtn.contentDescription = if (resumeOn) "Auto-resume is on. Tap to turn it off for this drive" else "Auto-resume is off. Tap to turn it on"
-        // Bright green needs dark text and icon to stay readable.
-        val fg = if (resumeOn) Style.ON_BRIGHT else Style.TEXT
-        resumeBtn.setTextColor(fg); resumeBtn.compoundDrawableTintList = Style.tint(fg)
-        resumeBtn.background = Style.button(if (resumeOn) Style.GREEN else Style.SURFACE2, dp(Style.R_CARD).toFloat())
     }
 
     private fun flash() = handler.postDelayed({ updateDynamic() }, 400)

@@ -682,12 +682,12 @@ class DriveFlowTest {
         var goRows = 0
         onMain {
             fun find(v: android.view.View) {
-                if (v is android.widget.TextView && v.isShown && v.text.toString() in setOf("Find fuel", "Home", "Work", "Call")) goRows++
+                if (v is android.widget.TextView && v.isShown && v.text.toString() in setOf("Fuel", "Home", "Work", "Call")) goRows++
                 if (v is android.view.ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i))
             }
             find(a.window.decorView)
         }
-        assertEquals("Go tab shows Find fuel, Home, Work and Call", 4, goRows)
+        assertEquals("Go tab shows the Fuel, Home, Work and Call tiles", 4, goRows)
         // Swipe right -> back to music.
         swipe(loc[0] + w * 0.1f, loc[0] + w * 0.85f, midY)
         assertEquals(0, a.currentTab())

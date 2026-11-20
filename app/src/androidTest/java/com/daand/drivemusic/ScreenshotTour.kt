@@ -147,6 +147,11 @@ class ScreenshotTour {
         val dm = driveMode() ?: return
         val o = if (landscape) "land" else "port"
         snap("${prefix}drive_${o}_1music")
+        // The ⋯ panel (Welcome, auto-resume, Close).
+        instr.runOnMainSync { dm.showMoreForTest() }
+        SystemClock.sleep(800)
+        snap("${prefix}drive_${o}_1more")
+        instr.runOnMainSync { dm.closeSheetForTest() }
         refreshLive()
         instr.runOnMainSync { dm.pagerForTest().goTo(1, animate = false) }
         SystemClock.sleep(2_500)
