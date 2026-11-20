@@ -25,6 +25,9 @@
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <!-- Calling is optional: the app still installs on a phone/tablet without a SIM. -->
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <!-- Linking the OBD adapter as a companion device (Drive Mode may then open by itself while the phone
+         is in use). Required for CompanionDeviceManager.associate; optional, so phones without it still install. -->
+    <uses-feature android:name="android.software.companion_device_setup" android:required="false" />
 
     <!-- Deliberately NOT requested, to keep phone security (Play Protect / Samsung) happy:
          SYSTEM_ALERT_WINDOW (overlay + notification access is a malware pattern),
