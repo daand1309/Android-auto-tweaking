@@ -429,8 +429,10 @@ class DriveModeActivity : Activity() {
             else showSheet(if (dutch) "Bellen" else "Call", favs.mapIndexed { i, fav ->
                 SheetItem("📞", fav.name, if (dutch) "Handsfree via de auto" else "Hands-free through the car") { call(fav, i) } })
         }
-        val rows = listOf(listOf(fuelTile, placeTile("🏠", if (dutch) "Naar huis" else "Home", p.placeHome)),
-            listOf(placeTile("💼", if (dutch) "Naar werk" else "Work", p.placeWork), callTile))
+        val four = listOf(fuelTile, placeTile("🏠", if (dutch) "Naar huis" else "Home", p.placeHome),
+            placeTile("💼", if (dutch) "Naar werk" else "Work", p.placeWork), callTile)
+        // Portrait: 2 x 2. Landscape: one row of four, so the tiles are tall enough for their text.
+        val rows = four.chunked(if (wide) 4 else 2)
         for (row in rows) {
             val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             for (t in row) r.addView(t, hLp(1f))
@@ -447,14 +449,14 @@ class DriveModeActivity : Activity() {
             onClick != null -> Style.button(Style.SURFACE, r)
             else -> Style.rounded(Style.SURFACE, r)
         }
-        if (icon != null) addView(TextView(this@DriveModeActivity).apply { text = icon; textSize = if (wide) 26f else 34f; gravity = Gravity.CENTER })
+        if (icon != null) addView(TextView(this@DriveModeActivity).apply { text = icon; textSize = if (wide) 22f else 34f; gravity = Gravity.CENTER })
         addView(TextView(this@DriveModeActivity).apply {
             text = label; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD); gravity = Gravity.CENTER
-            maxLines = 2; fitText(14, if (wide) 18 else 21, 2)
+            maxLines = 2; textSize = if (wide) 17f else 21f; ellipsize = android.text.TextUtils.TruncateAt.END
         }, LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT))
         if (sub.isNotBlank()) addView(TextView(this@DriveModeActivity).apply {
             text = sub; setTextColor(if (selected) Style.GREEN else Style.TEXT2); textSize = if (wide) 12f else 13f; gravity = Gravity.CENTER
-            maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; fontFeatureSettings = Style.TABULAR
+            maxLines = if (wide) 1 else 2; ellipsize = android.text.TextUtils.TruncateAt.END; fontFeatureSettings = Style.TABULAR
         })
         if (onClick != null) { setOnClickListener { onClick() }; Feel.press(this, 0.97f) }
         contentDescription = "$label. $sub"
@@ -486,8 +488,11 @@ class DriveModeActivity : Activity() {
         for (it in items) list.addView(goRow(it.icon, it.title, it.sub, onClick = it.onClick?.let { act -> { closeSheet(); act() } }),
             LinearLayout.LayoutParams(-1, dp(if (wide) 68 else 84)).apply { bottomMargin = dp(10) })
         box.addView(android.widget.ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-1, 0, 1f))
-        box.addView(answerButton(R.drawable.ic_answer_no, if (dutch) "Sluiten" else "Close", Style.SURFACE2) { closeSheet() },
-            LinearLayout.LayoutParams(-1, dp(if (wide) 60 else 72)).apply { topMargin = dp(8) })
+        box.addView(Button(this).apply {
+            text = if (dutch) "✕   Sluiten" else "✕   Close"; isAllCaps = false; textSize = 20f; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD)
+            background = Style.button(Style.SURFACE2, dp(Style.R_BIG).toFloat()); stateListAnimator = null
+            setOnClickListener { closeSheet() }; Feel.press(this)
+        }, LinearLayout.LayoutParams(-1, dp(if (wide) 56 else 68)).apply { topMargin = dp(8) })
         sheetView = box
         rootFrame.addView(box, android.widget.FrameLayout.LayoutParams(-1, -1))
     }
@@ -620,14 +625,15 @@ class DriveModeActivity : Activity() {
 
         // Your first six stations, big; the one playing has a green edge.
         val six = mine.take(6)
-        for (pair in six.chunked(2)) {
+        val perRow = if (wide) 3 else 2
+        for (pair in six.chunked(perRow)) {
             val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             for (s in pair) {
                 val playing = RadioPlayer.on && s == st
                 r.addView(tile(null, s.name.removePrefix("NPO ").removePrefix("Radio ").ifBlank { s.name }.let { if (it.length <= 3) s.name else it },
                     if (playing) (if (dutch) "speelt nu" else "on now") else "", selected = playing) { RadioPlayer.toggle(this, s) }, hLp(1f))
             }
-            if (pair.size == 1) r.addView(View(this), hLp(1f))
+            repeat(perRow - pair.size) { r.addView(View(this), hLp(1f)) }
             radioList.addView(r, LinearLayout.LayoutParams(-1, 0, 1f))
         }
 
