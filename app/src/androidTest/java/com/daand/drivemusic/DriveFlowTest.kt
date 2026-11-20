@@ -621,7 +621,9 @@ class DriveFlowTest {
         waitFor("the system bars to hide", 5_000) { !barsShowing() }
         // Something brings them back (a pop-up, a swipe): within a few seconds they're gone again.
         onMain { androidx.core.view.WindowInsetsControllerCompat(a!!.window, a!!.window.decorView).show(androidx.core.view.WindowInsetsCompat.Type.systemBars()) }
-        waitFor("the bars to show for the test", 3_000) { barsShowing() }
+        // (Whether they visibly appear in between depends on timing and the legacy full-screen flag - it
+        // made this flaky on 20 Nov. What matters: a few seconds later they're hidden.)
+        SystemClock.sleep(500)
         waitFor("the bars to hide again", 8_000) { !barsShowing() }
         assertTrue(log().contains("Drive Mode: full screen"))
         onMain { a!!.finish() }
