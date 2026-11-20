@@ -1,0 +1,38 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+body{margin:0;padding:28px;background:#2a2a2e;font-family:Roboto,Arial,sans-serif;display:flex;flex-wrap:wrap;gap:26px;width:1560px}
+.ph{width:360px;border-radius:26px;overflow:hidden;box-shadow:0 8px 30px #0008}
+.name{font-size:20px;font-weight:700;color:#fff;margin:0 0 8px 4px}.sub{font-size:13px;color:#bbb;margin:-6px 0 10px 4px;height:34px}
+.scr{height:640px;display:flex;flex-direction:column;padding:14px;box-sizing:border-box;gap:12px}
+.strip{display:flex;justify-content:space-between;font-size:15px;font-weight:600}
+.card{border-radius:14px;padding:14px;display:flex;gap:12px;align-items:center}
+.cover{width:84px;height:84px;border-radius:10px}
+.t1{font-size:21px;font-weight:700}.t2{font-size:15px;margin-top:4px}
+.ctl{display:flex;gap:10px}.b{flex:1;height:96px;border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:38px;font-weight:700}
+.row{display:flex;gap:10px}.s{flex:1;height:64px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600}
+.sw{display:flex;justify-content:space-between;align-items:center;border-radius:14px;padding:12px 14px;font-size:16px}
+.tr{width:44px;height:22px;border-radius:11px;position:relative}.th{width:26px;height:26px;border-radius:13px;position:absolute;right:-2px;top:-2px}
+.lbl{font-size:13px;font-weight:700;letter-spacing:1px}
+.tabs{margin-top:auto;display:flex;border-radius:14px;overflow:hidden}.tab{flex:1;text-align:center;padding:12px 0 10px;font-size:15px;font-weight:600}
+.on{box-shadow:inset 0 -4px 0 var(--p)}
+</style></head><body><div id="x" style="display:contents"></div><script>
+const T=[
+["Titanium","Your car: graphite, black cloth, brushed-silver accent","#0D0F11","#1A1D21","#2B3036","#C3CCD6","#0D0F11","#363C44","#F2F4F6","#A3ACB6"],
+["Titanium red","Grey car, Mitsubishi-red badge","#0E1013","#1B1E23","#2C3037","#E60012","#FFFFFF","#4A1418","#F2F4F6","#A9B0B8"],
+["Night drive","Darkest, dimmed text: keeps your eyes used to the dark","#000000","#0C0C0D","#18181A","#B3121C","#F0F0F0","#2E0A0D","#CFCFD2","#8A8A90"],
+["Steel blue","Graphite with a cool blue: calm on long drives","#0C1014","#182027","#26303A","#3E8EDE","#FFFFFF","#163556","#F0F4F8","#A6B3C0"],
+["Copper","Graphite with a warm copper accent","#0F0E0D","#1D1B19","#2E2B28","#D9772B","#140B03","#4A2A12","#F5F2EE","#B8AFA6"],
+["Dial green","Like a lit-up dashboard: graphite and soft green","#0B0F0D","#171D1A","#25302B","#3FC48A","#06140D","#14402C","#EEF5F1","#A3B5AC"],
+["Midnight black","True black: saves battery on your OLED screen","#000000","#101010","#1E1E1E","#FFFFFF","#000000","#2A2A2A","#FFFFFF","#9E9E9E"],
+["Red & silver","Current default (stays)","#0A0A0B","#17171A","#26262B","#E60012","#FFFFFF","#4A1015","#F4F4F6","#BDBFC3"],
+];
+let h="";for(const[n,d,bg,s1,s2,p,op,hl,t,t2]of T){h+=`<div><div class="name">${n}</div><div class="sub">${d}</div><div class="ph" style="--p:${p}"><div class="scr" style="background:${bg};color:${t}">
+<div class="strip"><span>87 km/h</span><span style="color:${t2}">14:32 · 21°</span><span style="color:${p}">● OBD</span></div>
+<div class="card" style="background:${s1}"><div class="cover" style="background:linear-gradient(135deg,${p},${s2})"></div><div><div class="t1">Midnight City</div><div class="t2" style="color:${t2}">M83 · YouTube Music</div></div></div>
+<div class="ctl"><div class="b" style="background:${s2}">⏮</div><div class="b" style="background:${p};color:${op}">⏸</div><div class="b" style="background:${s2}">⏭</div></div>
+<div class="row"><div class="s" style="background:${s2}">👍</div><div class="s" style="background:${s2}">📻 Radio</div><div class="s" style="background:${s2}">👎</div></div>
+<div class="lbl" style="color:${p}">MUSIC</div>
+<div class="sw" style="background:${s1}">Auto-resume<div class="tr" style="background:${p}66"><div class="th" style="background:${p}"></div></div></div>
+<div class="card" style="background:${hl};padding:12px 14px;font-size:15px">⛽ Fill-up saved: 6.4 L/100 km</div>
+<div class="tabs" style="background:${s1}"><div class="tab on" style="color:${p}">♪ Music</div><div class="tab" style="color:${t2}">📻 Radio</div><div class="tab" style="color:${t2}">➜ Go</div><div class="tab" style="color:${t2}">🚗 Car</div></div>
+</div></div></div>`}
+document.getElementById('x').innerHTML=h;</script></body></html>
