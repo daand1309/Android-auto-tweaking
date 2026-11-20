@@ -693,26 +693,64 @@ class DriveModeActivity : Activity() {
         DriveMonitorService.instance?.noteDriveModeOnScreen()
         if (::pager.isInitialized) com.daand.drivemusic.obd.ObdManager.liveView = pager.current == TAB_CAR
         goImmersive()
+        watchBars()
         handler.post(tick)
     }
 
     override fun onPause() {
         super.onPause()
         onScreen = false
+        handler.removeCallbacks(reHide)
         handler.removeCallbacks(tick)
         com.daand.drivemusic.obd.ObdManager.liveView = false
     }
 
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) goImmersive()
+    /** Android Auto connecting / dropping switches the phone's mode (handled here, no rebuild): stay full screen. */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        goImmersive()
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) { goImmersive(); window.decorView.requestApplyInsets() }
+    }
+
+    /**
+     * Full screen: no status bar, no navigation bar, and the camera cut-out used too. Re-applied whenever
+     * the bars come back (a notification popping up, a swipe) - see [watchBars] - and the old full-screen
+     * flag as well, which some phones still need over the lock screen.
+     */
+    @Suppress("DEPRECATION")
     private fun goImmersive() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        if (android.os.Build.VERSION.SDK_INT >= 30) window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        }
         WindowInsetsControllerCompat(window, window.decorView).apply {
             hide(WindowInsetsCompat.Type.systemBars())
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
+    private val reHide = Runnable { if (onScreen) goImmersive() }
+    /** Logged once per opening: is it really full screen (so a drive log shows it)? */
+    private var fullScreenLogged = false
+
+    /** The bars came back (a pop-up, a swipe): hide them again after a moment, so you can still use what popped up. */
+    private fun watchBars() {
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(window.decorView) { v, insets ->
+            val barsShown = insets.isVisible(WindowInsetsCompat.Type.statusBars()) || insets.isVisible(WindowInsetsCompat.Type.navigationBars())
+            handler.removeCallbacks(reHide)
+            if (barsShown && onScreen) handler.postDelayed(reHide, 3_000)
+            if (!fullScreenLogged && onScreen && hasWindowFocus()) {
+                fullScreenLogged = true
+                val locked = getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked
+                DriveLog.log("Drive Mode: " + if (!barsShown) "full screen" + (if (locked) " (over the lock screen)" else "")
+                    else "the system bars are still showing" + if (locked) " (over the lock screen)" else "")
+            }
+            androidx.core.view.ViewCompat.onApplyWindowInsets(v, insets)
         }
     }
 

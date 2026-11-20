@@ -604,6 +604,29 @@ class DriveFlowTest {
         assertEquals("not connected", prefs.lastCarState)
     }
 
+    /** Drive Mode is full screen: no status bar, no navigation bar - and they go away again after showing. */
+    @Test
+    fun driveModeIsFullScreen() {
+        prefs.showSplash = false
+        ctx.startActivity(android.content.Intent(ctx, DriveModeActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        waitFor("Drive Mode to open", 10_000) { driveModeResumed() }
+        var a: DriveModeActivity? = null
+        onMain { a = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+            .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filterIsInstance<DriveModeActivity>().first() }
+        fun barsShowing(): Boolean { var shown = true
+            onMain { val i = androidx.core.view.ViewCompat.getRootWindowInsets(a!!.window.decorView)
+                shown = i == null || i.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars()) ||
+                    i.isVisible(androidx.core.view.WindowInsetsCompat.Type.navigationBars()) }
+            return shown }
+        waitFor("the system bars to hide", 5_000) { !barsShowing() }
+        // Something brings them back (a pop-up, a swipe): within a few seconds they're gone again.
+        onMain { androidx.core.view.WindowInsetsControllerCompat(a!!.window, a!!.window.decorView).show(androidx.core.view.WindowInsetsCompat.Type.systemBars()) }
+        waitFor("the bars to show for the test", 3_000) { barsShowing() }
+        waitFor("the bars to hide again", 8_000) { !barsShowing() }
+        assertTrue(log().contains("Drive Mode: full screen"))
+        onMain { a!!.finish() }
+    }
+
     @Test
     fun driveModeTabsSwipeBetweenMusicAndCar() {
         prefs.showSplash = false
