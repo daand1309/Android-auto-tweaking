@@ -166,4 +166,18 @@ class RadioTest {
         val name = Radio.parseSearch(json).single().name
         assertTrue(name, name.none { it == '\u202E' || it == '<' || it == '\n' })
     }
+
+    /** Optimisation, 20 Nov: a station checked in the last hour isn't checked again (failed ones: 10 min). */
+    @Test fun checkedStationsAreRemembered() {
+        var calls = 0
+        val t0 = 1_000_000L
+        fun check(url: String, now: Long, answer: Radio.Probe) = Radio.probeCached(url, now) { calls++; answer }
+        assertEquals(Radio.Probe.PLAYS, check("https://cache.test/a", t0, Radio.Probe.PLAYS))
+        assertEquals(Radio.Probe.PLAYS, check("https://cache.test/a", t0 + 30 * 60_000L, Radio.Probe.NO))
+        assertEquals("one real check in half an hour", 1, calls)
+        check("https://cache.test/a", t0 + 61 * 60_000L, Radio.Probe.PLAYS)
+        assertEquals("after an hour: checked again", 2, calls)
+        check("https://cache.test/dead", t0, Radio.Probe.NO)
+        assertEquals("a dead one gets another chance after 10 minutes", Radio.Probe.PLAYS, check("https://cache.test/dead", t0 + 11 * 60_000L, Radio.Probe.PLAYS))
+    }
 }

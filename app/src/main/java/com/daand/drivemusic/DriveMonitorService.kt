@@ -193,6 +193,8 @@ class DriveMonitorService : NotificationListenerService() {
         connectivity = getSystemService(ConnectivityManager::class.java)
         listenerComponent = ComponentName(this, DriveMonitorService::class.java)
         instance = this
+        // The radio's song title is only fetched while a screen shows it (it costs a second connection).
+        RadioPlayer.titleVisible = { DriveModeActivity.onScreen || com.daand.drivemusic.car.DriveMediaService.ownToken != null }
 
         DriveLog.log("Monitor started, controlling ${prefs.musicPackage} (Android ${android.os.Build.VERSION.RELEASE}, ${android.os.Build.MODEL})")
 

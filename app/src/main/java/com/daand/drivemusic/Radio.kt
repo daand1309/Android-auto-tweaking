@@ -184,6 +184,16 @@ object Radio {
         }
     }
 
+    /** Checked streams and when: one checked in the last hour isn't checked again (30 connections per look-up). */
+    private val probed = java.util.concurrent.ConcurrentHashMap<String, Pair<Probe, Long>>()
+    private const val PROBE_KEEP_MS = 60 * 60_000L
+
+    /** [probe], remembered for an hour (a failed answer for 10 minutes - a station can come back). */
+    fun probeCached(url: String, now: Long = System.currentTimeMillis(), test: (String) -> Probe = ::probe): Probe {
+        probed[url]?.let { (p, at) -> if (now - at < (if (p == Probe.NO) 10 * 60_000L else PROBE_KEEP_MS)) return p }
+        return test(url).also { probed[url] = it to now }
+    }
+
     /** Off the main thread: does the stream answer (within 4 s), and with what. Reads a couple of KB at most. */
     fun probe(url: String): Probe = try {
         val conn = URL(url).openConnection() as HttpURLConnection
@@ -200,7 +210,7 @@ object Radio {
      * in all). AAC+ ones are swapped for the same station's MP3 stream if it has one, else left out;
      * ones that don't answer are left out. [test] / [twin] are swappable for unit tests.
      */
-    fun checked(list: List<Nearby>, test: (String) -> Probe = ::probe, twin: (Station) -> Station? = ::findMp3): List<Nearby> {
+    fun checked(list: List<Nearby>, test: (String) -> Probe = { probeCached(it) }, twin: (Station) -> Station? = ::findMp3): List<Nearby> {
         if (list.isEmpty()) return list
         val pool = java.util.concurrent.Executors.newFixedThreadPool(8)
         try {
@@ -285,7 +295,16 @@ object RadioPlayer {
 
     /** Dropped streams (a tunnel, a dead zone): this many tries, this far apart, before giving up. */
     private val RETRY_MS = longArrayOf(2_000, 4_000, 8_000, 15_000)
-    private const val META_EVERY_MS = 45_000L
+    /**
+     * The song title costs a second connection (NPO Radio 2: 62 KB a check - 5 MB an hour at every 45 s).
+     * So: once a minute, and only while someone can see it (Drive Mode in front, or the car's media screen).
+     */
+    private const val META_EVERY_MS = 60_000L
+    private const val META_IDLE_CHECK_MS = 10_000L
+    /** Set by the app: is a screen showing the song title right now? */
+    @Volatile var titleVisible: () -> Boolean = { true }
+    /** A stream that hasn't started after this long is dead (or no signal): try its MP3 stream / say so. */
+    private const val CONNECT_TIMEOUT_MS = 12_000L
 
     private val main = Handler(Looper.getMainLooper())
     private var player: MediaPlayer? = null
@@ -365,7 +384,7 @@ object RadioPlayer {
             mp.setOnCompletionListener { if (player === it) dropped(app, st, "the stream ended") }
             mp.prepareAsync()
             // A stream that never starts (dead station, no signal): don't hang on it.
-            main.postDelayed({ if (player === mp && state == State.CONNECTING) dropped(app, st, "no answer within 20 s") }, 20_000)
+            main.postDelayed({ if (player === mp && state == State.CONNECTING) dropped(app, st, "no answer within ${CONNECT_TIMEOUT_MS / 1000} s") }, CONNECT_TIMEOUT_MS)
         } catch (e: Exception) { dropped(app, st, e.message ?: e.javaClass.simpleName) }
     }
 
@@ -435,6 +454,11 @@ object RadioPlayer {
 
     /** About once a minute while playing: the song title, if the station sends it. */
     private fun pollMeta(st: Radio.Station) {
+        // Nobody looking: don't spend data on it - look again shortly (the title appears within ~10 s of looking).
+        if (!runCatching { titleVisible() }.getOrDefault(true)) {
+            main.postDelayed({ if (station == st && state == State.PLAYING && player != null) pollMeta(st) }, META_IDLE_CHECK_MS)
+            return
+        }
         Thread({
             val t = IcyMeta.read(st.url)
             main.post {
