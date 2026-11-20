@@ -40,6 +40,10 @@ import androidx.lifecycle.Observer
 class DriveMonitorService : NotificationListenerService() {
 
     companion object {
+        // AudioManager's newer call modes, by value (named constants need a newer compile SDK for some).
+        private const val MODE_CALL_SCREENING = 4
+        private const val MODE_CALL_REDIRECT = 5
+        private const val MODE_COMMUNICATION_REDIRECT = 6
         /** After Android Auto comes back, a pause this soon is it settling, not a real pause. */
         private const val SETTLE_MS = 15_000L
         /** A stop this soon after the app started the music is a start bounce, not a real pause (tests set 0). */
@@ -1481,7 +1485,9 @@ class DriveMonitorService : NotificationListenerService() {
     /** Returns a reason we shouldn't resume right now, or null if it's fine. */
     private fun resumeBlocker(): String? {
         when (audio.mode) {
-            AudioManager.MODE_IN_CALL, AudioManager.MODE_IN_COMMUNICATION -> return "phone/VoIP call in progress"
+            // + call screening (4, Android 11+: the assistant answers for you) and redirected calls (5/6, 13+).
+            AudioManager.MODE_IN_CALL, AudioManager.MODE_IN_COMMUNICATION, MODE_CALL_SCREENING, MODE_CALL_REDIRECT,
+            MODE_COMMUNICATION_REDIRECT -> return "phone/VoIP call in progress"
             AudioManager.MODE_RINGTONE -> return "phone is ringing"
         }
         val usages = activeUsages()
@@ -1519,7 +1525,8 @@ class DriveMonitorService : NotificationListenerService() {
         val clues = mutableListOf<String>()
         if (now < suppressPauseUntil) clues += "Drive Music's own song announcement"
         when (audio.mode) {
-            AudioManager.MODE_IN_CALL, AudioManager.MODE_IN_COMMUNICATION -> clues += "CALL in progress"
+            AudioManager.MODE_IN_CALL, AudioManager.MODE_IN_COMMUNICATION, MODE_CALL_SCREENING, MODE_CALL_REDIRECT,
+            MODE_COMMUNICATION_REDIRECT -> clues += "CALL in progress"
             AudioManager.MODE_RINGTONE -> clues += "PHONE RINGING"
         }
         val usages = activeUsages()

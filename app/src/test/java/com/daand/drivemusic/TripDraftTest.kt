@@ -73,4 +73,18 @@ class TripDraftTest {
         assertNull(TripHistory.recoverDraft(ctx, now = t0 + 24 * 3_600_000))
         assertEquals(1, TripHistory.load(ctx).size)
     }
+
+    /** Optimisation: the history is kept in memory while the file is unchanged - but a new drive shows at once. */
+    @Test fun theCachedHistorySeesANewDriveRightAway() {
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        com.daand.drivemusic.obd.TripHistory.clear(ctx)
+        val a = com.daand.drivemusic.obd.TripRecord(1_000L, 10, 5.0, 0.4, 90, 85)
+        com.daand.drivemusic.obd.TripHistory.add(ctx, a)
+        val first = com.daand.drivemusic.obd.TripHistory.load(ctx)
+        org.junit.Assert.assertSame("unchanged file: the same list, not parsed again", first, com.daand.drivemusic.obd.TripHistory.load(ctx))
+        com.daand.drivemusic.obd.TripHistory.add(ctx, a.copy(at = 2_000L))
+        org.junit.Assert.assertEquals(2, com.daand.drivemusic.obd.TripHistory.load(ctx).size)
+        com.daand.drivemusic.obd.TripHistory.clear(ctx)
+        org.junit.Assert.assertEquals(0, com.daand.drivemusic.obd.TripHistory.load(ctx).size)
+    }
 }

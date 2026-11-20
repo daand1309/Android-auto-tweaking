@@ -61,16 +61,26 @@ object TripHistory {
 
     private fun file(ctx: Context) = File(ctx.filesDir, FILE)
 
-    @Synchronized fun load(ctx: Context): List<TripRecord> = file(ctx).takeIf { it.exists() }?.let { fromJson(it.readText()) } ?: emptyList()
+    /** The last load, kept while the file is unchanged: pages read it on every redraw (500 drives of JSON). */
+    private var cached: Triple<Long, Long, List<TripRecord>>? = null
+
+    @Synchronized fun load(ctx: Context): List<TripRecord> {
+        val f = file(ctx)
+        if (!f.exists()) return emptyList()
+        val (mod, len) = f.lastModified() to f.length()
+        cached?.let { (m, l, list) -> if (m == mod && l == len) return list }
+        return fromJson(f.readText()).also { cached = Triple(mod, len, it) }
+    }
 
     @Synchronized fun add(ctx: Context, t: TripRecord) {
         val all = load(ctx) + t
         val tmp = File(ctx.filesDir, "$FILE.tmp")
         tmp.writeText(toJson(all))
         tmp.renameTo(file(ctx))
+        cached = null   // written by us: never trust the file's timestamp alone
     }
 
-    @Synchronized fun clear(ctx: Context) { file(ctx).delete(); clearDraft(ctx) }
+    @Synchronized fun clear(ctx: Context) { file(ctx).delete(); cached = null; clearDraft(ctx) }
 
     // ---------------------------------------------------------------- the drive being driven
 
