@@ -1,0 +1,65 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Drive Mode - easier</title>
+<style>
+:root{--bg:#0e0f12;--s:#1a1c21;--s2:#262930;--p:#e53935;--t:#f2f3f5;--t2:#9aa0aa;--g:#32d74b}
+body{margin:0;background:#050506;color:var(--t);font-family:system-ui,Roboto,sans-serif;padding:24px}
+h1{font-size:22px;margin:0 0 4px}.sub{color:var(--t2);margin:0 0 20px;font-size:14px;max-width:1100px}
+.row{display:flex;gap:30px;flex-wrap:wrap}.col h2{font-size:16px;margin:0 0 6px}.col p{color:var(--t2);font-size:13px;max-width:320px;margin:0 0 10px}
+.phone{width:320px;height:680px;background:var(--bg);border-radius:32px;border:6px solid #2b2d33;padding:12px;box-sizing:border-box;display:flex;flex-direction:column;gap:9px}
+.strip{display:flex;gap:6px}.strip div{flex:1;background:var(--s);border-radius:12px;padding:6px 4px;text-align:center}.strip b{display:block;font-size:20px}.strip span{font-size:10px;color:var(--t2)}
+.song{flex:1.25;background:var(--s);border-radius:22px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:10px}
+.cover{width:118px;height:118px;border-radius:16px;background:linear-gradient(135deg,#7b2ff7,#f107a3)}
+.ti{font-weight:800;font-size:22px;text-align:center}.ar{color:var(--t2);font-size:16px}
+.tx{flex:1;display:flex;gap:9px}.tx div{flex:1;background:var(--s2);border-radius:22px;display:flex;align-items:center;justify-content:center;font-size:38px}.tx .play{flex:1.4;background:var(--p)}
+.chips{display:flex;gap:8px}.chips div{flex:1;background:var(--s2);border-radius:14px;padding:12px 0;text-align:center;font-size:15px;font-weight:600}
+.tabs{display:flex;gap:6px;margin-top:2px}.tabs div{flex:1;background:var(--s);border-radius:14px;padding:9px 0 7px;text-align:center;font-size:13px;color:var(--t2)}
+.tabs div b{display:block;font-size:20px}.tabs .on{background:var(--s2);color:var(--t);box-shadow:inset 0 -4px 0 var(--p);font-weight:700}
+.grid{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.tile{background:var(--s);border-radius:20px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px;text-align:center;padding:6px}
+.tile .i{font-size:36px}.tile .l{font-weight:800;font-size:18px}.tile .d{color:var(--t2);font-size:12px}
+.tile.on{outline:3px solid var(--g)}
+.now{background:var(--s);border-radius:18px;padding:10px 14px;display:flex;align-items:center;gap:12px}.now .l{font-weight:800;font-size:18px}.now .d{color:var(--g);font-size:13px}
+.stop{margin-left:auto;background:var(--p);border-radius:14px;padding:12px 16px;font-weight:800}
+.more{background:var(--s2);border-radius:14px;padding:12px;text-align:center;font-weight:600}
+.note{color:var(--t2);font-size:12px;text-align:center}
+</style></head><body>
+<h1>Drive Mode, easier to use</h1>
+<p class="sub">Same four tabs and all features. What changes: tabs at the bottom where your thumb is, big tiles instead of lists to scroll, fewer small extras. Nothing important more than one tap away.</p>
+<div class="row">
+<div class="col"><h2>🎵 Music</h2><p>The song in the middle, three huge buttons under it. One row of three: 👍, 📻 radio switch, 👎. Welcome / Resume / Close move into a tidy ⋯ button.</p>
+<div class="phone">
+ <div class="strip"><div><b>87</b><span>km/h</span></div><div><b>412</b><span>range</span></div><div><b>91°</b><span>engine</span></div><div><b>12.6</b><span>volt</span></div></div>
+ <div class="song"><div class="cover"></div><div class="ti">Waiting Room</div><div class="ar">Overgrown</div></div>
+ <div class="tx"><div>⏮</div><div class="play">⏸</div><div>⏭</div></div>
+ <div class="chips"><div>👍</div><div>📻 Radio 2</div><div>👎</div><div>⋯</div></div>
+ <div class="tabs"><div class="on"><b>🎵</b>Music</div><div><b>🧭</b>Go</div><div><b>📻</b>Radio</div><div><b>📟</b>Car</div></div>
+</div></div>
+
+<div class="col"><h2>🧭 Go</h2><p>Four big tiles, no scrolling. Fuel shows the best price right on the tile; tap = Waze on the car screen. Call opens your 3 favourites as big buttons.</p>
+<div class="phone">
+ <div class="strip"><div><b>87</b><span>km/h</span></div><div><b>412</b><span>range</span></div><div><b>91°</b><span>engine</span></div><div><b>12.6</b><span>volt</span></div></div>
+ <div class="grid">
+  <div class="tile"><div class="i">⛽</div><div class="l">Fuel</div><div class="d">Tango €2.039<br>4.0 km</div></div>
+  <div class="tile"><div class="i">🏠</div><div class="l">Home</div><div class="d">Waze, car screen</div></div>
+  <div class="tile"><div class="i">💼</div><div class="l">Work</div><div class="d">Waze, car screen</div></div>
+  <div class="tile"><div class="i">📞</div><div class="l">Call</div><div class="d">Mum · Anna · Tom</div></div>
+ </div>
+ <div class="tabs"><div><b>🎵</b>Music</div><div class="on"><b>🧭</b>Go</div><div><b>📻</b>Radio</div><div><b>📟</b>Car</div></div>
+</div></div>
+
+<div class="col"><h2>📻 Radio</h2><p>What's on with a big Stop, then your first 6 stations as tiles. "Near you" and the rest are one tap away instead of a long list.</p>
+<div class="phone">
+ <div class="now"><div><div class="l">NPO Radio 2</div><div class="d">♪ Ozzy Osbourne - Dreamer</div></div><div class="stop">⏹</div></div>
+ <div class="grid" style="grid-template-rows:repeat(3,1fr)">
+  <div class="tile on"><div class="l">Radio 2</div><div class="d">on now</div></div>
+  <div class="tile"><div class="l">3FM</div></div>
+  <div class="tile"><div class="l">Qmusic</div></div>
+  <div class="tile"><div class="l">538</div></div>
+  <div class="tile"><div class="l">Sky Radio</div></div>
+  <div class="tile"><div class="l">Radio 10</div></div>
+ </div>
+ <div class="chips"><div>📍 Near you (15)</div><div>All stations</div></div>
+ <div class="tabs"><div><b>🎵</b>Music</div><div><b>🧭</b>Go</div><div class="on"><b>📻</b>Radio</div><div><b>📟</b>Car</div></div>
+</div></div>
+</div>
+<p class="note" style="text-align:left;margin-top:16px">Car tab: unchanged (the 8 live tiles), just with the tabs at the bottom. Landscape: the same, side by side.</p>
+</body></html>
