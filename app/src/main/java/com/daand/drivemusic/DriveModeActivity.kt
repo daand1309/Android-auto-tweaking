@@ -373,7 +373,7 @@ class DriveModeActivity : Activity() {
     }
 
     /** One big row: icon, title, a smaller line under it. No [onClick] = just information. */
-    private fun goRow(icon: String, title: String, sub: String, accent: Int? = null, onClick: (() -> Unit)?) = LinearLayout(this).apply {
+    private fun goRow(icon: String, title: String, sub: String, accent: Int? = null, titleLines: Int = 1, onClick: (() -> Unit)?) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(18), dp(10), dp(18), dp(10))
         background = if (onClick != null) Style.button(Style.SURFACE, dp(Style.R_BIG).toFloat()) else Style.rounded(Style.SURFACE, dp(Style.R_BIG).toFloat())
@@ -383,7 +383,7 @@ class DriveModeActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             addView(TextView(this@DriveModeActivity).apply {
                 text = title; setTextColor(accent ?: Style.TEXT); setTypeface(typeface, Typeface.BOLD)
-                textSize = if (wide) 18f else 21f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                textSize = if (wide) 18f else if (titleLines > 1) 19f else 21f; maxLines = titleLines; ellipsize = android.text.TextUtils.TruncateAt.END
             })
             if (sub.isNotBlank()) addView(TextView(this@DriveModeActivity).apply {
                 text = sub; setTextColor(Style.TEXT2); textSize = if (wide) 13f else 15f; maxLines = 2
@@ -485,8 +485,9 @@ class DriveModeActivity : Activity() {
         }
         box.addView(TextView(this).apply { text = title; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD); textSize = 24f; setPadding(dp(6), 0, dp(6), dp(12)) })
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        for (it in items) list.addView(goRow(it.icon, it.title, it.sub, onClick = it.onClick?.let { act -> { closeSheet(); act() } }),
-            LinearLayout.LayoutParams(-1, dp(if (wide) 68 else 84)).apply { bottomMargin = dp(10) })
+        for (it in items) list.addView(goRow(it.icon, it.title, it.sub, titleLines = 2, onClick = it.onClick?.let { act -> { closeSheet(); act() } }).apply {
+                minimumHeight = dp(if (wide) 64 else 80) },
+            LinearLayout.LayoutParams(-1, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(10) })
         box.addView(android.widget.ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-1, 0, 1f))
         box.addView(Button(this).apply {
             text = if (dutch) "✕   Sluiten" else "✕   Close"; isAllCaps = false; textSize = 20f; setTextColor(Style.TEXT); setTypeface(typeface, Typeface.BOLD)
