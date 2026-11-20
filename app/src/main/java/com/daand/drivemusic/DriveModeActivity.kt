@@ -987,7 +987,7 @@ class DriveModeActivity : Activity() {
         lastShown = key
         Motion.swapText(nowPlaying, songText2)
         if (::sourceBtn.isInitialized) {
-            sourceBtn.text = if (radio != null) "🎵  Music" else "📻  ${RadioPlayer.lastStation(this).name.removePrefix("NPO ")}"
+            sourceBtn.text = if (RadioPlayer.switchingToMusic()) "⏳  Music…" else if (radio != null) "🎵  Music" else "📻  ${RadioPlayer.lastStation(this).name.removePrefix("NPO ")}"
             sourceBtn.contentDescription = if (radio != null) "Switch back to YouTube Music" else "Switch to the radio"
             // Like / dislike are for YouTube Music's songs: not while the radio plays.
             thumbButtons.forEach { it.visibility = if (radio != null) View.GONE else View.VISIBLE }

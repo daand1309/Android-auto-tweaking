@@ -180,4 +180,15 @@ class RadioTest {
         check("https://cache.test/dead", t0, Radio.Probe.NO)
         assertEquals("a dead one gets another chance after 10 minutes", Radio.Probe.PLAYS, check("https://cache.test/dead", t0 + 11 * 60_000L, Radio.Probe.PLAYS))
     }
+
+    @Test fun switchToMusicBlocksASecondTapUntilYouTubeMusicTakesOver() {
+        val t0 = 1_000_000L
+        // 20 Nov 18:20: YouTube Music took ~11 s from cold; the second tap must not flip back to the radio.
+        assertTrue("2.5 s after the tap: still switching", RadioPlayer.switchPending(t0, t0 + 2_500, radioOn = true))
+        assertTrue("11 s after: still switching", RadioPlayer.switchPending(t0, t0 + 11_000, radioOn = true))
+        assertFalse("YouTube Music took the sound (radio off): done", RadioPlayer.switchPending(t0, t0 + 3_000, radioOn = false))
+        assertFalse("given up after ${RadioPlayer.SWITCH_MS} ms", RadioPlayer.switchPending(t0, t0 + RadioPlayer.SWITCH_MS, radioOn = true))
+        assertFalse("no switch started", RadioPlayer.switchPending(0, t0, radioOn = true))
+        assertFalse("radio idle: not switching", RadioPlayer.switchingToMusic())
+    }
 }

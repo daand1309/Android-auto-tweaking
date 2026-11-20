@@ -324,7 +324,7 @@ object RadioPlayer {
         main.post {
             when (change) {
                 // Another music app (you pressed play on YouTube Music): it has the sound now.
-                AudioManager.AUDIOFOCUS_LOSS -> stop("another app started playing")
+                AudioManager.AUDIOFOCUS_LOSS -> stop(if (switchingToMusic()) "you switched back to music" else "another app started playing")
                 // Our own voice, a navigation prompt or a call: quieter, or silent until it's over.
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> player?.setVolume(0.25f, 0.25f)
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> player?.setVolume(0f, 0f)
@@ -343,7 +343,7 @@ object RadioPlayer {
         val app = ctx.applicationContext
         appCtx = app
         releasePlayer(); abandonFocus()
-        everPlayed = false; retries = 0; triedAlternativeFor = null
+        everPlayed = false; retries = 0; triedAlternativeFor = null; switchStartedAt = 0L
         // A stream that didn't play earlier but whose MP3 stream did: straight to that one.
         val use = Radio.substitutes[st.url]?.copy(name = st.name) ?: st
         station = use; state = State.CONNECTING; problem = ""; nowPlaying = null
@@ -486,15 +486,37 @@ object RadioPlayer {
         play(ctx, list[Math.floorMod(if (i < 0) (if (by > 0) -1 else 0) + by else i + by, list.size)])
     }
 
-    /** Radio off and YouTube Music back where it was - one tap, no gap (it takes the sound and the radio stops). */
+    /**
+     * Radio off and YouTube Music back where it was - one tap, no gap: the radio keeps playing until YouTube
+     * Music takes the sound (that ends it). From cold YouTube Music can take ~10 s to start, so the radio is
+     * only ended without it after [SWITCH_MS]. Meanwhile further taps are ignored: a second tap used to flip
+     * straight back to the radio (log 20 Nov 18:20).
+     */
     fun backToMusic(ctx: Context) {
+        if (switchingToMusic()) { DriveLog.log("RADIO: already switching to YouTube Music - tap ignored"); return }
         DriveLog.log("RADIO: switching back to YouTube Music")
         val svc = DriveMonitorService.instance
         if (svc == null) { stop("you switched back to music"); return }
+        val started = android.os.SystemClock.elapsedRealtime()
+        switchStartedAt = started
+        changed()
         svc.playByUser("Radio tab")
-        // YouTube Music's own focus request ends the radio; if it never takes it, end it anyway.
-        main.postDelayed({ if (on) stop("you switched back to music") }, 2_500)
+        main.postDelayed({
+            if (switchStartedAt != started) return@postDelayed
+            switchStartedAt = 0L
+            if (on) stop("YouTube Music didn't start - you switched back to music") else changed()
+        }, SWITCH_MS)
     }
+
+    /** How long the radio waits for YouTube Music to take over after you tap Music. */
+    const val SWITCH_MS = 12_000L
+    @Volatile private var switchStartedAt = 0L
+    /** You tapped Music and YouTube Music hasn't taken over yet (the button shows it's busy). */
+    fun switchingToMusic(now: Long = android.os.SystemClock.elapsedRealtime()) =
+        switchPending(switchStartedAt, now, on)
+    /** Pure check, for tests: a switch started at [startedAt] is still under way at [now] while the radio is on. */
+    fun switchPending(startedAt: Long, now: Long, radioOn: Boolean) =
+        radioOn && startedAt > 0 && now - startedAt in 0 until SWITCH_MS
 
     /** When it last went off, and whether something else took the sound (not you) - for "was it on?". */
     @Volatile var stoppedAt = 0L; private set
@@ -503,6 +525,7 @@ object RadioPlayer {
     fun onOrJustLost(ms: Long = 5_000) = on || (stoppedByOthers && android.os.SystemClock.elapsedRealtime() - stoppedAt < ms)
 
     fun stop(why: String) {
+        switchStartedAt = 0L
         if (state == State.OFF) return
         stoppedAt = android.os.SystemClock.elapsedRealtime()
         stoppedByOthers = why.startsWith("another app")

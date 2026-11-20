@@ -132,6 +132,9 @@ Go - tap them for the Car tab.
   paused in the background (same song and spot; auto-resume leaves it alone). The Music tab has a
   one-tap switch ("📻 Radio 2" / "🎵 Back to YouTube Music"), and while the radio is on its big buttons
   work for the radio: ⏮ ⏭ change station, ⏸ stops it.
+  Back to music works the same way round: the radio keeps playing until YouTube Music takes the sound (from
+  cold that can take ~10 s; the button shows "⏳ Music…" and further taps are ignored), and only after 12 s
+  without YouTube Music is the radio ended anyway.
   The song title costs a second connection (NPO Radio 2: ~62 KB a check), so it's fetched once a minute
   and only while a screen shows it (Drive Mode in front or the car's media screen).
   It shows the song the station is playing (when the station sends it, as NPO and Talpa do), keeps
