@@ -616,7 +616,7 @@ class DriveModeActivity : Activity() {
                     setOnClickListener { Prefs(this@DriveModeActivity).radioStations = Radio.encode(Radio.add(mine, st)); DriveLog.log("RADIO: '${st.name}' added to your stations"); refreshRadio() }
                 }, LinearLayout.LayoutParams(dp(84), dp(56)).apply { marginEnd = dp(8) })
             now.addView(Button(this).apply {
-                text = if (state == RadioPlayer.State.ERROR) "↻" else "⏹"; textSize = 22f; setTextColor(Color.WHITE)
+                text = if (state == RadioPlayer.State.ERROR) "↻" else "⏹"; textSize = 22f; setTextColor(Style.ON_PRIMARY)
                 contentDescription = if (state == RadioPlayer.State.ERROR) "Try again" else "Stop the radio"
                 background = Style.button(Style.PRIMARY, dp(Style.R_CARD).toFloat()); stateListAnimator = null
                 setOnClickListener { if (state == RadioPlayer.State.ERROR) RadioPlayer.play(this@DriveModeActivity, st) else RadioPlayer.stop("you pressed stop") }
@@ -1012,7 +1012,7 @@ class DriveModeActivity : Activity() {
     private fun bigButton(icon: Int, desc: String, accent: Boolean, onClick: () -> Unit) = android.widget.ImageButton(this).apply {
         setImageResource(icon); contentDescription = desc
         scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-        imageTintList = Style.tint(Color.WHITE)
+        imageTintList = Style.tint(if (accent) Style.ON_PRIMARY else Color.WHITE)
         background = Style.button(if (accent) Style.PRIMARY else Style.SURFACE2, dp(Style.R_BIG).toFloat())
         // Icon about half the button, whatever its size (portrait, landscape, small phones).
         addOnLayoutChangeListener { v, l, t, r, btm, _, _, _, _ ->

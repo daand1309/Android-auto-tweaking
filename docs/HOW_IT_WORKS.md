@@ -103,6 +103,13 @@ per section, and long explanations folded to their first sentence ("More ›" op
 warnings, the setup checklist or the Help page). Back on any page returns to Home. New features and themes are one entry each (`HomeFeatures`,
 `Style.ALL_THEMES`).
 
+**Themes:** nine colour sets, most built around a grey ASX with a grey/black interior: Red & silver (default),
+Titanium, Titanium red, Night drive (darkest, dimmed text), Steel blue, Copper, Dial green, Midnight black (true
+black, saves battery on an OLED screen) and Classic blue. Each theme also says which text colour goes on its accent
+(dark on the silver, white, copper and green ones). The phone app, Drive Mode and the launch animation follow it;
+the car screen always uses Google's own colours. Warning colours (red, amber, green) are the same in every theme.
+Tests check the contrast of every theme.
+
 **Drive Mode opening by itself:** Android doesn't let an app in the background put a screen in front of
 you while you're using the phone - then Drive Mode only gets a banner to tap (locked phone: it opens).
 Android's own exception: an app linked to a *companion device*. *Drive Mode* page → **Link**: a one-time

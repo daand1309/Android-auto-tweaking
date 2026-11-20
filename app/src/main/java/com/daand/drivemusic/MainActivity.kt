@@ -1218,7 +1218,7 @@ class MainActivity : Activity() {
             val selected = accentFilter == acc
             bar.addView(TextView(this).apply {
                 text = if (acc.isEmpty()) "All" else VoicePicker.accentName(acc)
-                textSize = 14f; setTextColor(if (selected) Color.WHITE else Style.TEXT)
+                textSize = 14f; setTextColor(if (selected) Style.ON_PRIMARY else Style.TEXT)
                 background = Style.button(if (selected) Style.PRIMARY else Style.SURFACE2, dp(18).toFloat())
                 setPadding(dp(14), dp(8), dp(14), dp(8))
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -1326,7 +1326,7 @@ class MainActivity : Activity() {
         header("Theme")
         Style.ALL_THEMES.forEach { t ->
             val current = Style.theme(prefs.theme).id == t.id
-            stepperLike(t.name + if (current) "  ✓" else "", if (current) "In use" else "Use") {
+            stepperLike(t.name + if (current) "  ✓" else "", if (current) "In use" else "Use", swatch = t) {
                 if (!current) { prefs.theme = t.id; Style.apply(t.id); recreate() }
             }
         }
@@ -2196,7 +2196,7 @@ class MainActivity : Activity() {
      * A setting as a card: "Name: value" shows the name small on top and the value big underneath,
      * with the action as an accent word on the right. The whole card is the tap target.
      */
-    private fun stepperLike(label: String, action: String, onClick: () -> Unit) {
+    private fun stepperLike(label: String, action: String, swatch: Style.Theme? = null, onClick: () -> Unit) {
         val cut = label.indexOf(": ")
         val title = if (cut > 0) label.substring(0, cut) else label
         val value = if (cut > 0) label.substring(cut + 2) else ""
@@ -2213,6 +2213,7 @@ class MainActivity : Activity() {
             contentDescription = "$label. $action"
             setOnClickListener { onClick() }
             Feel.press(this, 0.98f)
+            if (swatch != null) addView(themeSwatch(swatch))
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -2230,6 +2231,22 @@ class MainActivity : Activity() {
                 setPadding(dp(12), dp(8), dp(4), dp(8))
             })
         })
+    }
+
+    /** A small preview of a theme: its background with a button colour and the accent on it. */
+    private fun themeSwatch(t: Style.Theme) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER
+        background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(t.bg); cornerRadius = dp(10).toFloat(); setStroke(dp(1), t.surface2)
+        }
+        setPadding(dp(6), dp(6), dp(6), dp(6))
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        addView(View(this@MainActivity).apply { background = Style.rounded(t.surface2, dp(5).toFloat()) },
+            LinearLayout.LayoutParams(dp(18), dp(28)).apply { marginEnd = dp(4) })
+        addView(View(this@MainActivity).apply { background = Style.rounded(t.primary, dp(5).toFloat()) },
+            LinearLayout.LayoutParams(dp(18), dp(28)))
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            .apply { marginEnd = dp(14) }
     }
 
     /** Battery before each start: how long the car stood, adapter in or out, and the drain check. */
@@ -3011,7 +3028,7 @@ class MainActivity : Activity() {
         addCard(Button(this).apply {
             text = label; isAllCaps = false; textSize = 15f
             isEnabled = enabled; if (!enabled) alpha = 0.55f
-            setTextColor(Color.WHITE)
+            setTextColor(if (danger) Color.WHITE else Style.ON_PRIMARY)
             background = Style.button(if (danger) Style.DANGER else Style.PRIMARY, dp(Style.R_CARD).toFloat())
             stateListAnimator = null
             setPadding(dp(18), dp(14), dp(18), dp(14))
@@ -3091,7 +3108,7 @@ class MainActivity : Activity() {
                 })
                 // The fix button sits under the text, so the title gets the full width.
                 if (!ok) addView(Button(this@MainActivity).apply {
-                    text = action; isAllCaps = false; textSize = 14f; setTextColor(Color.WHITE)
+                    text = action; isAllCaps = false; textSize = 14f; setTextColor(Style.ON_PRIMARY)
                     background = Style.button(Style.PRIMARY, dp(12).toFloat()); stateListAnimator = null
                     setPadding(dp(18), dp(10), dp(18), dp(10)); minHeight = dp(44)
                     Feel.press(this)

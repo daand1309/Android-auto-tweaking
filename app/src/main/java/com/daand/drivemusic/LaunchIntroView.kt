@@ -12,7 +12,7 @@ import androidx.core.graphics.PathParser
 
 /**
  * The launch ("boot") animation, drawn by the app itself: the same as res/drawable/splash_icon.xml
- * (note pops in with a swing, two sound waves roll out, on the red circle). Android plays that one
+ * (note pops in with a swing, two sound waves roll out, on the accent-coloured circle). Android plays that one
  * at a cold start - but not when the phone's animations are off, so then the app plays this instead.
  */
 class LaunchIntroView(context: Context) : View(context) {
@@ -21,10 +21,10 @@ class LaunchIntroView(context: Context) : View(context) {
     private var wave2 = 0f
     private val notePath = PathParser.createPathFromPathData(
         "M12,3v10.55c-0.59,-0.34 -1.27,-0.55 -2,-0.55 -2.21,0 -4,1.79 -4,4s1.79,4 4,4 4,-1.79 4,-4V7h4V3h-6z")
-    private val circle = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFE60012.toInt() }
-    private val white = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt() }
+    private val circle = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Style.PRIMARY }
+    private val white = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Style.ON_PRIMARY }
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFFFFFFF.toInt(); style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND
+        color = Style.ON_PRIMARY; style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND
     }
     private val m = Matrix()
     private val p = Path()
