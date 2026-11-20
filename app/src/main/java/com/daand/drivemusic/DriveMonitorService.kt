@@ -1149,7 +1149,8 @@ class DriveMonitorService : NotificationListenerService() {
         lastDriveModePostAt = SystemClock.elapsedRealtime()
         // One line per attempt, and it says which attempt it is. The connect line used to be written by
         // the notification path only, so going straight to the screen first left the log without it.
-        DriveLog.log(if (afterScreenOff) "Drive Mode: opening after the screen went off" else "Drive Mode: opening on connect")
+        DriveLog.log((if (afterScreenOff) "Drive Mode: opening after the screen went off" else "Drive Mode: opening on connect") +
+            if (CompanionLink.supported(this)) (if (CompanionLink.linked(this)) " (linked device: may open by itself)" else " (not linked: a banner if the phone is in use)") else "")
         // Straight onto the screen where Android allows it; Android doesn't say when it refuses, so look
         // a moment later and fall back to the full-screen notification (which it always allows to try).
         val opened = runCatching {

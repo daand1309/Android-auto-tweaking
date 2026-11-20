@@ -103,6 +103,12 @@ per section, and long explanations folded to their first sentence ("More ›" op
 warnings, the setup checklist or the Help page). Back on any page returns to Home. New features and themes are one entry each (`HomeFeatures`,
 `Style.ALL_THEMES`).
 
+**Drive Mode opening by itself:** Android doesn't let an app in the background put a screen in front of
+you while you're using the phone - then Drive Mode only gets a banner to tap (locked phone: it opens).
+Android's own exception: an app linked to a *companion device*. *Drive Mode* page → **Link**: a one-time
+Android confirmation that links the OBD adapter (or, without one, a Bluetooth device in the car such as
+the screen); after that Drive Mode opens by itself every time. The log says at each start whether it's linked.
+
 **Drive Mode** (full-screen, keeps the screen on, four tabs you can swipe between: Music · Go · Radio · Car).
 With the OBD adapter, **live numbers** (speed, range, engine, battery) sit above the tabs on Music and
 Go - tap them for the Car tab.

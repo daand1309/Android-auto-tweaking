@@ -1273,6 +1273,14 @@ class MainActivity : Activity() {
 
         header("When it opens")
         switch("Open automatically when the car connects", prefs.autoOpenDriveMode) { prefs.autoOpenDriveMode = it; render() }
+        if (prefs.autoOpenDriveMode && CompanionLink.supported(this)) {
+            // The key to opening while the phone is in use (Android's companion-device exception).
+            val names = CompanionLink.linkedNames(this)
+            if (names.isEmpty()) {
+                warnCard("While you're using the phone, Android only shows a banner to tap. Link your OBD adapter (or the " +
+                    "screen in the car) once and Drive Mode opens by itself every time.", action = "Link") { linkCompanion() }
+            } else statRow("Opens by itself", "yes - linked to " + names.joinToString())
+        }
         if (prefs.autoOpenDriveMode) {
             text("The adapter or Android Auto connecting is enough - whichever comes first opens it once. " +
                 "It takes the whole screen when the phone is locked or the screen is off; if you're using the " +
@@ -1669,6 +1677,18 @@ class MainActivity : Activity() {
                     .setNegativeButton("Close", null).show()
             }
         }.start()
+    }
+
+    /** Android's own "link this device" dialog; afterwards Drive Mode may open by itself. */
+    private fun linkCompanion() {
+        val obd = prefs.obdDevice.takeIf { it.isNotBlank() }
+        if (obd == null) toast("Pick the screen in the car (or another Bluetooth device that's always in the car)")
+        CompanionLink.link(this, obd, show = { sender ->
+            try {
+                @Suppress("DEPRECATION")
+                startIntentSenderForResult(sender, REQ_COMPANION, null, 0, 0, 0)
+            } catch (e: Exception) { toast("Couldn't open Android's link dialog") }
+        }) { ok, what -> runOnUiThread { toast(if (ok) "Linked to $what - Drive Mode will open by itself" else "Not linked: $what"); render() } }
     }
 
     /** Home / Work: where you are now, or an address (looked up by Android's own geocoder). */
@@ -3111,6 +3131,7 @@ class MainActivity : Activity() {
         private const val REQ_CAR_PHOTO = 13
         private const val REQ_CONTACT = 31
         private const val REQ_CALL = 32
+        private const val REQ_COMPANION = 33
         /** Utterance id for a voice sample on the Voice page. */
         private const val SAMPLE_ID = "sample"
         /** Key for the "Automatic" row (it has no voice name of its own). */
