@@ -316,6 +316,7 @@ class DriveMonitorService : NotificationListenerService() {
         val startedMidDrive = wasFirstEvent && nowConnected
         if (nowConnected == carConnected) return
         carConnected = nowConnected
+        com.daand.drivemusic.obd.ObdManager.carScreenLostAt = if (nowConnected) 0L else System.currentTimeMillis()
         val gen = ++connectGen
 
         if (nowConnected && holdingSince > 0) {
@@ -1373,6 +1374,26 @@ class DriveMonitorService : NotificationListenerService() {
     }
 
     /** Waits out the grace for a stop before calling it a real pause (ERROR stops get longer). */
+    /**
+     * What else is making sound right now (its kind, not the app - Android doesn't say which): to learn what
+     * pauses YouTube Music ~1 s after it starts (21 Nov 12:02: twice in a row).
+     */
+    private fun logOtherSound() = runCatching {
+        val playing = getSystemService(android.media.AudioManager::class.java).activePlaybackConfigurations
+            .map { c ->
+                when (c.audioAttributes.usage) {
+                    android.media.AudioAttributes.USAGE_MEDIA -> "music"
+                    android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE -> "navigation voice"
+                    android.media.AudioAttributes.USAGE_ASSISTANT -> "assistant"
+                    android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION -> "call"
+                    android.media.AudioAttributes.USAGE_NOTIFICATION, android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE -> "notification"
+                    android.media.AudioAttributes.USAGE_ASSISTANCE_SONIFICATION -> "system sound"
+                    else -> "other (${c.audioAttributes.usage})"
+                }
+            }
+        DriveLog.log("SOUND: also playing now: " + (playing.takeIf { it.isNotEmpty() }?.joinToString() ?: "nothing"))
+    }
+
     private fun schedulePendingPause(stopState: Int) {
         cancelPendingPause()
         val r = Runnable {
@@ -1397,6 +1418,7 @@ class DriveMonitorService : NotificationListenerService() {
         if (lastStartedAt > 0 && StartRules.quickRestart(nowMs - firstStartAt, nowMs - lastStartedAt, quickRestarts, startBounceMs)) {
             quickRestarts++; bounceRetried = true; bounceRetryPending = true
             DriveLog.log("Music stopped right after starting - pressing play again in 1.5s (not counted, $quickRestarts of ${StartRules.MAX_QUICK_RESTARTS})")
+            logOtherSound()
             scheduleResume(1_500L)
             return
         }

@@ -38,6 +38,11 @@ object ObdManager {
     @Volatile private var alerts: CarAlerts? = null
     /** The adapter worked at some point this drive (so a missing adapter during a stall is temporary). */
     @Volatile var connectedThisDrive = false; private set
+    /**
+     * When the car screen (Android Auto) last went away, 0 while it's connected. The Senzo screen loses power
+     * with the ignition, so a quiet ECU right after that is the car switching off - not a stuck adapter.
+     */
+    @Volatile var carScreenLostAt = 0L
     /** [onLinked] has fired for this drive (so a reconnect after a stall doesn't repeat it). */
     @Volatile private var linkedTold = false
     @Volatile private var socket: BluetoothSocket? = null
@@ -385,7 +390,10 @@ object ObdManager {
                 // Silent right after driving or a running engine: the ignition isn't off that fast - the
                 // adapter is stuck (18 Nov 18:17: silent for a minute mid-drive). Reset it, at most every 2 min.
                 val now = System.currentTimeMillis()
-                if (silent == 2 && now - movingAt < 30_000 && now - lastReset > 120_000) {
+                // Not when the car screen has just gone: then the ignition went off (21 Nov 11:45 - parked
+                // within 30 s of driving, which still looked like "silent while driving").
+                val switchedOff = carScreenLostAt > 0 && now - carScreenLostAt < 60_000
+                if (silent == 2 && !switchedOff && now - movingAt < 30_000 && now - lastReset > 120_000) {
                     lastReset = now
                     val back = session.resetAdapter()
                     DriveLog.log("OBD: the adapter stopped answering while driving - reset it: " + if (back) "answering again" else "still quiet")
