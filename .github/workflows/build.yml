@@ -183,5 +183,12 @@ jobs:
             git log --no-merges --pretty=format:'- %s' ${PREV:+"$PREV..HEAD"} | head -60
             printf '\n'
           } > "$RUNNER_TEMP/notes.md"
+          if [ -n "$PREV" ] && [ -z "$(git log --no-merges --pretty=%s ${PREV}..HEAD)" ]; then
+            printf -- '- This release is the same code as %s.\n' "$PREV" >> "$RUNNER_TEMP/notes.md"
+          fi
+          # --target is not optional: without it gh tags the *default branch tip* at the moment the
+          # release is published, which can be a commit that was pushed after this APK was built. Two
+          # overlapping pushes then produce two tags on the same commit and an empty changelog.
           gh release create "$TAG" dist/DriveMusic.apk dist/DriveMusic.apk.sha256 \
-            --repo "$GITHUB_REPOSITORY" --title "Drive Music ${TAG#v}" --notes-file "$RUNNER_TEMP/notes.md"
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Drive Music ${TAG#v}" --notes-file "$RUNNER_TEMP/notes.md"
