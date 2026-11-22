@@ -223,7 +223,20 @@ object Radio {
                     }
                 }
             }
-            val kept = jobs.mapNotNull { runCatching { it.get(15, java.util.concurrent.TimeUnit.SECONDS) }.getOrNull() }
+            // A stop is not "the station did not answer": runCatching would swallow the interrupt (and
+            // clear the flag) and the caller would keep waiting for every remaining job.
+            val kept = mutableListOf<Nearby>()
+            for (job in jobs) {
+                val n = try {
+                    job.get(15, java.util.concurrent.TimeUnit.SECONDS)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                } catch (e: Exception) {
+                    null
+                }
+                if (n != null) kept += n
+            }
             val dropped = list.size - kept.size
             if (dropped > 0) DriveLog.log("RADIO: near you - $dropped of ${list.size} left out (no answer, or a format Android can't play)")
             return kept.distinctBy { it.station.url }

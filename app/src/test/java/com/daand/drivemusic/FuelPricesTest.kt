@@ -26,6 +26,21 @@ class FuelPricesTest {
 
     private fun quote() = FuelPrices.quote(FuelPrices.parseAll(payload), 52.10, 5.09, FuelPrices.Fuel.EURO95)
 
+    /**
+     * What leaves the phone is a box around a position rounded to ~1 km, and nothing finer. Rounding
+     * only the corners would let the midpoint be recovered to half a step, so the centre is rounded
+     * first: two positions inside the same kilometre give the same query.
+     */
+    @Test fun theBoxIsBuiltAroundARoundedCentre() {
+        val box = FuelPrices.boundingBox(52.10008, 5.08617)
+        assertEquals("51.95,4.94,52.25,5.24", box)
+        val p = box.split(",").map { it.toDouble() }
+        assertEquals("the midpoint is exactly the rounded centre", 52.10, (p[0] + p[2]) / 2, 1e-9)
+        assertEquals("and so is the longitude", 5.09, (p[1] + p[3]) / 2, 1e-9)
+        assertEquals("500 m further along is the same box for the server", box, FuelPrices.boundingBox(52.1045, 5.0862))
+        assertTrue(FuelPrices.urlFor(52.10008, 5.08617).endsWith("bounding-box-filter=51.95,4.94,52.25,5.24"))
+    }
+
     @Test fun readsTheStationsAndTheirPrices() {
         val s = FuelPrices.parseAll(payload)
         assertEquals(2, s.size)

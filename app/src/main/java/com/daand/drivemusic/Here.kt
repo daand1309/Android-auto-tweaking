@@ -21,7 +21,13 @@ object Here {
                     val latch = java.util.concurrent.CountDownLatch(1)
                     var fix: android.location.Location? = null
                     lm.getCurrentLocation(provider, null, ctx.mainExecutor) { fix = it; latch.countDown() }
-                    latch.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                    // A stop must not look like "no fix": re-assert the flag and give up.
+                    try {
+                        latch.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                    } catch (e: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        return null
+                    }
                     fix?.let { return it.latitude to it.longitude }
                 }
             }

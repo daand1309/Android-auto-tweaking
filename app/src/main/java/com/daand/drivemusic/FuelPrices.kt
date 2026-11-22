@@ -134,10 +134,17 @@ object FuelPrices {
         )
     }
 
-    /** Bounding box (south,west,north,east) around a point, rounded to ~1 km so no precise fix is sent. */
+    /**
+     * Bounding box (south,west,north,east) around a point, rounded so no precise fix is sent: the
+     * centre is rounded to 2 decimals (~1.1 km) *before* the box is built. Rounding only the corners
+     * would leave the midpoint recoverable to half a rounding step, i.e. finer than the position this
+     * app is willing to give away.
+     */
     fun boundingBox(lat: Double, lon: Double, degrees: Double = 0.15): String {
-        fun r(v: Double) = Math.round(v * 100) / 100.0
-        return "${r(lat - degrees)},${r(lon - degrees)},${r(lat + degrees)},${r(lon + degrees)}"
+        val c = Math.round(lat * 100) / 100.0
+        val o = Math.round(lon * 100) / 100.0
+        fun f(v: Double) = String.format(java.util.Locale.US, "%.2f", v)
+        return "${f(c - degrees)},${f(o - degrees)},${f(c + degrees)},${f(o + degrees)}"
     }
 
     fun urlFor(lat: Double, lon: Double): String =

@@ -58,7 +58,13 @@ object RadioNearby {
         // The phone is already looking (Drive Mode's Radio tab): wait for that answer instead of a second
         // look-up with its own 30 stream checks (20 Nov: two in 3 seconds).
         val until = System.currentTimeMillis() + 45_000
-        while (looking && System.currentTimeMillis() < until) Thread.sleep(250)
+        // A stop ends the wait with the list we have; it must not throw the interrupt away.
+        try {
+            while (looking && System.currentTimeMillis() < until) Thread.sleep(250)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return current().orEmpty()
+        }
         current()?.let { if (System.currentTimeMillis() - at < FRESH_MS) return it }
         if (looking) return current().orEmpty()
         looking = true      // the phone's refresh waits for this one too
