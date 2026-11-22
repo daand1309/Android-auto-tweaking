@@ -39,9 +39,12 @@ def cause(log):
     installer = [l for l in log.splitlines() if "installPackageLI" in l or "due to start instr" in l]
     # Any other death of our process that is not a Java crash: an outside kill (package manager, low
     # memory, a reboot, the runner tearing the app down). Still not a defect in our code.
+    # The gate uninstalls both packages before it runs, and Gradle uninstalls them when it is done:
+    # those lines are the cleanup, not a reason to call a red run "someone else's fault".
+    cleanup = ("deletePackageX", "pkg removed", "start instr", "finished inst", "due to finished")
     killed = [l for l in log.splitlines()
-              if ("Killing " in l and APP in l) or "Killing " in l and "instr" in l
-              or ("has died" in l and APP in l) or "Force stopping" in l]
+              if ("Killing " in l or "has died" in l) and APP in l
+              and not any(c in l for c in cleanup)]
     if fatal:
         return 1, "the app crashed - this is ours", fatal[-25:]
     if installer:
@@ -120,6 +123,8 @@ def selftest():
         ("a red test fails the gate", [RED], 0, "", 1),
         ("crashed instrumentation with an installer kill needs a re-run", [CRASHED], 0, INSTALLER, 3),
         ("crashed instrumentation with a java stack is ours", [CRASHED], 0, FATAL, 1),
+        ("a red run with the usual teardown uninstall is still ours",
+         [RED], 0, "I ActivityManager: Killing 4242:com.daand.drivemusic/u0a211 (adj 900): stop com.daand.drivemusic due to deletePackageX", 1),
         ("a low-memory kill of our app also means re-run",
          [CRASHED], 0, "I ActivityManager: Killing 4242:com.daand.drivemusic/u0a211 (adj 900): empty #17", 3),
         # The false pass Luna found: Gradle failed, the old green XML was still on disk.
