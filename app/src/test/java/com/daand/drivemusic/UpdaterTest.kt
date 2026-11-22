@@ -11,6 +11,50 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)  // for the real org.json implementation
 class UpdaterTest {
 
+    // Luna's rule applied to a changelog: it is built from the real shape of the API response, with the
+    // subjects and bodies of actual commits, not from a convenient little fixture.
+    private val compare = """
+        {"status":"ahead","commits":[
+          {"sha":"a1","commit":{"message":"Radio: the ignition going off stops the radio too (Luna #22)\n\nignitionOff() paused YT Music and then ended the drive, but never stopped the radio."}},
+          {"sha":"a2","commit":{"message":"Greeting: a cancelled greeting never starts\n\n#19 - the greeting prepares its text on a background thread."}},
+          {"sha":"a3","commit":{"message":"\n\n   Chore: the subject arrives after blank lines"}},
+          {"sha":"a4","commit":{"message":"Radio: the ignition going off stops the radio too (Luna #22)"}}
+        ]}
+    """.trimIndent()
+
+    @Test fun theChangelogIsOneLinePerCommitSubject() {
+        assertEquals(
+            listOf(
+                "Radio: the ignition going off stops the radio too (Luna #22)", // body dropped
+                "Greeting: a cancelled greeting never starts",                   // body dropped
+                "Chore: the subject arrives after blank lines",                  // first non-blank line, trimmed
+                // a4 is the same subject again: shown once
+            ),
+            Updater.parseChangelog(compare)
+        )
+    }
+
+    /** A comparison that GitHub could not answer (404, rate limit, garbage) must not break an update. */
+    @Test fun anUnreadableChangelogIsEmptyNotAnError() {
+        assertEquals(emptyList<String>(), Updater.parseChangelog("{\"message\":\"Not Found\"}"))
+        assertEquals(emptyList<String>(), Updater.parseChangelog("not json at all"))
+        assertEquals(emptyList<String>(), Updater.parseChangelog(""))
+    }
+
+    @Test fun theChangelogIsCapped() {
+        val many = (1..50).joinToString(",") { "{\"commit\":{\"message\":\"change $it\"}}" }
+        assertEquals(Updater.MAX_CHANGELOG_LINES, Updater.parseChangelog("{\"commits\":[$many]}").size)
+        assertEquals(3, Updater.parseChangelog("{\"commits\":[$many]}", max = 3).size)
+    }
+
+    @Test fun theCompareTagsComeFromTheVersionNumbers() {
+        assertEquals("v1.226", Updater.tagFor("1.226"))
+        assertEquals("v1.226", Updater.tagFor(" 1.226 "))
+        assertNull(Updater.tagFor("1.2.3"))
+        assertNull(Updater.tagFor("latest"))
+        assertNull(Updater.tagFor(""))
+    }
+
     @Test fun parsesVersionFromTag() {
         assertEquals(23, Updater.parseVersionCode("v1.23"))
         assertEquals(7, Updater.parseVersionCode("1.7"))

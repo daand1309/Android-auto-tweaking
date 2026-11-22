@@ -96,6 +96,19 @@ class Prefs(context: Context) {
         get() = sp.getString("update_status", "") ?: ""
         set(v) = sp.edit().putString("update_status", v).apply()
 
+    /**
+     * What changed between the version installed now and the one waiting, one per line, from GitHub's
+     * compare API. Public release information, so it is nothing to hide - but it is only meaningful for
+     * [updateChangelogFor], so both are stored together.
+     */
+    var updateChangelog: String
+        get() = sp.getString("update_changelog", "") ?: ""
+        set(v) = sp.edit().putString("update_changelog", v).apply()
+
+    var updateChangelogFor: String
+        get() = sp.getString("update_changelog_for", "") ?: ""
+        set(v) = sp.edit().putString("update_changelog_for", v).apply()
+
     // ---- welcome greeting
     var greetingEnabled: Boolean
         get() = sp.getBoolean("greeting", true)
