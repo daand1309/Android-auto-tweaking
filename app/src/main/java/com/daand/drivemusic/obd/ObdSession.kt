@@ -4,7 +4,13 @@ package com.daand.drivemusic.obd
  * One conversation with the adapter: set it up, learn what this car supports, then read values.
  * Works over any [ObdLink], so it's tested against a fake adapter.
  */
-class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1.6, private val log: (String) -> Unit = {}) {
+class ObdSession(
+    private val link: ObdLink,
+    private val engineLitres: Double = 1.6,
+    private val log: (String) -> Unit = {},
+    /** Monotonic milliseconds (see [ObdLink.elapsedMs]): a budget is a duration, not a moment. */
+    private val now: () -> Long = { ObdLink.elapsedMs() },
+) {
     var supported: Set<Int> = emptySet(); private set
     var protocol: String = ""; private set
     var vin: String? = null; private set
@@ -88,17 +94,51 @@ class ObdSession(private val link: ObdLink, private val engineLitres: Double = 1
     fun readFreezeIfDue(): Boolean {
         if (!freezeDue) return false
         freezeDue = false
-        freeze = runCatching { readFreeze() }.getOrNull() ?: freeze
+        val read = try {
+            readFreeze()
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw e                        // the drive is stopping: let the poll loop break out
+        } catch (e: Exception) {
+            // The freeze frame is optional, so a surprise must not hurt the drive - but silence is how
+            // a bug in optional code hides for weeks, so it is said once.
+            log("OBD: freeze frame read failed (${e.javaClass.simpleName}: ${e.message})")
+            null
+        }
+        freeze = read ?: freeze
         return freeze != null
     }
 
     private fun readFreeze(): FreezeFrame? {
-        val code = Elm327.freezeCode(Elm327.lines(link.send("020200", 1_200))) ?: return null
+        val startedAt = now()
+        // One budget for the whole sequence: it runs on the poll thread, so every millisecond here is
+        // live data standing still (FreezeBudget explains the 22.8 s this used to be able to take).
+        fun elapsed() = now() - startedAt
+        fun ask(cmd: String, capMs: Long): List<String>? {
+            val slice = FreezeBudget.slice(elapsed(), capMs) ?: return null
+            // A failed question is fine (no freeze frame), a stop is not: swallowing the interrupt here
+            // would clear the flag and keep the poll asking after stop() asked it to finish.
+            val answer = try {
+                link.send(cmd, slice)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw e
+            } catch (e: Exception) {
+                return null
+            }
+            return Elm327.lines(answer)
+        }
+        val code = Elm327.freezeCode(ask("020200", FreezeBudget.CODE_MS) ?: return null) ?: return null
         val values = FREEZE_PIDS.mapNotNull { pid ->
             val info = Pids.ALL.firstOrNull { it.pid == pid } ?: return@mapNotNull null
-            val d = runCatching { Elm327.freezeData(Elm327.lines(link.send("02%02X00".format(pid), 800)), pid) }.getOrNull()
-            d?.let { info.read(it) }?.let { pid to it }
+            val lines = ask("02%02X00".format(pid), FreezeBudget.PID_MS) ?: return@mapNotNull null
+            val d = runCatching { Elm327.freezeData(lines, pid) }.getOrNull() ?: return@mapNotNull null
+            info.read(d)?.let { pid to it }
         }.toMap()
+        if (values.size < FREEZE_PIDS.size) {
+            log("OBD: freeze frame $code - ${values.size} of ${FREEZE_PIDS.size} values in ${elapsed()} ms " +
+                "(the rest did not fit the ${FreezeBudget.TOTAL_MS} ms budget)")
+        }
         return FreezeFrame(code, values)
     }
 

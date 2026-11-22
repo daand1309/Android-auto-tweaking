@@ -13,6 +13,23 @@ import java.util.UUID
 /** Send one ELM327 command, get the raw answer (up to the ">" prompt). */
 interface ObdLink : Closeable {
     fun send(cmd: String, timeoutMs: Long = 2_000): String
+
+    companion object {
+        /**
+         * After the timeout a link keeps listening a little longer for the ">" prompt: giving up early
+         * would leave the rest of the answer to be read as the answer to the next question. A caller
+         * that budgets a sequence of questions has to leave this much room per question.
+         */
+        const val GRACE_MS = 2_000L
+
+        /**
+         * Monotonic milliseconds for a duration. Not the wall clock: a time zone change or a network
+         * clock correction arrives mid-sentence and would stretch or cut a timeout. System.nanoTime()
+         * is monotonic on Android and exists in plain JVM tests, so the OBD code needs no Android call
+         * to measure time.
+         */
+        fun elapsedMs(): Long = System.nanoTime() / 1_000_000
+    }
 }
 
 /**
@@ -44,8 +61,8 @@ class StreamLink(private val input: InputStream, private val output: OutputStrea
         val sb = StringBuilder()
         // The answer ends with the ">" prompt. If it's late, keep listening a little longer: giving up
         // early would leave the rest of this answer to be mistaken for the answer to the NEXT question.
-        val deadline = System.currentTimeMillis() + timeoutMs + GRACE_MS
-        while (System.currentTimeMillis() < deadline) {
+        val deadline = ObdLink.elapsedMs() + timeoutMs + ObdLink.GRACE_MS
+        while (ObdLink.elapsedMs() < deadline) {
             if (input.available() > 0) {
                 val c = input.read()
                 if (c < 0) throw IOException("adapter closed the connection")
@@ -69,7 +86,6 @@ class StreamLink(private val input: InputStream, private val output: OutputStrea
     override fun close() = onClose()
 
     companion object {
-        const val GRACE_MS = 2_000L
         const val MAX_ANSWER = 4096
         const val MAX_LEFTOVER = 16_384
     }

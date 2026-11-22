@@ -39,6 +39,35 @@ class TripDraftTest {
         assertEquals(1, TripHistory.load(ctx).size)
     }
 
+    /**
+     * The draft is what survives a killed process, so it has to carry the whole drive - including the
+     * health sample, which is what the history's trends are built from.
+     */
+    @Test fun aKilledDriveKeepsItsHealthSample() {
+        val sample = com.daand.drivemusic.obd.HealthSample(
+            ltft = 3.1, chargeV = 13.9, idleRpm = 1150.0, idleSpread = 780.0, warmupMin = 7.5,
+            cruiseCoolant = 89.0, ambient = 11, warmStartC = 12)
+        TripHistory.saveDraft(ctx, trip().copy(health = sample), now = t0 + 60_000)
+        val back = TripHistory.recoverDraft(ctx, now = t0 + 60_000 + 5 * 60_000)
+        assertNotNull("the interrupted drive is kept", back)
+        val h = back!!.health
+        assertNotNull("with its health sample", h)
+        assertEquals(13.9, h!!.chargeV!!, 0.001)
+        assertEquals(1150.0, h.idleRpm!!, 0.001)
+        assertEquals("and it is in the history with it", 1, TripHistory.load(ctx).count { it.health?.chargeV == 13.9 })
+    }
+
+    /** A draft written before the draft carried "h" still recovers: one missing field, not a lost drive. */
+    @Test fun anOldDraftWithoutHealthStillRecovers() {
+        val f = java.io.File(ctx.filesDir, "trip-draft.json")
+        f.writeText(org.json.JSONObject().put("at", t0).put("min", 18).put("km", 12.4).put("l", 0.8)
+            .put("score", 74).put("maxC", 91).put("codes", "P0420").put("p", 2.09).put("upd", t0 + 60_000).toString())
+        val back = TripHistory.recoverDraft(ctx, now = t0 + 3_600_000)
+        assertNotNull("the old draft is still a drive", back)
+        assertNull("it simply has no sample", back!!.health)
+        assertEquals(12.4, back.km, 0.001)
+    }
+
     @Test fun aDriveThatIsStillRunningIsLeftAlone() {
         TripHistory.saveDraft(ctx, trip(), now = t0)
         assertNull("written 20 seconds ago, so still driving",

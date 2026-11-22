@@ -107,6 +107,41 @@ class VoiceTest {
         assertTrue(rain, rain.startsWith("It has started to rain.") && rain.contains("my mood"))  // butler wording, no forced sir
     }
 
+    /**
+     * The drive ended while the voice was still talking: it must stop, and its continuation must still
+     * run exactly once - that is where the owner releases what it holds (WelcomeAnnouncer's busy flag,
+     * the media menu's voice claim). Refusing the music is the service's job, not the voice's.
+     */
+    @Test fun endingTheDriveStopsTheVoiceAndStillReleasesTheOwner() {
+        val app = ApplicationProvider.getApplicationContext<android.content.Context>()
+        DriveLog.init(app)
+        var done = 0
+        val g = Greeter(app)
+        g.speak("Hallo, meneer.", dutch = true) { done++ }
+        com.daand.drivemusic.Voice.stop("the drive ended")
+        g.stop("you pressed skip too")            // a later Skip must not run it a second time
+        com.daand.drivemusic.Voice.stop("the drive ended")
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("the owner is released exactly once", 1, done)
+        assertFalse("nothing is being said any more", com.daand.drivemusic.Voice.speaking)
+    }
+
+    /** And the slot is free afterwards, which is what lets the next drive greet at all. */
+    @Test fun theVoiceSlotIsFreeAgainAfterTheDriveEnded() {
+        val app = ApplicationProvider.getApplicationContext<android.content.Context>()
+        DriveLog.init(app)
+        val g = Greeter(app)
+        g.speak("Hallo.", dutch = true) {}
+        com.daand.drivemusic.Voice.stop("the drive ended")
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse("the voice is free again", com.daand.drivemusic.Voice.speaking)
+        val again = Greeter(app)
+        again.speak("Hallo.", dutch = true) {}
+        assertTrue("a new greeting can take the slot", com.daand.drivemusic.Voice.speaking)
+        again.stop("test over")
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
     @Test fun theVeryFirstGreetingSaysWelcomeNotWelcomeBack() {
         val cal = java.util.Calendar.getInstance()
         fun g(first: Boolean, butler: Boolean = false, dutch: Boolean = false) =

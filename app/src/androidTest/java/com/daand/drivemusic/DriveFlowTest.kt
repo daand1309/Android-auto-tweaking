@@ -224,6 +224,39 @@ class DriveFlowTest {
         assertTrue(prefs.lastDrive.contains("pause(s)"))
     }
 
+    /**
+     * The greeting must stop with the car. It used to keep talking after Android Auto dropped: the
+     * service stopped the radio and closed the briefing, but the active voice belonged to neither.
+     * Its continuation still runs (that is where the welcome releases its busy flag) and it must not
+     * start the music after the drive is gone.
+     */
+    @Test
+    fun leavingTheCarSilencesTheVoice() {
+        prefs.greetingEnabled = false       // this test brings the voice itself; the service must stop it
+        connectCar()
+        var continued = 0
+        val g = Greeter(ctx)
+        onMain {
+            g.speak("Dit is een lange begroeting die anders nog even door zou praten in de auto.", dutch = true) {
+                continued++
+            }
+        }
+        var started = true
+        try {
+            waitFor("the voice to start talking", 3_000) { Voice.speaking }
+        } catch (e: AssertionError) {
+            started = false    // no text-to-speech on this emulator: the sentence ends at once
+        }
+        org.junit.Assume.assumeTrue("no text-to-speech on this device", started)
+        val playsBefore = playCalls
+        onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_NOT_CONNECTED) }
+        waitFor("the voice to be stopped", 5_000) { !Voice.speaking }
+        waitFor("its owner to be released", 5_000) { continued == 1 }
+        assertTrue("and the log says why:\n" + log(), log().contains("cut short (the car disconnected)"))
+        SystemClock.sleep(1_000)   // a late start would show up here
+        assertEquals("the car going away must not start the music", playsBefore, playCalls)
+    }
+
     @Test
     fun greetingPlaysThenMusicStarts() {
         prefs.greetingEnabled = true
