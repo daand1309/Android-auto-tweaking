@@ -291,6 +291,13 @@ class DriveMonitorService : NotificationListenerService() {
         onCarState(type)
     }
 
+    /**
+     * Test hook: the ignition check decided the car is off (Android Auto still connected). Same path the
+     * check takes, so the emulator can prove what happens to the radio.
+     */
+    @androidx.annotation.VisibleForTesting
+    fun simulateIgnitionOffForTest() = ignitionOff(IGNITION_END_DRIVE_MS)
+
     /** Test hook: pretend the monitor just (re)started, so the next car state is its first event. */
     @androidx.annotation.VisibleForTesting
     fun simulateMonitorRestartForTest() {
@@ -446,6 +453,8 @@ class DriveMonitorService : NotificationListenerService() {
             // that is where WelcomeAnnouncer releases its busy flag - but it cannot start music:
             // carConnected is false and connectGen moved on.
             Voice.stop("the car disconnected")
+            // ...and if it had not started yet, it never will: the welcome prepares its text first.
+            WelcomeAnnouncer.cancel("the car disconnected")
             if (prefs.pauseOnDisconnect) {
                 val c = findYtm()
                 if (c?.playbackState?.state == PlaybackState.STATE_PLAYING) {
@@ -615,6 +624,7 @@ class DriveMonitorService : NotificationListenerService() {
         // WelcomeAnnouncer/media-menu release); startAction refuses the music because driveEnded is
         // set. Idempotent, so the disconnect path and the skip button are not disturbed.
         Voice.stop("the drive ended")
+        WelcomeAnnouncer.cancel("the drive ended")
         DriveModeActivity.closeBecauseDriveEnded()   // even when it's in the background (it used to wait until you unlocked)
         resumeThisDrive = null   // this drive's auto-resume choice ends with it
         runCatching { musicBrowser?.disconnect() }; musicBrowser = null
