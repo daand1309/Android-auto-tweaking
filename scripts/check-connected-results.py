@@ -76,6 +76,21 @@ def decide(results, gradle_status, log):
         out.append("CAUSE: gradle succeeded but ran no tests - see /tmp/connected-tests.log")
         return 1, out
 
+    # A crashed instrumentation first: its XML holds an empty <failure/> that is an artifact of the
+    # process dying, so the logcat reason is the answer. Then a named failing test, which needs no logcat.
+    if crashed:
+        code, why, evidence = cause(log)
+        out.append("")
+        out.append(f"CAUSE: {why}:")
+        out += evidence
+        if code == 3:
+            out.append("Re-run on the cleaned device; if it repeats, treat it as ours.")
+        return code, out
+    if failed:
+        out.append("")
+        out.append(f"CAUSE: {len(failed)} test(s) failed - read the XML for the assertion")
+        return 1, out
+
     code, why, evidence = cause(log)
     out.append("")
     out.append(f"CAUSE: {why}:")
@@ -121,6 +136,8 @@ def selftest():
     cases = [
         ("green run passes", [GREEN], 0, "", 0),
         ("a red test fails the gate", [RED], 0, "", 1),
+        ("a red test is reported as a failing test, not as an outside kill",
+         [RED], 1, "I ActivityManager: Killing 4242:com.daand.drivemusic (adj 0): low memory", 1),
         ("crashed instrumentation with an installer kill needs a re-run", [CRASHED], 0, INSTALLER, 3),
         ("crashed instrumentation with a java stack is ours", [CRASHED], 0, FATAL, 1),
         ("a red run with the usual teardown uninstall is still ours",
