@@ -118,6 +118,32 @@ class RadioTest {
         assertTrue("and it did not throw the stop away", stoppedClean)
     }
 
+    /**
+     * A stop during the 40 km round must not start the 80 km one: the second round is more network work
+     * and ~30 stream probes for a screen that is gone.
+     */
+    @Test fun aStopDuringTheNearbyLookUpDoesNotStartTheFallbackRound() {
+        var rounds = 0
+        val near = listOf(Radio.Nearby(Station("A", "https://example.org/a.mp3"), 10))
+        val t = Thread {
+            // Stands in for nearby(): one round that gets interrupted, then a fallback that must not run.
+            var got = Radio.checked(near, test = { Thread.sleep(30_000); Radio.Probe.NO })
+            rounds++
+            if (!Thread.currentThread().isInterrupted && got.size < 8) {
+                got = Radio.checked(near, test = { Thread.sleep(30_000); Radio.Probe.NO })
+                rounds++
+            }
+            got.size
+        }
+        t.isDaemon = true
+        t.start()
+        Thread.sleep(300)
+        t.interrupt()
+        t.join(3_000)
+        assertFalse("the thread finished", t.isAlive)
+        assertEquals("only the first round ran", 1, rounds)
+    }
+
     @Test fun nearbyOnlySendsARoundedPosition() {
         val u = Radio.nearbyUrl(52.2417, 4.4431, 40)
         assertTrue(u, u.contains("geo_lat=52.2&") && u.contains("geo_long=4.4&") && u.contains("geo_distance=40000"))

@@ -163,6 +163,10 @@ object Radio {
             finally { conn.disconnect() }
         } catch (e: Exception) { emptyList() }
         var near = checked(get(40))
+        // A stop (the drive ended, the screen closed) must not send us looking again: checked() returns
+        // what it has when it is interrupted, and the 80 km fallback would start a second round of
+        // network work plus stream probes nobody is waiting for any more.
+        if (Thread.currentThread().isInterrupted) return near.take(15)
         if (near.size < 8) near = checked(get(80)).ifEmpty { near }
         return near.take(15)
     }
