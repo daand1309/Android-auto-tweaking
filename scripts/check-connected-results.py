@@ -20,23 +20,39 @@ APP = "com.daand.drivemusic"
 
 
 def scan(paths):
-    """tests, failed test names, and whether any report says the process crashed."""
-    tests, failed, crashed = 0, [], []
+    """tests, skipped, failed test names, and whether any report says the process crashed.
+
+    A failure element with no text is the artifact of a process that died mid-run (Gradle writes an
+    empty <failure/>); one with text is a real assertion. They are counted apart, because a real
+    assertion failure outranks the crash classification: it is our bug whatever else happened.
+    """
+    tests, skipped, failed, messageLess, crashed = 0, 0, [], [], []
     for p in paths:
         root = ET.parse(p).getroot()
         tests += int(root.get("tests", 0) or 0)
+        skipped += len(list(root.iter("skipped")))      # one <skipped/> child per skipped testcase
         for tc in root.iter("testcase"):
-            if any(c.tag in ("failure", "error") for c in tc):
-                failed.append(tc.get("name") or p)
+            for fl in tc:
+                if fl.tag in ("failure", "error"):
+                    if (fl.text or "").strip():
+                        failed.append(tc.get("name") or p)
+                    else:
+                        messageLess.append(tc.get("name") or p)
         if "Process crashed" in (root.findtext("system-err") or ""):
             crashed.append(p)
-    return tests, failed, crashed
+    return tests, skipped, failed, messageLess, crashed
 
 
 def cause(log):
     """1 = ours (a stack trace), 3 = the process was torn down from outside (re-run), 1 = unknown."""
     fatal = [l for l in log.splitlines() if "FATAL EXCEPTION" in l or "Fatal signal" in l]
-    installer = [l for l in log.splitlines() if "installPackageLI" in l or "due to start instr" in l]
+    # Two things are needed, not one: our package (another app's install says nothing about why we
+    # died) *and* an actual termination line. "installPackageLI com.daand.drivemusic" on its own is a
+    # package operation, not proof that the process went away (Luna's finding 25).
+    installer = [l for l in log.splitlines()
+                 if ("installPackageLI" in l or "due to start instr" in l)
+                 and APP in l
+                 and ("Killing " in l or "has died" in l or "Force stopping" in l)]
     # Any other death of our process that is not a Java crash: an outside kill (package manager, low
     # memory, a reboot, the runner tearing the app down). Still not a defect in our code.
     # The gate uninstalls both packages before it runs, and Gradle uninstalls them when it is done:
@@ -56,13 +72,16 @@ def cause(log):
 
 def decide(results, gradle_status, log):
     """Return (exit code, lines to print)."""
-    tests, failed, crashed = scan(results)
-    out = [f"instrumented: {tests} tests, {len(failed) + len(crashed)} problems"]
+    tests, skipped, failed, messageLess, crashed = scan(results)
+    out = [f"instrumented: {tests} tests, {len(failed) + len(crashed) + len(messageLess)} problems"]
+    if tests and skipped >= tests:
+        out.append(f"  skipped: all {skipped} of {tests} - a run where nothing executed proves nothing")
     out += [f"  failed: {n}" for n in failed]
     out += [f"  crashed: {os.path.basename(p)}" for p in crashed]
-    problems = bool(failed or crashed)
+    out += [f"  failed (no message): {n}" for n in messageLess]
+    problems = bool(failed or crashed or messageLess)
 
-    if not problems and gradle_status == 0 and tests > 0:
+    if not problems and gradle_status == 0 and tests > 0 and skipped < tests:
         return 0, out
     if not problems and gradle_status != 0:
         # Gradle failed with no failing test in the XML: no results, stale results, or a compile
@@ -71,6 +90,10 @@ def decide(results, gradle_status, log):
         out.append(f"CAUSE: gradle exited {gradle_status} without a failing test in the reports "
                    f"({tests} tests found) - see /tmp/connected-tests.log")
         return 1, out
+    if not problems and tests > 0 and skipped >= tests:
+        out.append("")
+        out.append("CAUSE: every test was skipped - nothing was executed, so nothing is proven")
+        return 1, out
     if not problems and tests == 0:
         out.append("")
         out.append("CAUSE: gradle succeeded but ran no tests - see /tmp/connected-tests.log")
@@ -78,7 +101,7 @@ def decide(results, gradle_status, log):
 
     # A crashed instrumentation first: its XML holds an empty <failure/> that is an artifact of the
     # process dying, so the logcat reason is the answer. Then a named failing test, which needs no logcat.
-    if crashed:
+    if crashed and not failed:
         code, why, evidence = cause(log)
         out.append("")
         out.append(f"CAUSE: {why}:")
@@ -89,6 +112,12 @@ def decide(results, gradle_status, log):
     if failed:
         out.append("")
         out.append(f"CAUSE: {len(failed)} test(s) failed - read the XML for the assertion")
+        return 1, out
+    if messageLess:
+        # A failure node with no message means the run was cut short (the process went away before it
+        # could be written). That is never a pass, whatever the exit code says (Luna's finding 23).
+        out.append("")
+        out.append(f"CAUSE: {len(messageLess)} test(s) failed with no message - the run was cut short")
         return 1, out
 
     code, why, evidence = cause(log)
@@ -128,7 +157,14 @@ CRASHED = ('<?xml version="1.0"?><testsuite name="x" tests="1" failures="0" erro
            '<testcase name="a"><failure></failure></testcase>'
            '<system-err>Test run failed to complete. Instrumentation run failed due to Process crashed.</system-err>'
            '</testsuite>')
+ALL_SKIPPED = ('<?xml version="1.0"?><testsuite name="x" tests="3" failures="0" errors="0" skipped="3">'
+               '<testcase name="a"><skipped/></testcase><testcase name="b"><skipped/></testcase>'
+               '<testcase name="c"><skipped/></testcase></testsuite>')
+EMPTY_FAILURE = ('<?xml version="1.0"?><testsuite name="x" tests="1" failures="1" errors="0">'
+                 '<testcase name="only"><failure></failure></testcase></testsuite>')
 INSTALLER = "I ActivityManager: Killing 3983:com.daand.drivemusic (adj 0): stop com.daand.drivemusic due to installPackageLI"
+OTHER_INSTALL = "I PackageManager: installPackageLI com.other.app (uid 10123) v1.2 of user 0"
+OUR_INSTALL_ONLY = "I PackageManager: installPackageLI com.daand.drivemusic (uid 10211) v1.30 of user 0"
 FATAL = "E AndroidRuntime: FATAL EXCEPTION: main\nE AndroidRuntime: java.lang.IllegalStateException: boom"
 
 
@@ -148,6 +184,16 @@ def selftest():
         ("a gradle failure never passes on stale XML", [GREEN], 1, "", 1),
         ("a gradle failure with no reports fails", [], 1, "", 1),
         ("no tests at all fails", [], 0, "", 1),
+        # Luna #20: a report where everything was skipped executed nothing.
+        ("an all-skipped report does not pass", [ALL_SKIPPED], 0, "", 1),
+        # Luna #23: a failure with no message and no crash marker is still a red run.
+        ("a message-less failure fails closed", [EMPTY_FAILURE], 0, "", 1),
+        # Luna #21: another app being installed says nothing about why our run died.
+        ("an unrelated package install is not why ours died", [CRASHED], 0, OTHER_INSTALL, 1),
+        # Luna #25: installing our package is not the same as killing its process.
+        ("our package being installed is not a kill either", [CRASHED], 0, OUR_INSTALL_ONLY, 1),
+        # Luna #18: a real assertion failure outranks the crash classification.
+        ("a real failure with a crash and an installer kill is still ours", [RED, CRASHED], 1, INSTALLER, 1),
     ]
     bad = 0
     for name, reports, status, log, want in cases:
