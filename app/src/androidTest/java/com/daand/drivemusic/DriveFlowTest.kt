@@ -230,6 +230,23 @@ class DriveFlowTest {
      * Its continuation still runs (that is where the welcome releases its busy flag) and it must not
      * start the music after the drive is gone.
      */
+    /**
+     * The ignition can go off while Android Auto stays connected. The radio is then playing into an
+     * empty car - and its player holds a partial wake lock, so it also keeps the phone awake. Only the
+     * Android-Auto-drop path used to stop it (Luna's finding 22).
+     */
+    @Test
+    fun theIgnitionGoingOffStopsTheRadio() {
+        connectCar()
+        onMain { RadioPlayer.pretendPlayingForTest(Radio.Station("Test FM", "https://example.org/test.mp3")) }
+        assertTrue("the radio is playing", RadioPlayer.on)
+        onMain { service().simulateIgnitionOffForTest() }
+        assertFalse("the radio must not keep playing to an empty car", RadioPlayer.on)
+        assertTrue("and the log says so:\n" + log(),
+            log().contains("off (the drive ended)") || log().contains("RADIO: Test FM off"))
+        assertTrue("the radio is remembered for the next drive", prefs.radioWasOn)
+    }
+
     @Test
     fun leavingTheCarSilencesTheVoice() {
         prefs.greetingEnabled = false       // this test brings the voice itself; the service must stop it

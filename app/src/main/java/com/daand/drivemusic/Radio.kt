@@ -556,6 +556,15 @@ object RadioPlayer {
     /** On now, or taken off by something else (Android Auto dropping) in the last [ms]. */
     fun onOrJustLost(ms: Long = 5_000) = on || (stoppedByOthers && android.os.SystemClock.elapsedRealtime() - stoppedAt < ms)
 
+    /** Test hook: the radio is playing (no network in an emulator test). */
+    @androidx.annotation.VisibleForTesting
+    fun pretendPlayingForTest(s: Radio.Station) {
+        station = s
+        problem = ""
+        state = State.PLAYING
+        changed()
+    }
+
     fun stop(why: String) {
         switchStartedAt = 0L
         if (state == State.OFF) return

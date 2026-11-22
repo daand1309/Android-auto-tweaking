@@ -625,6 +625,11 @@ class DriveMonitorService : NotificationListenerService() {
         // set. Idempotent, so the disconnect path and the skip button are not disturbed.
         Voice.stop("the drive ended")
         WelcomeAnnouncer.cancel("the drive ended")
+        // The radio is a car thing too, and it is not only sound: its MediaPlayer holds a partial wake
+        // lock, so a radio left running after the ignition goes off keeps playing into an empty car and
+        // keeps the phone awake. Remember it was on, so the next drive can bring it back.
+        if (RadioPlayer.onOrJustLost()) prefs.radioWasOn = true
+        RadioPlayer.stop("the drive ended")
         DriveModeActivity.closeBecauseDriveEnded()   // even when it's in the background (it used to wait until you unlocked)
         resumeThisDrive = null   // this drive's auto-resume choice ends with it
         runCatching { musicBrowser?.disconnect() }; musicBrowser = null
