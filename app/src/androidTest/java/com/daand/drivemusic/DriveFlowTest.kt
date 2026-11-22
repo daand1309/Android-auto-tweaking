@@ -588,10 +588,13 @@ class DriveFlowTest {
         assertTrue(log().contains("pressing play again"))
         assertTrue("not counted as a pause", !log().contains("PAUSE #"))
         // While it settles (17 Nov drive: four stops in 30 s): up to 3 quick restarts, then a normal pause.
-        for (n in 2..3) {
+        val maxRestarts = StartRules.MAX_QUICK_RESTARTS
+        for (n in 2..maxRestarts) {
             SystemClock.sleep(500)
             onMain { setState(PlaybackState.STATE_PAUSED) }
-            waitFor("quick restart $n", 9_000) { currentState == PlaybackState.STATE_PLAYING && log().contains("$n of 3") }
+            waitFor("quick restart $n", 9_000) {
+                currentState == PlaybackState.STATE_PLAYING && log().contains("$n of $maxRestarts")
+            }
         }
         assertTrue("still not counted", !log().contains("PAUSE #"))
         SystemClock.sleep(500)
