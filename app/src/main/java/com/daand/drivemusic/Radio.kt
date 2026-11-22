@@ -154,20 +154,35 @@ object Radio {
     } catch (e: Exception) { null }
 
     /** Off the main thread. 40 km; where that finds few (the north), 80 km. */
-    fun nearby(lat: Double, lon: Double): List<Nearby> {
-        fun get(km: Int) = try {
-            val conn = URL(nearbyUrl(lat, lon, km)).openConnection() as HttpURLConnection
-            conn.connectTimeout = 5000; conn.readTimeout = 10000
-            conn.setRequestProperty("User-Agent", "DriveMusic/1.0")
-            try { if (conn.responseCode == 200) parseNearby(conn.inputStream.readCapped(500_000), max = 30) else emptyList() }
-            finally { conn.disconnect() }
-        } catch (e: Exception) { emptyList() }
-        var near = checked(get(40))
-        // A stop (the drive ended, the screen closed) must not send us looking again: checked() returns
-        // what it has when it is interrupted, and the 80 km fallback would start a second round of
-        // network work plus stream probes nobody is waiting for any more.
+    fun nearby(lat: Double, lon: Double): List<Nearby> = nearby(
+        lat, lon,
+        fetch = { km ->
+            try {
+                val conn = URL(nearbyUrl(lat, lon, km)).openConnection() as HttpURLConnection
+                conn.connectTimeout = 5000; conn.readTimeout = 10000
+                conn.setRequestProperty("User-Agent", "DriveMusic/1.0")
+                try { if (conn.responseCode == 200) parseNearby(conn.inputStream.readCapped(500_000), max = 30) else emptyList() }
+                finally { conn.disconnect() }
+            } catch (e: Exception) { emptyList() }
+        },
+        check = { checked(it) },
+    )
+
+    /**
+     * The orchestration, with the two rounds and the stream check swappable so it can be tested: 40 km
+     * first, then 80 km only if that came back thin. A stop (the drive ended, the screen closed) must
+     * not start the second round - [checked] returns what it has when it is interrupted, and looking
+     * again means another HTTP round plus ~30 stream probes for a screen nobody is looking at.
+     */
+    internal fun nearby(
+        lat: Double,
+        lon: Double,
+        fetch: (Int) -> List<Nearby>,
+        check: (List<Nearby>) -> List<Nearby>,
+    ): List<Nearby> {
+        var near = check(fetch(40))
         if (Thread.currentThread().isInterrupted) return near.take(15)
-        if (near.size < 8) near = checked(get(80)).ifEmpty { near }
+        if (near.size < 8) near = check(fetch(80)).ifEmpty { near }
         return near.take(15)
     }
 

@@ -120,28 +120,28 @@ class RadioTest {
 
     /**
      * A stop during the 40 km round must not start the 80 km one: the second round is more network work
-     * and ~30 stream probes for a screen that is gone.
+     * and ~30 stream probes for a screen that is gone. This drives the real nearby() orchestration -
+     * removing the guard there makes it fetch 80 km and the test fails.
      */
     @Test fun aStopDuringTheNearbyLookUpDoesNotStartTheFallbackRound() {
-        var rounds = 0
-        val near = listOf(Radio.Nearby(Station("A", "https://example.org/a.mp3"), 10))
+        val one = listOf(Radio.Nearby(Station("A", "https://example.org/a.mp3"), 10))
+        val rounds = java.util.Collections.synchronizedList(mutableListOf<Int>())
         val t = Thread {
-            // Stands in for nearby(): one round that gets interrupted, then a fallback that must not run.
-            var got = Radio.checked(near, test = { Thread.sleep(30_000); Radio.Probe.NO })
-            rounds++
-            if (!Thread.currentThread().isInterrupted && got.size < 8) {
-                got = Radio.checked(near, test = { Thread.sleep(30_000); Radio.Probe.NO })
-                rounds++
-            }
-            got.size
+            Radio.nearby(52.0, 4.0,
+                fetch = { km -> rounds += km; one },
+                check = {
+                    // What checked() does on a stop: return what it has, with the flag still set.
+                    try { Thread.sleep(30_000) } catch (e: InterruptedException) { Thread.currentThread().interrupt() }
+                    it
+                })
         }
         t.isDaemon = true
         t.start()
-        Thread.sleep(300)
+        Thread.sleep(300)                  // let it get into the first round
         t.interrupt()
         t.join(3_000)
-        assertFalse("the thread finished", t.isAlive)
-        assertEquals("only the first round ran", 1, rounds)
+        assertFalse("the look-up ended on the stop", t.isAlive)
+        assertEquals("only the 40 km round ran, no fallback afterwards", listOf(40), rounds.toList())
     }
 
     @Test fun nearbyOnlySendsARoundedPosition() {
