@@ -38,6 +38,9 @@ object Diagnostics {
      */
     fun quick(s: CarSnapshot, catalyst: OnBoardTests.Catalyst?, misfires: Map<Int, Int>?): List<Check> {
         val out = ArrayList<Check>()
+        // The car's computer said nothing this reading (ignition off?): judging old values would mislead.
+        if (s.rpm == null && s.coolantC == null && s.speedKmh == null)
+            return listOf(Check("answer", "Car's computer", Verdict.INFO, "didn't answer - switch the ignition on and try again"))
         out += codes(s)
         s.checkEngine?.let { mil ->
             out += if (mil) Check("mil", "Engine light", Verdict.BAD, "ON - the car has found a fault it wants fixed" +
@@ -61,6 +64,9 @@ object Diagnostics {
     }
 
     private fun codes(s: CarSnapshot): Check {
+        // Never read (the question went unanswered): an empty list means "unknown", not "none".
+        if (s.storedReadAt == null && s.codes.isEmpty()) return Check("codes", "Fault codes", Verdict.INFO,
+            "the car didn't answer the fault-code question - try again with the ignition on")
         val parts = ArrayList<String>()
         if (s.codes.isNotEmpty()) parts += "confirmed: " + s.codes.joinToString()
         if (s.permanentCodes.isNotEmpty()) parts += "permanent: " + s.permanentCodes.joinToString()
@@ -102,6 +108,8 @@ object Diagnostics {
         val st = s.extra[0x06]; val lt = s.extra[0x07]
         if (st == null && lt == null) return null
         if ((s.coolantC ?: 0) < 70) return Check(id, title, Verdict.INFO, "engine not warm yet - judged once it's above 70 °C")
+        // 01-03: 2 = closed loop (the oxygen sensor steers the mixture). Otherwise the trims mean little.
+        s.extra[0x03]?.let { if (it != 2.0) return Check(id, title, Verdict.INFO, "the engine isn't steering on its oxygen sensor right now - try again at a warm idle") }
         return trimCheck(id, title, (st ?: 0.0) + (lt ?: 0.0), lt)
     }
 
@@ -169,7 +177,7 @@ object Diagnostics {
         IDLE(60, "Idle", "Leave the engine idling. Don't touch the pedals. Lights, fan and air-con off."),
         LOAD(30, "Electrical load", "Switch on the headlights, the rear window heater and the fan on full. Keep idling."),
         REV(30, "Hold 2500 rpm", "Switch the extras off again. Now hold the engine at about 2500 rpm with the pedal."),
-        SNAP(15, "Quick tap", "Let it return to idle, then press the pedal quickly once (to about 3500 rpm) and let go."),
+        SNAP(15, "Quick rev", "Let it return to idle. Then press the pedal briskly to about 3500 rpm, hold it there for 2 seconds, and let go."),
     }
 
     /** Readings collected during one step. */
@@ -267,7 +275,7 @@ object Diagnostics {
     fun snapCheck(rpms: List<Double>, idleRpm: Double?): Check? {
         if (rpms.size < 4) return null
         val peak = rpms.max()
-        if (peak < 2_500) return Check("snap", "Throttle response", Verdict.INFO, "the tap wasn't seen (peak ${peak.toInt()} rpm) - try a firmer, longer press")
+        if (peak < 2_500) return Check("snap", "Throttle response", Verdict.INFO, "the rev wasn't seen (peak ${peak.toInt()} rpm) - hold it a little longer next time")
         val after = rpms.drop(rpms.indexOf(peak) + 1)
         val settled = after.lastOrNull()
         return if (idleRpm != null && settled != null && settled > idleRpm + 250)

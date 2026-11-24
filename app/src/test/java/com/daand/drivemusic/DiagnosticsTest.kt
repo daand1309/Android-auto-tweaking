@@ -21,7 +21,7 @@ class DiagnosticsTest {
                      codes: List<String> = emptyList(), pending: List<String> = emptyList(), mil: Boolean = false,
                      readiness: Pair<Int, Int>? = 5 to 5, at: Long = 1L) =
         CarSnapshot(at = at, coolantC = coolant, rpm = rpm, speedKmh = speed, volts = volts, extra = extra, codes = codes,
-            pendingCodes = pending, checkEngine = mil, readiness = readiness)
+            pendingCodes = pending, checkEngine = mil, readiness = readiness, storedReadAt = at, codesReadAt = at)
 
     private fun List<Diagnostics.Check>.of(id: String) = first { it.id == id }
 
@@ -153,5 +153,20 @@ class DiagnosticsTest {
         assertTrue(Diagnostics.decode("not json").isEmpty())
         assertTrue(Diagnostics.decode(null).isEmpty())
         assertTrue(one.text("24 Nov").contains("⚠ Idle: a little uneven"))
+    }
+
+    @Test fun codesNeverReadAreNotReportedAsNone() {
+        val r = Diagnostics.quick(CarSnapshot(at = 1, rpm = 750, coolantC = 88), null, null)
+        assertEquals(Verdict.INFO, r.of("codes").verdict)
+    }
+
+    @Test fun aSilentCarGivesNoVerdicts() {
+        val r = Diagnostics.quick(CarSnapshot(at = 1, volts = 12.4, codes = emptyList(), storedReadAt = 1), null, null)
+        assertEquals(listOf("answer"), r.map { it.id })
+    }
+
+    @Test fun openLoopTrimIsNotJudged() {
+        val r = Diagnostics.quick(snap(extra = mapOf(0x03 to 4.0, 0x06 to 25.0, 0x07 to 5.0)), null, null)
+        assertEquals(Verdict.INFO, r.of("trim").verdict)
     }
 }

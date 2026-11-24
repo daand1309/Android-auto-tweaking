@@ -93,6 +93,7 @@ class DiagnosticsActivity : Activity() {
     }
 
     private fun runQuick() {
+        if (!ObdManager.isConnected()) { alert("Adapter not connected", "Switch the ignition on with the adapter in, then try again."); showStart(); return }
         running = true
         root.removeAllViews()
         title("Quick check") {}
@@ -120,7 +121,7 @@ class DiagnosticsActivity : Activity() {
     }
 
     private fun runFull() {
-        val snap = ObdManager.latest
+        val snap = ObdManager.latest?.takeIf { ObdManager.isConnected() && System.currentTimeMillis() - it.at < 30_000 }
         if (snap == null || !snap.engineRunning) { alert("Start the engine first", "The full test measures the running engine."); return }
         if ((snap.speedKmh ?: 0) > 3) { alert("Park first", "The full test only runs with the car standing still."); return }
         running = true
@@ -133,7 +134,7 @@ class DiagnosticsActivity : Activity() {
         runStep(test, 0) {
             val last = ObdManager.latest ?: snap
             val quick = Diagnostics.quick(last, ObdManager.catalyst, misfires.get()?.takeIf { it.isNotEmpty() })
-                .filter { it.id != "trim" && it.id != "battery" }   // measured better by the steps
+                .filter { it.id != "trim" }   // measured per step (idle and 2500 rpm)
             finish(Diagnostics.Result(System.currentTimeMillis(), true, quick + test.evaluate()))
         }
     }

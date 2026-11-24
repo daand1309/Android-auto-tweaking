@@ -1439,6 +1439,7 @@ class DriveMonitorService : NotificationListenerService() {
         stopVoiceAt = SystemClock.elapsedRealtime()
     }
     @Volatile private var stopVoice: String? = null
+    private val VOICE_CLUE = " was speaking when it stopped"
     @Volatile private var stopVoiceAt = 0L
     /** When the music last came back by itself after an unexplained stop (see [onConfirmedPause]). */
     private var selfRecoveredAt = 0L
@@ -1503,7 +1504,8 @@ class DriveMonitorService : NotificationListenerService() {
         val clues = diagnose()
         lastPauseClue = clues.joinToString("; ").ifEmpty { "no clues (pause button / steering wheel / Hey Google?)" }
         DriveLog.log("!!! PAUSE #$pausesThisDrive while driving. Clues: $lastPauseClue")
-        unexplainedPauseAt = if (clues.isEmpty()) SystemClock.elapsedRealtime() else 0L
+        // A voice heard at the stop (Waze) still lets a self-recovery uncount it - it's not you pausing.
+        unexplainedPauseAt = if (clues.isEmpty() || clues.all { it.endsWith(VOICE_CLUE) }) SystemClock.elapsedRealtime() else 0L
         val sinceResume = SystemClock.elapsedRealtime() - lastAutoResumeAt
         val sinceFirstStart = if (firstStartAt > 0) SystemClock.elapsedRealtime() - firstStartAt else Long.MAX_VALUE
         if (lastAutoResumeAt > 0 && StartRules.looksDeliberate(sinceResume, clues.isEmpty(), sinceFirstStart, deliberateAfterMs) && !resumeOffThisDrive) {
@@ -1623,7 +1625,7 @@ class DriveMonitorService : NotificationListenerService() {
         }
         val usages = activeUsages()
         if (usages.isNotEmpty()) clues += "other audio playing: " + usages.joinToString { usageName(it) }
-        else if (stopVoice != null && now - stopVoiceAt < 15_000) clues += "${stopVoice} was speaking when it stopped"
+        else if (stopVoice != null && now - stopVoiceAt < 15_000) clues += "$stopVoice$VOICE_CLUE"
         else if (lastInterruptionAt > 0 && now - lastInterruptionAt < 15_000) {
             clues += "$lastInterruption played ${(now - lastInterruptionAt) / 1000}s ago"
         }

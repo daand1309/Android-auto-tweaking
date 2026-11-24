@@ -135,6 +135,7 @@
         <activity
             android:name=".DiagnosticsActivity"
             android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:label="Diagnostics"
             android:theme="@style/Theme.DriveMusic" />
 
