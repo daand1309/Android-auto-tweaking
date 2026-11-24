@@ -38,4 +38,23 @@ class StartRulesTest {
         assertFalse("music wasn't playing before we spoke", StartRules.afterOwnVoice(4_540, wasPlayingBefore = false))
         assertFalse("long after the voice: a real pause", StartRules.afterOwnVoice(StartRules.AFTER_VOICE_MS, wasPlayingBefore = true))
     }
+
+    @Test fun stopRightAfterComingBackByItselfIsPutBackQuickly() {
+        // 24 Nov 18:38: back by itself at :57.5, stopped at :58.7, confirmed at :01.7 (4.2 s).
+        assertTrue(StartRules.afterSelfRecovery(4_200, recovered = true))
+        assertFalse(StartRules.afterSelfRecovery(4_200, recovered = false))
+        assertFalse(StartRules.afterSelfRecovery(StartRules.AFTER_RECOVERY_MS, recovered = true))
+    }
+
+    @Test fun premiumErrorIsRecognised() {
+        assertTrue(StartRules.needsPremium("Upgrade naar Music Premium om deze functie te gebruiken"))
+        assertTrue(StartRules.needsPremium("Upgrade to Music Premium to use this feature"))
+        assertFalse(StartRules.needsPremium("Network error"))
+        assertFalse(StartRules.needsPremium(null))
+    }
+
+    @Test fun aNavigationPromptExplainsAStop() {
+        assertTrue("navigation voice" in StartRules.VOICES)
+        assertFalse("music" in StartRules.VOICES)
+    }
 }

@@ -43,6 +43,8 @@ object ObdManager {
      * with the ignition, so a quiet ECU right after that is the car switching off - not a stuck adapter.
      */
     @Volatile var carScreenLostAt = 0L
+    /** How long a quiet car waits for "Android Auto dropped" before the adapter is called stuck. */
+    private const val SWITCH_OFF_GRACE_MS = 6_000L
     /** [onLinked] has fired for this drive (so a reconnect after a stall doesn't repeat it). */
     @Volatile private var linkedTold = false
     @Volatile private var socket: BluetoothSocket? = null
@@ -392,7 +394,14 @@ object ObdManager {
                 val now = System.currentTimeMillis()
                 // Not when the car screen has just gone: then the ignition went off (21 Nov 11:45 - parked
                 // within 30 s of driving, which still looked like "silent while driving").
-                val switchedOff = carScreenLostAt > 0 && now - carScreenLostAt < 60_000
+                var switchedOff = carScreenLostAt > 0 && now - carScreenLostAt < 60_000
+                if (silent == 2 && !switchedOff && now - movingAt < 30_000 && now - lastReset > 120_000) {
+                    // The car can go quiet a moment before Android Auto notices the ignition is off (24 Nov
+                    // 18:50: quiet first, screen gone ~1 s later). Give it a few seconds to say so first.
+                    val waitUntil = System.currentTimeMillis() + SWITCH_OFF_GRACE_MS
+                    while (alive(myGen) && carScreenLostAt == 0L && System.currentTimeMillis() < waitUntil) sleep(250L)
+                    switchedOff = carScreenLostAt > 0 && System.currentTimeMillis() - carScreenLostAt < 60_000
+                }
                 if (silent == 2 && !switchedOff && now - movingAt < 30_000 && now - lastReset > 120_000) {
                     lastReset = now
                     val back = session.resetAdapter()

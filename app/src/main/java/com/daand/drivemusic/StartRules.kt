@@ -17,6 +17,17 @@ object StartRules {
     fun quickRestart(sinceFirstStartMs: Long, sinceLastStartMs: Long, restartsUsed: Int, bounceWindowMs: Long): Boolean =
         bounceWindowMs > 0 && sinceLastStartMs < bounceWindowMs && sinceFirstStartMs < SETTLE_WINDOW_MS && restartsUsed < MAX_QUICK_RESTARTS
 
+    /** Kinds of sound (see DriveMonitorService.logOtherSound) that explain a stop: someone/something talking. */
+    val VOICES = setOf("navigation voice", "assistant", "call")
+
+    /** A stop confirmed this soon after the music came back by itself (its ~1 s stop + the 3 s grace). */
+    const val AFTER_RECOVERY_MS = 6_000L
+    fun afterSelfRecovery(sinceRecoveredMs: Long, recovered: Boolean): Boolean =
+        recovered && sinceRecoveredMs in 0 until AFTER_RECOVERY_MS
+
+    /** YouTube Music's "Upgrade to Music Premium..." error, in Dutch or English. */
+    fun needsPremium(error: String?): Boolean = error != null && error.contains("Premium", ignoreCase = true)
+
     /**
      * A stop confirmed within this long after our own voice ended (the music had been playing before it):
      * YouTube Music's ~1 s stop after it comes back by itself, plus the 3 s grace before a stop counts.

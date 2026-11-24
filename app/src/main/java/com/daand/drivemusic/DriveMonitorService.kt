@@ -339,6 +339,7 @@ class DriveMonitorService : NotificationListenerService() {
             pausesThisDrive = 0
             resumesThisDrive = 0
             briefInterruptions = 0
+            premiumHintGiven = false; selfRecoveredAt = 0L; stopVoice = null
             lastNotableAudio = ""
             cancelPendingPause()
             resumeTimes.clear()
@@ -1356,6 +1357,12 @@ class DriveMonitorService : NotificationListenerService() {
 
             val extra = if (s == PlaybackState.STATE_ERROR) " error='${state.errorMessage}'" else ""
             DriveLog.log("YouTube Music: ${stateName(prev)} -> ${stateName(s)}$extra")
+            if (s == PlaybackState.STATE_ERROR && !premiumHintGiven && StartRules.needsPremium(state.errorMessage?.toString())) {
+                premiumHintGiven = true
+                DriveLog.log("HINT: YouTube Music says this needs Premium. With Morphe that usually means its patches " +
+                    "(background play) no longer fully match this YouTube Music version - updating/re-patching Morphe " +
+                    "should stop the short stops it makes while you drive.")
+            }
 
             when (s) {
                 PlaybackState.STATE_PLAYING -> {
@@ -1375,6 +1382,7 @@ class DriveMonitorService : NotificationListenerService() {
                             pausesThisDrive = maxOf(0, pausesThisDrive - 1)
                             briefInterruptions++
                             DriveLog.log("Music came back by itself after ${since / 1000}s - a music app hiccup, not counted as a pause after all")
+                            selfRecoveredAt = SystemClock.elapsedRealtime()
                         } else DriveLog.log("Music came back by itself - auto-resume not needed")
                     }
                     unexplainedPauseAt = 0L
@@ -1425,7 +1433,17 @@ class DriveMonitorService : NotificationListenerService() {
                 }
             }
         DriveLog.log("SOUND: also playing now: " + (playing.takeIf { it.isNotEmpty() }?.joinToString() ?: "nothing"))
+        // A voice at the moment of the stop (Waze, an assistant, a call) explains it, even when it has
+        // finished by the time the stop counts (24 Nov 18:45: a Waze prompt ended as "you paused - deliberate").
+        stopVoice = playing.firstOrNull { it in StartRules.VOICES }
+        stopVoiceAt = SystemClock.elapsedRealtime()
     }
+    @Volatile private var stopVoice: String? = null
+    @Volatile private var stopVoiceAt = 0L
+    /** When the music last came back by itself after an unexplained stop (see [onConfirmedPause]). */
+    private var selfRecoveredAt = 0L
+    /** "Needs Premium" from YouTube Music: explained once per drive. */
+    private var premiumHintGiven = false
 
     private fun schedulePendingPause(stopState: Int) {
         cancelPendingPause()
@@ -1454,6 +1472,14 @@ class DriveMonitorService : NotificationListenerService() {
         if (lastStartedAt > 0 && StartRules.quickRestart(nowMs - firstStartAt, nowMs - lastStartedAt, quickRestarts, startBounceMs)) {
             quickRestarts++; bounceRetried = true; bounceRetryPending = true
             DriveLog.log("Music stopped right after starting - pressing play again in 1.5s (not counted, $quickRestarts of ${StartRules.MAX_QUICK_RESTARTS})")
+            scheduleResume(1_500L)
+            return
+        }
+        // YouTube Music (Morphe) often stops once more ~1 s after it came back by itself (24 Nov 18:19, 18:38,
+        // 18:41, 18:45): that used to wait the full 8 s. Same settling stop - back on in 1.5 s, not counted.
+        if (StartRules.afterSelfRecovery(nowMs - selfRecoveredAt, selfRecoveredAt > 0)) {
+            selfRecoveredAt = 0L
+            DriveLog.log("Music stopped again right after coming back by itself - pressing play in 1.5s (not counted)")
             scheduleResume(1_500L)
             return
         }
@@ -1597,6 +1623,7 @@ class DriveMonitorService : NotificationListenerService() {
         }
         val usages = activeUsages()
         if (usages.isNotEmpty()) clues += "other audio playing: " + usages.joinToString { usageName(it) }
+        else if (stopVoice != null && now - stopVoiceAt < 15_000) clues += "${stopVoice} was speaking when it stopped"
         else if (lastInterruptionAt > 0 && now - lastInterruptionAt < 15_000) {
             clues += "$lastInterruption played ${(now - lastInterruptionAt) / 1000}s ago"
         }
