@@ -579,9 +579,11 @@ class CarAlerts(
                     }
                 }
                 Kind.LOW_BATTERY -> when {
-                    dutch -> "De accu staat wat laag, ${volts(a.value)} volt. Misschien is hij aan vervanging toe."
-                    butler -> "The battery is looking rather tired, sir: ${volts(a.value)} volts. It may be due for retirement."
-                    else -> "The battery is a bit low: ${volts(a.value)} volts. It might be getting old."
+                    // Read with the ignition on (lights, fan, screen drawing on it), often after short cold trips:
+                    // usually undercharged rather than worn out (24 Nov 20:29: 11.35 V, then charged fine).
+                    dutch -> "De accu staat wat laag, ${volts(a.value)} volt. Een langere rit laadt hem bij; blijft hij laag, laat hem dan testen."
+                    butler -> "The battery is running a little low, sir: ${volts(a.value)} volts. A longer drive should top it up; should it stay low, do have it tested."
+                    else -> "The battery is a bit low: ${volts(a.value)} volts. A longer drive will charge it; if it stays low, have it tested."
                 }
                 Kind.WEAK_CHARGING -> when {
                     dutch -> "De accu wordt niet goed geladen, maar ${volts(a.value)} volt terwijl de motor draait. Laat de dynamo eens controleren."

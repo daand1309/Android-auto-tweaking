@@ -339,7 +339,7 @@ class DriveMonitorService : NotificationListenerService() {
             pausesThisDrive = 0
             resumesThisDrive = 0
             briefInterruptions = 0
-            premiumHintGiven = false; selfRecoveredAt = 0L; stopVoice = null
+            premiumHintGiven = false; premiumResetTried = false; selfRecoveredAt = 0L; stopVoice = null
             lastNotableAudio = ""
             cancelPendingPause()
             resumeTimes.clear()
@@ -903,6 +903,15 @@ class DriveMonitorService : NotificationListenerService() {
                             // Plain play() did nothing (empty queue?). Ask it to play "anything".
                             DriveLog.log("START: play() didn't work, sending playFromSearch(\"\") (state=${stateName(state)})")
                             c.transportControls.playFromSearch("", null)
+                        } else if (state == PlaybackState.STATE_ERROR && !premiumResetTried &&
+                            StartRules.needsPremium(c.playbackState?.errorMessage?.toString())) {
+                            // Drives that started from YouTube Music's "needs Premium" error stopped every few
+                            // seconds (24 Nov 12:15, 18:15, 20:28); drives that started from STOPPED played on
+                            // (20:47: 35 min, no stops). So from that error: stop first, then play - logged, to compare.
+                            premiumResetTried = true
+                            DriveLog.log("START: YouTube Music is in its 'needs Premium' error - stopping it first, then play (test)")
+                            c.transportControls.stop()
+                            handler.postDelayed({ runCatching { c.transportControls.play() } }, 700L)
                         } else {
                             DriveLog.log("START: pressing play (state=${stateName(state)})")
                             c.transportControls.play()
@@ -1445,6 +1454,8 @@ class DriveMonitorService : NotificationListenerService() {
     private var selfRecoveredAt = 0L
     /** "Needs Premium" from YouTube Music: explained once per drive. */
     private var premiumHintGiven = false
+    /** The stop-then-play start from that error: once per drive. */
+    private var premiumResetTried = false
 
     private fun schedulePendingPause(stopState: Int) {
         cancelPendingPause()
