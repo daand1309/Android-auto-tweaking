@@ -29,6 +29,9 @@ object HomeFeatures {
         Feature("car_data", FeatureGroup.CAR, "Car data", "📊", listOf(
             "obd", "adapter", "bluetooth", "battery", "accu", "fuel price", "brandstof", "brandstofprijs", "tank",
             "engine size", "fault", "code", "early warnings", "storing", "motor", "temperature", "vgate")),
+        Feature("diagnostics", FeatureGroup.CAR, "Diagnostics", "🩺", listOf(
+            "diagnostics", "health check", "check", "test", "scan", "scanner", "misfire", "fuel trim", "alternator",
+            "oxygen sensor", "lambda", "diagnose", "controle", "keuring", "storingen")),
         Feature("trips", FeatureGroup.CAR, "Trips & costs", "⛽", listOf(
             "trips", "costs", "driving score", "score", "fuel use", "ritten", "kosten", "verbruik")),
         Feature("service", FeatureGroup.CAR, "Service", "🔧", listOf(

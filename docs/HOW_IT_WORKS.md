@@ -103,6 +103,22 @@ per section, and long explanations folded to their first sentence ("More ›" op
 warnings, the setup checklist or the Help page). Back on any page returns to Home. New features and themes are one entry each (`HomeFeatures`,
 `Style.ALL_THEMES`).
 
+**Diagnostics** (home grid, and a button on Car data): health checks on demand through the OBD adapter,
+read-only like everything else (the ReadOnly allow-list is unchanged; mode 06 questions were already on it).
+- *Quick check* (~30 s, ignition on or engine running): one reading of every value plus the fault codes
+  (asked for at once instead of waiting for their 10 minutes) and the misfire counters (mode 06 A2-A5):
+  codes, engine light, emissions self-tests, codes cleared recently, battery or charging, fuel trim (warm,
+  closed loop), cold-engine temperature sensors agreeing, engine temperature, catalyst, misfires.
+- *Full test* (~5 min, parked, engine running): four guided steps - idle 60 s, electrical load 30 s
+  (lights, rear heater, fan), 2500 rpm 30 s, a quick tap - with a countdown and live numbers. Judges idle
+  steadiness, mixture at idle and at 2500 (lean at idle only = air leak), oxygen sensors (front switching,
+  rear steady = catalyst storing oxygen), air flow at idle, voltage under load and the return to idle.
+  Moving faster than 3 km/h stops it. Mixture numbers are only judged with the engine above 75 °C.
+- While a check runs, ObdManager reads every value each round at the live pace (`diagnosing`); work that
+  needs the adapter (mode 06) is queued and runs on the poll thread, so the link is never shared between
+  threads. The judging is pure (`obd/Diagnostics.kt`, thresholds in the design doc, unit tested). The last
+  10 results are kept (not in backups) and can be shared as text.
+
 **Themes:** nine colour sets, most built around a grey ASX with a grey/black interior: Red & silver (default),
 Titanium, Titanium red, Night drive (darkest, dimmed text), Steel blue, Copper, Dial green, Midnight black (true
 black, saves battery on an OLED screen) and Classic blue. Each theme also says which text colour goes on its accent

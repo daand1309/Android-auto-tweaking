@@ -127,6 +127,12 @@ class ScreenshotTour {
         // came out light, with a white strip behind the status bar, and no screenshot showed it).
         DriveLog.log("!!! PAUSE #1 while driving. Clues: screenshot tour")
         ActivityScenario.launch(LogActivity::class.java).use { snap("${prefix}logs") }
+        // Diagnostics, also its own activity: the start screen with a saved result in its history.
+        Prefs(ctx).diagResults = com.daand.drivemusic.obd.Diagnostics.encode(listOf(com.daand.drivemusic.obd.Diagnostics.Result(
+            System.currentTimeMillis(), true, listOf(
+                com.daand.drivemusic.obd.Diagnostics.Check("codes", "Fault codes", com.daand.drivemusic.obd.Diagnostics.Verdict.OK, "none stored, none pending"),
+                com.daand.drivemusic.obd.Diagnostics.Check("idle", "Idle", com.daand.drivemusic.obd.Diagnostics.Verdict.WARN, "760 rpm, varies ±32 - a little uneven")))))
+        ActivityScenario.launch(DiagnosticsActivity::class.java).use { snap("${prefix}diagnostics") }
     }
 
     private fun driveMode(): DriveModeActivity? {

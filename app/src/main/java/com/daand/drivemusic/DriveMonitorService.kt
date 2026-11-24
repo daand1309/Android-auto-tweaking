@@ -1359,9 +1359,9 @@ class DriveMonitorService : NotificationListenerService() {
             DriveLog.log("YouTube Music: ${stateName(prev)} -> ${stateName(s)}$extra")
             if (s == PlaybackState.STATE_ERROR && !premiumHintGiven && StartRules.needsPremium(state.errorMessage?.toString())) {
                 premiumHintGiven = true
-                DriveLog.log("HINT: YouTube Music says this needs Premium. With Morphe that usually means its patches " +
-                    "(background play) no longer fully match this YouTube Music version - updating/re-patching Morphe " +
-                    "should stop the short stops it makes while you drive.")
+                DriveLog.log("HINT: YouTube Music says this needs Premium - YouTube checking the patched app. It goes with " +
+                    "the short stops while you drive; Drive Music puts the music back on. If a newer Morphe patch " +
+                    "comes out, updating may stop them.")
             }
 
             when (s) {

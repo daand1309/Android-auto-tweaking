@@ -273,6 +273,15 @@ class ObdSession(
         )
     }
 
+    /**
+     * Mode 06 results for these monitor ids (read-only questions, "06XX"). Empty for ids the car doesn't
+     * share (it answers NO DATA). Used by the diagnostics for the misfire counters (A2..A5).
+     */
+    fun onBoardTests(mids: List<Int>): List<OnBoardTests.Result> = mids.flatMap { mid ->
+        runCatching { OnBoardTests.parse(Elm327.lines(link.send("06%02X".format(mid), 2_000))) }
+            .getOrDefault(emptyList()).filter { it.mid == mid }
+    }
+
     fun close() { runCatching { link.close() } }
 
     /** The battery voltage measured by the adapter itself (ATRV - fast, doesn't involve the car's computer). */

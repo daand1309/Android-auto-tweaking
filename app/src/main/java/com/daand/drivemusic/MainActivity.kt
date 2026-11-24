@@ -522,6 +522,7 @@ class MainActivity : Activity() {
             "updates" -> go(Page.UPDATES)
             "backup" -> go(Page.BACKUP)
             "logs" -> startActivity(Intent(this, LogActivity::class.java))
+            "diagnostics" -> startActivity(Intent(this, DiagnosticsActivity::class.java))
             "help" -> go(Page.HELP)
         }
     }
@@ -846,6 +847,7 @@ class MainActivity : Activity() {
                 "and the voice tells you when something needs attention.")
             return
         }
+        button("🩺  Diagnostics - quick check or full test") { startActivity(Intent(this, DiagnosticsActivity::class.java)) }
         // The live block first: this page is opened while driving, so the numbers are what you came for.
         header("Right now")
         val obd = com.daand.drivemusic.obd.ObdManager

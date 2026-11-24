@@ -8,7 +8,7 @@ class HomeFeaturesTest {
     @Test fun gridOrderIsTheDesigned() {
         val g = HomeFeatures.byGroup()
         assertEquals(listOf("music", "greeting", "voice", "drive_mode"), g[FeatureGroup.MUSIC]!!.map { it.id })
-        assertEquals(listOf("car_data", "trips", "service", "car_screen"), g[FeatureGroup.CAR]!!.map { it.id })
+        assertEquals(listOf("car_data", "diagnostics", "trips", "service", "car_screen"), g[FeatureGroup.CAR]!!.map { it.id })
         assertEquals(listOf("themes", "setup", "updates", "backup", "logs", "help"), g[FeatureGroup.APP]!!.map { it.id })
     }
 

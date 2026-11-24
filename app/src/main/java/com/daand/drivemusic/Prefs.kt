@@ -295,6 +295,10 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putString("gear_learned", v).apply()
 
     /** Voltage dip while starting, per day ([com.daand.drivemusic.obd.CrankCheck]) and when we last asked for one. */
+    /** Diagnostics results (obd/Diagnostics.encode), newest last. */
+    var diagResults: String
+        get() = sp.getString("diag_results", "") ?: ""
+        set(v) = sp.edit().putString("diag_results", v).apply()
     var crankLog: String
         get() = sp.getString("crank_log", "") ?: ""
         set(v) = sp.edit().putString("crank_log", v).apply()
@@ -594,7 +598,7 @@ class Prefs(context: Context) {
         "last_update_check", "notified_update", "update_status", "last_seen_music_app", "last_music_change_at",
         "parked_spot", "told_news", "follow_topic", "follow_until", "obd_told",
         "service_reminded", "battery_log", "battery_warned", "trend_told", "trend_say", "code_log_stored", "code_log_pending", "battery_events", "last_drive_end", "adapter_parked",
-        "catalyst_log", "freeze_frame",
+        "catalyst_log", "freeze_frame", "diag_results",
         // The Azure key never leaves the phone; the usage count must not be reset by restoring an old backup.
         "azure_key", "cloud_voice_chars", "cloud_voice_month",
         // Questions that were open on the old phone, and a fuel price quoted for the old phone's area

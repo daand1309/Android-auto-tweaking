@@ -241,6 +241,7 @@ object ObdManager {
     fun stop() {
         if (!running) return
         running = false
+        jobs.clear(); diagnosing = false; codesWanted = false
         runCatching { saveFuelLevel() }
         appCtx?.let { c -> runCatching { Prefs(c).gearLearned = gearCoach.save() } }
         alertSink = null
@@ -322,6 +323,18 @@ object ObdManager {
     @Volatile var liveView = false
     const val LIVE_POLL_MS = 1_500L
 
+    /** A diagnostics run is on: every round reads every value, at the live pace. */
+    @Volatile var diagnosing = false
+    /** Read the fault codes in the next round (diagnostics), instead of waiting for their 10 minutes. */
+    @Volatile private var codesWanted = false
+    fun requestCodes() { codesWanted = true }
+    /** Work that needs the adapter (mode 06 for the diagnostics): run on the poll thread, between readings. */
+    private val jobs = java.util.concurrent.ConcurrentLinkedQueue<(ObdSession) -> Unit>()
+    /** Queue [job] for the adapter; false when no adapter is connected (it would never run). */
+    fun onAdapter(job: (ObdSession) -> Unit): Boolean { if (!isConnected()) return false; jobs += job; return true }
+    /** The car's own catalyst test result this connection, if it has run. */
+    val catalyst: OnBoardTests.Catalyst? get() = lastSession?.catalyst
+
     /** Engine off / ignition off: the ECU is silent, so stop burning questions on it. */
     const val QUIET_POLL_MS = 15_000L
 
@@ -350,7 +363,7 @@ object ObdManager {
         var lastCatalystCheck = System.currentTimeMillis()
         while (alive(myGen)) {
             val roundStart = System.currentTimeMillis()
-            val full = n == 0 || roundStart - lastFullAt >= FULL_EVERY_MS
+            val full = n == 0 || roundStart - lastFullAt >= FULL_EVERY_MS || diagnosing || codesWanted
             if (full) lastFullAt = roundStart
             // Once a minute: is the adapter keeping up? If not, the slower pace for 5 minutes.
             if (roundStart - minuteAt >= 60_000L) {
@@ -361,9 +374,10 @@ object ObdManager {
                 }
                 minuteAt = roundStart; minuteQ = session.questions; minuteMissed = session.unansweredWhileOn
             }
-            val codesDue = full && System.currentTimeMillis() - lastCodes > CODES_EVERY_MS
+            val codesDue = full && (codesWanted || System.currentTimeMillis() - lastCodes > CODES_EVERY_MS)
             val snap = session.read(latest, full, readCodes = codesDue)
-            if (codesDue) lastCodes = System.currentTimeMillis()
+            if (codesDue) { lastCodes = System.currentTimeMillis(); codesWanted = false }
+            while (true) { val job = jobs.poll() ?: break; runCatching { job(session) } }
             if (System.currentTimeMillis() - windowAt >= 5 * 60_000L) {
                 val q = session.questions - windowQ; val missed = session.unansweredWhileOn - windowMissed
                 if (q >= 20 && missed * 10 > q) DriveLog.log("OBD: last 5 min $missed of $q questions unanswered (${missed * 100 / q}%)" +
@@ -454,7 +468,7 @@ object ObdManager {
             }
             n++
             // A steady rhythm: the wait includes the time the reading took.
-            val interval = PollPace.interval(liveView, alerts.countingDown(), silent, slowed = System.currentTimeMillis() < slowUntil)
+            val interval = PollPace.interval(liveView || diagnosing, alerts.countingDown(), silent, slowed = System.currentTimeMillis() < slowUntil)
             // Ignition on, engine not running yet (first 5 minutes): instead of waiting, watch the battery
             // voltage several times a second - the start shows as a dip then charging (the battery test).
             val waitingToStart = !crank.done && silent == 0 && !snap.engineRunning && (snap.volts ?: 0.0) in 9.0..CrankCheck.RUNNING_V &&
