@@ -84,7 +84,7 @@ class ObdDataTest {
         // As in the real log: right before the drive ended, nothing answered for a few reads.
         val logs = mutableListOf<String>()
         val car = Car(all)
-        val s = ObdSession(car) { logs += it }
+        val s = ObdSession(car, log = { logs += it })
         assertNull(s.start())
         car.off = true
         repeat(3) { s.read(null, full = true, readCodes = false) }
@@ -98,7 +98,7 @@ class ObdDataTest {
     @Test fun aCarThatRefusesCombinedQuestionsStillGetsEverything() {
         val logs = mutableListOf<String>()
         val car = Car(all, combined = false)
-        val s = ObdSession(car) { logs += it }
+        val s = ObdSession(car, log = { logs += it })
         assertNull(s.start())
         val snap = s.read(null, full = true, readCodes = false)
         assertFalse("combined questions switched off", s.batching)
@@ -110,7 +110,7 @@ class ObdDataTest {
         val logs = mutableListOf<String>()
         // 0x13 / 0x1C are understood (not worth showing); 0x51 (fuel type) and 0x9D are not shown yet.
         val car = Car(setOf(0x05, 0x0C, 0x13, 0x1C, 0x51, 0x9D), extra = mapOf("0113" to "411303\r", "011C" to "411C06\r", "0151" to "415101\r", "019D" to "419D0102\r"))
-        assertNull(ObdSession(car) { logs += it }.start())
+        assertNull(ObdSession(car, log = { logs += it }).start())
         val line = logs.single { it.contains("not shown yet") }
         assertTrue(line, line.contains("2 values") && line.contains("51=415101") && line.contains("9D=419D0102") && !line.contains("13="))
         assertTrue(logs.any { it.contains("adapter 'ELM327 v2.3'") && it.contains("ISO 15765-4") })
@@ -119,7 +119,7 @@ class ObdDataTest {
     @Test fun garbageIsLoggedOncePerValueWithTheRawBytes() {
         val logs = mutableListOf<String>()
         val car = Car(setOf(0x05, 0x0C, 0x0D), value = 0xFF)   // 0xFF everywhere: 215 °C, 255 km/h
-        val s = ObdSession(car) { logs += it }
+        val s = ObdSession(car, log = { logs += it })
         assertNull(s.start())
         s.read(null, false, false); s.read(null, false, false)
         val dropped = logs.filter { it.contains("ignored an implausible") }

@@ -278,7 +278,7 @@ object ObdManager {
                 val l = BluetoothObd.connect(ctx, address, cancelled = { !alive(myGen) }) { socket = it }
                 link = l
                 if (!alive(myGen)) { runCatching { l.close() }; break }  // stopped while connecting
-                val session = ObdSession(l, engineLitres) { DriveLog.log(it) }
+                val session = ObdSession(l, engineLitres, log = { DriveLog.log(it) })
                 val problem = session.start()
                 if (problem != null) {
                     status = "Adapter found, but $problem"
@@ -589,7 +589,7 @@ object ObdManager {
         var s: BluetoothSocket? = null
         return try {
             val l = BluetoothObd.connect(ctx, address) { s = it }
-            val session = ObdSession(l, Prefs(ctx).obdEngineLitres) { DriveLog.log(it) }
+            val session = ObdSession(l, Prefs(ctx).obdEngineLitres, log = { DriveLog.log(it) })
             try {
                 session.start()?.let { return "Adapter found ✓, but $it" }
                 val snap = session.read(null, full = true, readCodes = true)

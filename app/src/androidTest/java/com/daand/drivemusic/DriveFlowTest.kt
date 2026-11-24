@@ -224,6 +224,56 @@ class DriveFlowTest {
         assertTrue(prefs.lastDrive.contains("pause(s)"))
     }
 
+    /**
+     * The greeting must stop with the car. It used to keep talking after Android Auto dropped: the
+     * service stopped the radio and closed the briefing, but the active voice belonged to neither.
+     * Its continuation still runs (that is where the welcome releases its busy flag) and it must not
+     * start the music after the drive is gone.
+     */
+    /**
+     * The ignition can go off while Android Auto stays connected. The radio is then playing into an
+     * empty car - and its player holds a partial wake lock, so it also keeps the phone awake. Only the
+     * Android-Auto-drop path used to stop it (Luna's finding 22).
+     */
+    @Test
+    fun theIgnitionGoingOffStopsTheRadio() {
+        connectCar()
+        onMain { RadioPlayer.pretendPlayingForTest(Radio.Station("Test FM", "https://example.org/test.mp3")) }
+        assertTrue("the radio is playing", RadioPlayer.on)
+        onMain { service().simulateIgnitionOffForTest() }
+        assertFalse("the radio must not keep playing to an empty car", RadioPlayer.on)
+        assertTrue("and the log says so:\n" + log(),
+            log().contains("off (the drive ended)") || log().contains("RADIO: Test FM off"))
+        assertTrue("the radio is remembered for the next drive", prefs.radioWasOn)
+    }
+
+    @Test
+    fun leavingTheCarSilencesTheVoice() {
+        prefs.greetingEnabled = false       // this test brings the voice itself; the service must stop it
+        connectCar()
+        var continued = 0
+        val g = Greeter(ctx)
+        onMain {
+            g.speak("Dit is een lange begroeting die anders nog even door zou praten in de auto.", dutch = true) {
+                continued++
+            }
+        }
+        var started = true
+        try {
+            waitFor("the voice to start talking", 3_000) { Voice.speaking }
+        } catch (e: AssertionError) {
+            started = false    // no text-to-speech on this emulator: the sentence ends at once
+        }
+        org.junit.Assume.assumeTrue("no text-to-speech on this device", started)
+        val playsBefore = playCalls
+        onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_NOT_CONNECTED) }
+        waitFor("the voice to be stopped", 5_000) { !Voice.speaking }
+        waitFor("its owner to be released", 5_000) { continued == 1 }
+        assertTrue("and the log says why:\n" + log(), log().contains("cut short (the car disconnected)"))
+        SystemClock.sleep(1_000)   // a late start would show up here
+        assertEquals("the car going away must not start the music", playsBefore, playCalls)
+    }
+
     @Test
     fun greetingPlaysThenMusicStarts() {
         prefs.greetingEnabled = true
@@ -555,10 +605,13 @@ class DriveFlowTest {
         assertTrue(log().contains("pressing play again"))
         assertTrue("not counted as a pause", !log().contains("PAUSE #"))
         // While it settles (17 Nov drive: four stops in 30 s): up to 3 quick restarts, then a normal pause.
-        for (n in 2..3) {
+        val maxRestarts = StartRules.MAX_QUICK_RESTARTS
+        for (n in 2..maxRestarts) {
             SystemClock.sleep(500)
             onMain { setState(PlaybackState.STATE_PAUSED) }
-            waitFor("quick restart $n", 9_000) { currentState == PlaybackState.STATE_PLAYING && log().contains("$n of 3") }
+            waitFor("quick restart $n", 9_000) {
+                currentState == PlaybackState.STATE_PLAYING && log().contains("$n of $maxRestarts")
+            }
         }
         assertTrue("still not counted", !log().contains("PAUSE #"))
         SystemClock.sleep(500)

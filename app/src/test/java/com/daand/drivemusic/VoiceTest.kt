@@ -107,6 +107,117 @@ class VoiceTest {
         assertTrue(rain, rain.startsWith("It has started to rain.") && rain.contains("my mood"))  // butler wording, no forced sir
     }
 
+    /**
+     * The drive ended while the voice was still talking: it must stop, and its continuation must still
+     * run exactly once - that is where the owner releases what it holds (WelcomeAnnouncer's busy flag,
+     * the media menu's voice claim). Refusing the music is the service's job, not the voice's.
+     */
+    @Test fun endingTheDriveStopsTheVoiceAndStillReleasesTheOwner() {
+        val app = ApplicationProvider.getApplicationContext<android.content.Context>()
+        DriveLog.init(app)
+        var done = 0
+        val g = Greeter(app)
+        g.speak("Hallo, meneer.", dutch = true) { done++ }
+        com.daand.drivemusic.Voice.stop("the drive ended")
+        g.stop("you pressed skip too")            // a later Skip must not run it a second time
+        com.daand.drivemusic.Voice.stop("the drive ended")
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("the owner is released exactly once", 1, done)
+        assertFalse("nothing is being said any more", com.daand.drivemusic.Voice.speaking)
+    }
+
+    /** And the slot is free afterwards, which is what lets the next drive greet at all. */
+    @Test fun theVoiceSlotIsFreeAgainAfterTheDriveEnded() {
+        val app = ApplicationProvider.getApplicationContext<android.content.Context>()
+        DriveLog.init(app)
+        val g = Greeter(app)
+        g.speak("Hallo.", dutch = true) {}
+        com.daand.drivemusic.Voice.stop("the drive ended")
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse("the voice is free again", com.daand.drivemusic.Voice.speaking)
+        val again = Greeter(app)
+        again.speak("Hallo.", dutch = true) {}
+        assertTrue("a new greeting can take the slot", com.daand.drivemusic.Voice.speaking)
+        again.stop("test over")
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    /**
+     * The greeting prepares its text (weather, location) on a background thread and only then starts a
+     * Greeter. Ending the drive in that window used to leave nothing to stop - Voice.speaking was false
+     * - and the later main-thread start spoke into an empty car anyway (Luna's finding 19).
+     */
+    @Test fun aGreetingCancelledWhileItIsBeingPreparedNeverStartsSpeaking() {
+        val app = ApplicationProvider.getApplicationContext<android.content.Context>()
+        DriveLog.init(app)
+        val p = Prefs(app)
+        p.weatherEnabled = false      // keep the preparation short: the race is in the post, not the fetch
+        p.greetingEnabled = true
+        var thenRan = 0
+        WelcomeAnnouncer.run(app, recordAsGreeted = false) { thenRan++ }
+        // Wait for the background preparation to be underway, then end the drive before the looper runs.
+        val deadline = System.currentTimeMillis() + 5_000
+        while (!DriveLog.readAll().contains("GREETING: preparing") && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20)
+        }
+        WelcomeAnnouncer.cancel("the drive ended")
+        var released = false
+        val until = System.currentTimeMillis() + 5_000
+        while (System.currentTimeMillis() < until) {
+            shadowOf(Looper.getMainLooper()).idle()
+            if (!WelcomeAnnouncer.isBusy) { released = true; break }
+            Thread.sleep(20)
+        }
+        assertTrue("the busy flag is released again", released)
+        assertFalse("nothing may start speaking after the drive ended", com.daand.drivemusic.Voice.speaking)
+        assertEquals("and the caller is released exactly once", 1, thenRan)
+        assertTrue("the log says why:\n" + DriveLog.readAll(),
+            DriveLog.readAll().contains("dropped - the drive ended before it started") ||
+                DriveLog.readAll().contains("GREETING: cancelled"))
+    }
+
+    /**
+     * A greeting that never gets said must not leave marks: "greeted just now" would silence the next
+     * one for ten minutes, and a reminder it "used up" would be gone (Luna's finding 24).
+     */
+    @Test fun aCancelledGreetingLeavesNoMarks() {
+        val app = ApplicationProvider.getApplicationContext<android.content.Context>()
+        DriveLog.init(app)
+        val p = Prefs(app)
+        p.weatherEnabled = false
+        p.lastGreetingAt = 0L
+        p.trendToSay = listOf("CHARGE")
+        WelcomeAnnouncer.run(app, recordAsGreeted = true) {}
+        val deadline = System.currentTimeMillis() + 5_000
+        while (!DriveLog.readAll().contains("GREETING: preparing") && System.currentTimeMillis() < deadline) Thread.sleep(20)
+        WelcomeAnnouncer.cancel("the drive ended")
+        val until = System.currentTimeMillis() + 5_000
+        while (WelcomeAnnouncer.isBusy && System.currentTimeMillis() < until) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+        assertEquals("it was not greeted, so the next drive may greet", 0L, p.lastGreetingAt)
+        assertEquals("and the warning it would have said is still queued", listOf("CHARGE"), p.trendToSay)
+    }
+
+    /** The other side of it: a greeting that does start applies the same bookkeeping. */
+    @Test fun aGreetingThatStartsDoesItsBookkeeping() {
+        val app = ApplicationProvider.getApplicationContext<android.content.Context>()
+        DriveLog.init(app)
+        val p = Prefs(app)
+        p.weatherEnabled = false
+        p.lastGreetingAt = 0L
+        p.trendToSay = listOf("CHARGE")
+        WelcomeAnnouncer.run(app, recordAsGreeted = true) {}
+        val until = System.currentTimeMillis() + 8_000
+        while (p.lastGreetingAt == 0L && System.currentTimeMillis() < until) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+        }
+        assertTrue("it was greeted, so it is recorded", p.lastGreetingAt > 0L)
+        assertEquals("and the warning is used up", emptyList<String>(), p.trendToSay)
+    }
+
     @Test fun theVeryFirstGreetingSaysWelcomeNotWelcomeBack() {
         val cal = java.util.Calendar.getInstance()
         fun g(first: Boolean, butler: Boolean = false, dutch: Boolean = false) =

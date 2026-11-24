@@ -1508,7 +1508,15 @@ class MainActivity : Activity() {
             text("No update waiting to install." + if (prefs.autoUpdateCheck) " The app checks once a day by itself, or tap below to check now." else " Tap below to check now.")
         } else {
             statRow("Available", "${upd.versionName} - ready to install")
-            if (upd.notes.isNotBlank()) text(upd.notes.take(400))
+            // The detailed changelog - one line per commit since the installed version, from GitHub's
+            // compare API - when we managed to fetch it; the release note is the fallback.
+            val changes = prefs.updateChangelog.takeIf { prefs.updateChangelogFor == upd.versionName && it.isNotBlank() }
+            if (changes != null) {
+                header("What's new in ${upd.versionName}")
+                text(changes.lines().filter { it.isNotBlank() }.joinToString("\n") { "•  $it" }.take(4000))
+            } else if (upd.notes.isNotBlank()) {
+                text(upd.notes.take(400))
+            }
             button(if (updateBusy) "Downloading..." else "⬇  Install ${upd.versionName}", accent = true,
                 enabled = !updateBusy) { if (!updateBusy) installUpdate(upd) }
             text("Drive Music checks the file's checksum and signature before handing it to Android, " +

@@ -291,6 +291,13 @@ class DriveMonitorService : NotificationListenerService() {
         onCarState(type)
     }
 
+    /**
+     * Test hook: the ignition check decided the car is off (Android Auto still connected). Same path the
+     * check takes, so the emulator can prove what happens to the radio.
+     */
+    @androidx.annotation.VisibleForTesting
+    fun simulateIgnitionOffForTest() = ignitionOff(IGNITION_END_DRIVE_MS)
+
     /** Test hook: pretend the monitor just (re)started, so the next car state is its first event. */
     @androidx.annotation.VisibleForTesting
     fun simulateMonitorRestartForTest() {
@@ -371,6 +378,12 @@ class DriveMonitorService : NotificationListenerService() {
             val other = otherAppPlaying()
             val startAction: () -> Unit = start@{
                 if (gen != connectGen) return@start  // stale: the car disconnected/reconnected since
+                // A greeting cut short at the end of the drive still continues (it has to release what
+                // it holds): this is the line that stops it starting the music.
+                if (driveEnded) {
+                    DriveLog.log("START: not starting - the drive is over")
+                    return@start
+                }
                 when {
                     !prefs.autoStart -> DriveLog.log("Auto-start is turned off in settings")
                     other != null -> DriveLog.log("START: skipped - $other is already playing, not taking over")
@@ -436,6 +449,12 @@ class DriveMonitorService : NotificationListenerService() {
             // Android Auto dropping takes the sound a moment before we hear about the drop: count that as on.
             prefs.radioWasOn = RadioPlayer.onOrJustLost()
             RadioPlayer.stop("you left the car (or Android Auto dropped)")
+            // The greeting talks to whoever is in the car, and nobody is. Its continuation still runs -
+            // that is where WelcomeAnnouncer releases its busy flag - but it cannot start music:
+            // carConnected is false and connectGen moved on.
+            Voice.stop("the car disconnected")
+            // ...and if it had not started yet, it never will: the welcome prepares its text first.
+            WelcomeAnnouncer.cancel("the car disconnected")
             if (prefs.pauseOnDisconnect) {
                 val c = findYtm()
                 if (c?.playbackState?.state == PlaybackState.STATE_PLAYING) {
@@ -601,6 +620,16 @@ class DriveMonitorService : NotificationListenerService() {
     private fun endDrive(reason: String) {
         val alreadyEnded = driveEnded
         driveEnded = true
+        // Whatever is being said belongs to this drive. Stopping also runs the continuation (the
+        // WelcomeAnnouncer/media-menu release); startAction refuses the music because driveEnded is
+        // set. Idempotent, so the disconnect path and the skip button are not disturbed.
+        Voice.stop("the drive ended")
+        WelcomeAnnouncer.cancel("the drive ended")
+        // The radio is a car thing too, and it is not only sound: its MediaPlayer holds a partial wake
+        // lock, so a radio left running after the ignition goes off keeps playing into an empty car and
+        // keeps the phone awake. Remember it was on, so the next drive can bring it back.
+        if (RadioPlayer.onOrJustLost()) prefs.radioWasOn = true
+        RadioPlayer.stop("the drive ended")
         DriveModeActivity.closeBecauseDriveEnded()   // even when it's in the background (it used to wait until you unlocked)
         resumeThisDrive = null   // this drive's auto-resume choice ends with it
         runCatching { musicBrowser?.disconnect() }; musicBrowser = null

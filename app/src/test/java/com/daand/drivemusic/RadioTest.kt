@@ -95,6 +95,55 @@ class RadioTest {
         assertEquals(emptyList<Radio.Nearby>(), Radio.parseNearby("<html>"))
     }
 
+    /**
+     * The nearby check waits for up to 15 s per station. A stop (the drive ended, the screen closed) has
+     * to end that wait - it used to be swallowed by runCatching, which cleared the flag and left the
+     * caller waiting for every remaining station.
+     */
+    @Test fun aStopEndsTheNearbyCheckInsteadOfWaitingForEveryStation() {
+        val near = listOf("A", "B", "C", "D", "E", "F", "G", "H", "I").map {
+            Radio.Nearby(Station("$it", "https://example.org/$it.mp3"), 10)
+        }
+        var stoppedClean = false
+        val t = Thread {
+            Radio.checked(near, test = { Thread.sleep(30_000); Radio.Probe.NO })
+            stoppedClean = Thread.currentThread().isInterrupted   // the flag survived the return
+        }
+        t.isDaemon = true
+        t.start()
+        Thread.sleep(300)                      // let it get into the wait
+        t.interrupt()
+        t.join(3_000)
+        assertFalse("the check ended on the stop", t.isAlive)
+        assertTrue("and it did not throw the stop away", stoppedClean)
+    }
+
+    /**
+     * A stop during the 40 km round must not start the 80 km one: the second round is more network work
+     * and ~30 stream probes for a screen that is gone. This drives the real nearby() orchestration -
+     * removing the guard there makes it fetch 80 km and the test fails.
+     */
+    @Test fun aStopDuringTheNearbyLookUpDoesNotStartTheFallbackRound() {
+        val one = listOf(Radio.Nearby(Station("A", "https://example.org/a.mp3"), 10))
+        val rounds = java.util.Collections.synchronizedList(mutableListOf<Int>())
+        val t = Thread {
+            Radio.nearby(52.0, 4.0,
+                fetch = { km -> rounds += km; one },
+                check = {
+                    // What checked() does on a stop: return what it has, with the flag still set.
+                    try { Thread.sleep(30_000) } catch (e: InterruptedException) { Thread.currentThread().interrupt() }
+                    it
+                })
+        }
+        t.isDaemon = true
+        t.start()
+        Thread.sleep(300)                  // let it get into the first round
+        t.interrupt()
+        t.join(3_000)
+        assertFalse("the look-up ended on the stop", t.isAlive)
+        assertEquals("only the 40 km round ran, no fallback afterwards", listOf(40), rounds.toList())
+    }
+
     @Test fun nearbyOnlySendsARoundedPosition() {
         val u = Radio.nearbyUrl(52.2417, 4.4431, 40)
         assertTrue(u, u.contains("geo_lat=52.2&") && u.contains("geo_long=4.4&") && u.contains("geo_distance=40000"))

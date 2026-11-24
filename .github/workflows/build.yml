@@ -156,6 +156,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The release body is the changelog the in-app updater shows, so this job needs the history and
+      # the tags to build it - not just the finished APK.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - uses: actions/download-artifact@v4
         with:
           name: DriveMusic-apk
@@ -164,9 +170,25 @@ jobs:
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-          NOTES: ${{ github.event.head_commit.message }}
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
           TAG: v1.${{ github.run_number }}
         run: |
           (cd dist && sha256sum -c DriveMusic.apk.sha256)
+          # The headline change, then one bullet per commit since the previous release. Subjects only:
+          # a body written for developers ("Luna #22") means nothing to someone who just drives the app.
+          PREV=$(git describe --tags --abbrev=0 --match 'v1.*' 2>/dev/null || true)
+          {
+            printf '%s\n\n' "$(printf '%s' "$HEAD_MESSAGE" | head -1)"
+            printf '### What changed since %s\n\n' "${PREV:-the first release}"
+            git log --no-merges --pretty=format:'- %s' ${PREV:+"$PREV..HEAD"} | head -60
+            printf '\n'
+          } > "$RUNNER_TEMP/notes.md"
+          if [ -n "$PREV" ] && [ -z "$(git log --no-merges --pretty=%s ${PREV}..HEAD)" ]; then
+            printf -- '- This release is the same code as %s.\n' "$PREV" >> "$RUNNER_TEMP/notes.md"
+          fi
+          # --target is not optional: without it gh tags the *default branch tip* at the moment the
+          # release is published, which can be a commit that was pushed after this APK was built. Two
+          # overlapping pushes then produce two tags on the same commit and an empty changelog.
           gh release create "$TAG" dist/DriveMusic.apk dist/DriveMusic.apk.sha256 \
-            --repo "$GITHUB_REPOSITORY" --title "Drive Music ${TAG#v}" --notes "$NOTES"
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Drive Music ${TAG#v}" --notes-file "$RUNNER_TEMP/notes.md"

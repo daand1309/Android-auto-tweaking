@@ -1196,8 +1196,21 @@ class Greeter(private val context: Context) {
 object WelcomeAnnouncer {
     /** One greeting at a time: mashing the Welcome button mustn't start a choir of voices. */
     private val busy = java.util.concurrent.atomic.AtomicBoolean(false)
+    /** Bumped by [cancel]: a greeting prepared under an older value must not start talking. */
+    @Volatile private var generation = 0
 
     val isBusy: Boolean get() = busy.get()
+
+    /**
+     * The drive ended (or the car left) while a greeting was still being prepared. Stopping the *voice*
+     * cannot cover that window - there is no Greeter yet, the text is still being built on a background
+     * thread - so the greeting is cancelled here and its later start is dropped.
+     */
+    fun cancel(reason: String) {
+        generation++
+        DriveLog.log("GREETING: cancelled ($reason)")
+        if (Voice.speaking) Voice.stop(reason)
+    }
 
     fun run(context: Context, song: GreetingText.Song? = null, recordAsGreeted: Boolean = true, then: () -> Unit = {}) {
         val ctx = context.applicationContext
@@ -1207,12 +1220,17 @@ object WelcomeAnnouncer {
             main.post(then)
             return
         }
+        val gen = generation
         val done: () -> Unit = { busy.set(false); then() }
-        runGuarded(ctx, song, recordAsGreeted, main, done)
+        runGuarded(ctx, song, recordAsGreeted, main, gen, done)
     }
 
-    private fun runGuarded(ctx: Context, song: GreetingText.Song?, recordAsGreeted: Boolean, main: Handler, then: () -> Unit) {
+    private fun runGuarded(ctx: Context, song: GreetingText.Song?, recordAsGreeted: Boolean, main: Handler, gen: Int, then: () -> Unit) {
         val p = Prefs(ctx)
+        // Bookkeeping that only makes sense once the greeting is really said - "greeted just now", and
+        // the reminders it used up. Collected while preparing, applied after the cancellation guard, so
+        // a greeting that is dropped because the drive ended cannot swallow the next one or its notices.
+        val later = mutableListOf<() -> Unit>()
         DriveLog.log("GREETING: preparing")
         Thread {
           try {
@@ -1237,16 +1255,25 @@ object WelcomeAnnouncer {
                 roads = p.roadConditionsEnabled, song = song.takeIf { p.announceSong }, birthday = p.birthday,
                 butler = p.butler, firstDrive = p.lastGreetingAt == 0L, short = p.greetingShort,
                 askWeather = weather != null && p.weatherAsk,
-                reminder = listOfNotNull(earlyWarningToSay(ctx, p, recordAsGreeted), serviceReminderIfDue(ctx, p, recordAsGreeted),
-                    rdwReminderIfDue(p, recordAsGreeted), monthSummaryIfDue(ctx, p, recordAsGreeted))
+                reminder = listOfNotNull(earlyWarningToSay(ctx, p, recordAsGreeted, later),
+                    serviceReminderIfDue(ctx, p, recordAsGreeted, later), rdwReminderIfDue(p, recordAsGreeted, later),
+                    monthSummaryIfDue(ctx, p, recordAsGreeted, later))
                     .joinToString(" ").ifEmpty { null },
             )
-            if (recordAsGreeted) p.lastGreetingAt = System.currentTimeMillis()
             // On screen: your name as written, not the phonetic spelling used for the voice.
             val pron = p.namePronunciation
             val shown = Briefing.forScreen(text, pron, p.greetingName)
             main.post {
               try {
+                // The drive may have ended while this was being prepared (weather, location, text):
+                // nothing was speaking yet, so Voice.stop() could not have caught it.
+                if (gen != generation) {
+                    DriveLog.log("GREETING: dropped - the drive ended before it started")
+                    then()
+                    return@post
+                }
+                later.forEach { it() }
+                if (recordAsGreeted) p.lastGreetingAt = System.currentTimeMillis()
                 DriveLog.log("GREETING: \"$text\"")
                 val (title, body) = Briefing.split(shown)
                 val shownToken = Briefing.start(ctx, title, body)
@@ -1299,39 +1326,42 @@ object WelcomeAnnouncer {
      * An early warning found after an earlier drive (fuel trim drifting, charging sagging...), said
      * once in the next real greeting - only if it still holds. One per greeting; the rest wait.
      */
-    private fun earlyWarningToSay(ctx: Context, p: Prefs, realDrive: Boolean): String? = try {
+    private fun earlyWarningToSay(ctx: Context, p: Prefs, realDrive: Boolean, later: MutableList<() -> Unit>): String? = try {
         val kinds = p.trendToSay
         if (kinds.isEmpty()) null else {
             val history = com.daand.drivemusic.obd.TripHistory.load(ctx).mapNotNull { it.health }
             val still = com.daand.drivemusic.obd.CarTrends.latest(history, kinds)
             val f = still.firstOrNull()
-            if (realDrive) p.trendToSay = if (f == null) emptyList() else still.drop(1).map { it.kind.name }
+            if (realDrive) {
+                val kept = if (f == null) emptyList() else still.drop(1).map { it.kind.name }
+                later += { p.trendToSay = kept }
+            }
             f?.let { com.daand.drivemusic.obd.CarTrends.message(it, p.greetingDutch, p.butler) }
         }
     } catch (e: Exception) { null }
 
     /** The service reminder when it's due and not said in the last week (only on real drives). */
     /** The first greeting of a new month: last month in one sentence (once). */
-    private fun monthSummaryIfDue(ctx: Context, p: Prefs, realDrive: Boolean): String? = try {
+    private fun monthSummaryIfDue(ctx: Context, p: Prefs, realDrive: Boolean, later: MutableList<() -> Unit>): String? = try {
         val last = java.time.YearMonth.now().minusMonths(1)
         val key = last.year * 100 + last.monthValue
         if (p.lastMonthSummary == key) null else {
             val trips = com.daand.drivemusic.obd.TripHistory.load(ctx)
             val m = MonthlySummary.month(trips, last, p.fuelPriceQuoted)
             MonthlySummary.text(m, MonthlySummary.month(trips, last.minusMonths(1), p.fuelPriceQuoted), p.greetingDutch, p.butler)
-                .also { if (realDrive) p.lastMonthSummary = key }
+                .also { if (realDrive) later += { p.lastMonthSummary = key } }
         }
     } catch (e: Exception) { null }
 
     /** APK running out / open recall (RDW): at most once a week. */
-    private fun rdwReminderIfDue(p: Prefs, realDrive: Boolean): String? = try {
+    private fun rdwReminderIfDue(p: Prefs, realDrive: Boolean, later: MutableList<() -> Unit>): String? = try {
         val now = System.currentTimeMillis()
         if (now - p.lastRdwReminder < 7 * 86_400_000L) null
         else Rdw.reminder(Rdw.date(p.apkDate), Rdw.decode(p.recalls), java.time.LocalDate.now(), p.greetingDutch, p.butler)
-            ?.also { if (realDrive) p.lastRdwReminder = now }
+            ?.also { if (realDrive) later += { p.lastRdwReminder = now } }
     } catch (e: Exception) { null }
 
-    private fun serviceReminderIfDue(ctx: Context, p: Prefs, realDrive: Boolean): String? = try {
+    private fun serviceReminderIfDue(ctx: Context, p: Prefs, realDrive: Boolean, later: MutableList<() -> Unit>): String? = try {
         val now = System.currentTimeMillis()
         val trips = com.daand.drivemusic.obd.TripHistory.load(ctx)
         val due = if (!p.serviceReminderOn) null else com.daand.drivemusic.obd.CarAlerts.serviceStatus(
@@ -1339,7 +1369,7 @@ object WelcomeAnnouncer {
             p.serviceSyncAt, p.serviceSyncKm, p.serviceSyncDays, com.daand.drivemusic.obd.TripHistory.kmSince(trips, p.serviceSyncAt), now)
         if (due == null || now - p.lastServiceReminder < 7 * 86_400_000L) null
         else {
-            if (realDrive) p.lastServiceReminder = now
+            if (realDrive) later += { p.lastServiceReminder = now }
             GreetingText.serviceReminder(due, p.greetingDutch, p.butler)
         }
     } catch (e: Exception) { null }

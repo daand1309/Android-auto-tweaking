@@ -27,6 +27,9 @@ import java.security.MessageDigest
 object Updater {
     const val REPO = "daand1309/Android-auto-tweaking"
     private const val LATEST_URL = "https://api.github.com/repos/$REPO/releases/latest"
+    private const val COMPARE_URL = "https://api.github.com/repos/$REPO/compare/"
+    /** A changelog long enough to be honest, short enough to read on a car screen. */
+    const val MAX_CHANGELOG_LINES = 40
     private const val MAX_APK_BYTES = 60L * 1024 * 1024
     private const val CHANNEL = "updates"
     private const val NOTIFICATION_ID = 42
@@ -77,6 +80,54 @@ object Updater {
         return Release(code, tag.removePrefix("v"), apk, sha, o.optString("body"), o.optString("html_url"))
     }
 
+    /**
+     * The changelog, from GitHub's compare API: one line per commit between two released tags.
+     *
+     * Each commit's *subject* only - the first non-empty line - because the bodies are written for other
+     * developers ("Luna #22" means nothing to someone who just wants to know what changed). Identical
+     * subjects are dropped once: `cherry-pick` and rebases produce pairs of the same change.
+     */
+    fun parseChangelog(json: String, max: Int = MAX_CHANGELOG_LINES): List<String> = try {
+        val commits = JSONObject(json).optJSONArray("commits")
+        val out = LinkedHashSet<String>()
+        if (commits != null) {
+            for (i in 0 until commits.length()) {
+                val message = commits.optJSONObject(i)?.optJSONObject("commit")?.optString("message").orEmpty()
+                val subject = message.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+                if (subject.isEmpty()) continue
+                out += subject
+                if (out.size >= max) break
+            }
+        }
+        out.toList()
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    /** "1.226" -> "v1.226", the tag the workflow publishes. Null for anything we don't recognise. */
+    fun tagFor(versionName: String): String? {
+        val v = versionName.trim()
+        return if (Regex("""^\d+\.\d+$""").matches(v)) "v$v" else null
+    }
+
+    /**
+     * What changed between the installed version and [r], best effort.
+     *
+     * A changelog is nice; the update is what matters, so every failure here is "we don't know" rather
+     * than an exception that would turn a working update check into a failed one.
+     */
+    private fun fetchChangelog(ctx: Context, r: Release): List<String> = try {
+        val from = installedVersionName(ctx)?.let { tagFor(it) }
+        val to = tagFor(r.versionName)
+        if (from == null || to == null) emptyList()
+        else parseChangelog(httpGetText(COMPARE_URL + "$from...$to") ?: "")
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    private fun installedVersionName(ctx: Context): String? =
+        ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
+
     fun parseSha256File(text: String): String? =
         Regex("""\b([0-9a-fA-F]{64})\b""").find(text)?.groupValues?.get(1)?.lowercase()
 
@@ -88,10 +139,20 @@ object Updater {
     /** Returns the latest release if it is newer than what's installed, else null. */
     fun checkForUpdate(ctx: Context): Release? {
         val json = httpGetText(LATEST_URL)
-        Prefs(ctx).lastUpdateCheck = System.currentTimeMillis()
+        val prefs = Prefs(ctx)
+        prefs.lastUpdateCheck = System.currentTimeMillis()
         if (json == null) return null  // 404 = no releases published yet
         val release = parseRelease(json) ?: return null
-        return release.takeIf { it.versionCode > currentVersionCode(ctx) }
+        val newer = release.takeIf { it.versionCode > currentVersionCode(ctx) } ?: return null
+        // Store the changelog with the check that found it: the update page then has something to show
+        // even when the app is reopened days later, and the notification can spell it out.
+        val changes = fetchChangelog(ctx, newer)
+        prefs.updateChangelogFor = newer.versionName
+        prefs.updateChangelog = changes.joinToString("\n")
+        if (changes.isNotEmpty()) {
+            DriveLog.log("UPDATE: ${changes.size} change(s) since ${installedVersionName(ctx) ?: "the installed version"}")
+        }
+        return newer
     }
 
     /** Downloads and verifies the update. Throws UpdateException with a readable message on any problem. */
@@ -242,10 +303,15 @@ object Updater {
             ctx, 0, Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+        val prefs = Prefs(ctx)
+        val changes = prefs.updateChangelog.takeIf { prefs.updateChangelogFor == r.versionName && it.isNotBlank() }
         val n = android.app.Notification.Builder(ctx, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("Drive Music update available")
-            .setContentText("Version ${r.versionName} - tap to update")
+            .setContentText(if (changes == null) "Version ${r.versionName} - tap to update" else "Version ${r.versionName}: ${changes.lineSequence().take(2).joinToString(" - ")}")
+            .setStyle(android.app.Notification.BigTextStyle().bigText(
+                if (changes == null) "Version ${r.versionName} is ready - tap to see what changed and install it."
+                else "What's new in ${r.versionName}:\n" + changes.lines().filter { it.isNotBlank() }.take(8).joinToString("\n") { "- $it" }))
             .setContentIntent(open)
             .setAutoCancel(true)
             .build()

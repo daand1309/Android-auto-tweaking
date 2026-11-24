@@ -98,7 +98,10 @@ object TripHistory {
             val tmp = File(ctx.filesDir, "$DRAFT.tmp")
             tmp.writeText(JSONObject().put("at", t.at).put("min", t.minutes).put("km", t.km).put("l", t.litres)
                 .put("score", t.score ?: -1).put("maxC", t.maxCoolant ?: -999)
-                .put("codes", t.codes.joinToString(",")).put("p", t.price).put("sv", t.scoreVersion).put("upd", now).toString())
+                .put("codes", t.codes.joinToString(",")).put("p", t.price).put("sv", t.scoreVersion).put("upd", now)
+                // The health sample belongs to the drive: without it a drive that survives a killed
+                // process comes back without its charging/idle/warm-up numbers, for good.
+                .apply { t.health?.takeIf { !it.isEmpty }?.let { put("h", it.toJson()) } }.toString())
             tmp.renameTo(draftFile(ctx))
         }
     }
@@ -122,7 +125,9 @@ object TripHistory {
                 o.optDouble("km", 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0,
                 o.optDouble("l", 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0,
                 o.optInt("score", -1).takeIf { it in 0..100 }, o.optInt("maxC", -999).takeIf { it > -100 },
-                o.optString("codes").split(',').filter { it.isNotBlank() }, null,
+                // A draft from before this existed has no "h": fromJson(null) is null, so it still
+                // recovers - just without a health sample, as before.
+                o.optString("codes").split(',').filter { it.isNotBlank() }, HealthSample.fromJson(o.optJSONObject("h")),
                 o.optDouble("p", 0.0).takeIf { it.isFinite() && it in 0.0..20.0 } ?: 0.0, o.optInt("sv", 1))
         } catch (e: Exception) {
             clearDraft(ctx); return null

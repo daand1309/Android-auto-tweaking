@@ -154,16 +154,35 @@ object Radio {
     } catch (e: Exception) { null }
 
     /** Off the main thread. 40 km; where that finds few (the north), 80 km. */
-    fun nearby(lat: Double, lon: Double): List<Nearby> {
-        fun get(km: Int) = try {
-            val conn = URL(nearbyUrl(lat, lon, km)).openConnection() as HttpURLConnection
-            conn.connectTimeout = 5000; conn.readTimeout = 10000
-            conn.setRequestProperty("User-Agent", "DriveMusic/1.0")
-            try { if (conn.responseCode == 200) parseNearby(conn.inputStream.readCapped(500_000), max = 30) else emptyList() }
-            finally { conn.disconnect() }
-        } catch (e: Exception) { emptyList() }
-        var near = checked(get(40))
-        if (near.size < 8) near = checked(get(80)).ifEmpty { near }
+    fun nearby(lat: Double, lon: Double): List<Nearby> = nearby(
+        lat, lon,
+        fetch = { km ->
+            try {
+                val conn = URL(nearbyUrl(lat, lon, km)).openConnection() as HttpURLConnection
+                conn.connectTimeout = 5000; conn.readTimeout = 10000
+                conn.setRequestProperty("User-Agent", "DriveMusic/1.0")
+                try { if (conn.responseCode == 200) parseNearby(conn.inputStream.readCapped(500_000), max = 30) else emptyList() }
+                finally { conn.disconnect() }
+            } catch (e: Exception) { emptyList() }
+        },
+        check = { checked(it) },
+    )
+
+    /**
+     * The orchestration, with the two rounds and the stream check swappable so it can be tested: 40 km
+     * first, then 80 km only if that came back thin. A stop (the drive ended, the screen closed) must
+     * not start the second round - [checked] returns what it has when it is interrupted, and looking
+     * again means another HTTP round plus ~30 stream probes for a screen nobody is looking at.
+     */
+    internal fun nearby(
+        lat: Double,
+        lon: Double,
+        fetch: (Int) -> List<Nearby>,
+        check: (List<Nearby>) -> List<Nearby>,
+    ): List<Nearby> {
+        var near = check(fetch(40))
+        if (Thread.currentThread().isInterrupted) return near.take(15)
+        if (near.size < 8) near = check(fetch(80)).ifEmpty { near }
         return near.take(15)
     }
 
@@ -223,7 +242,20 @@ object Radio {
                     }
                 }
             }
-            val kept = jobs.mapNotNull { runCatching { it.get(15, java.util.concurrent.TimeUnit.SECONDS) }.getOrNull() }
+            // A stop is not "the station did not answer": runCatching would swallow the interrupt (and
+            // clear the flag) and the caller would keep waiting for every remaining job.
+            val kept = mutableListOf<Nearby>()
+            for (job in jobs) {
+                val n = try {
+                    job.get(15, java.util.concurrent.TimeUnit.SECONDS)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                } catch (e: Exception) {
+                    null
+                }
+                if (n != null) kept += n
+            }
             val dropped = list.size - kept.size
             if (dropped > 0) DriveLog.log("RADIO: near you - $dropped of ${list.size} left out (no answer, or a format Android can't play)")
             return kept.distinctBy { it.station.url }
@@ -523,6 +555,15 @@ object RadioPlayer {
     @Volatile var stoppedByOthers = false; private set
     /** On now, or taken off by something else (Android Auto dropping) in the last [ms]. */
     fun onOrJustLost(ms: Long = 5_000) = on || (stoppedByOthers && android.os.SystemClock.elapsedRealtime() - stoppedAt < ms)
+
+    /** Test hook: the radio is playing (no network in an emulator test). */
+    @androidx.annotation.VisibleForTesting
+    fun pretendPlayingForTest(s: Radio.Station) {
+        station = s
+        problem = ""
+        state = State.PLAYING
+        changed()
+    }
 
     fun stop(why: String) {
         switchStartedAt = 0L
