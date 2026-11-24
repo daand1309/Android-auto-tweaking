@@ -791,8 +791,12 @@ class DriveMonitorService : NotificationListenerService() {
     private var playingBeforeOwnSpeech = false
     private fun ownSpeechStarts() { playingBeforeOwnSpeech = isPlaying() }
 
+    /** When our own voice last finished while the music had been playing (0 = not since): see [onConfirmedPause]. */
+    private var ownSpeechEndedAt = 0L
+
     private fun ownSpeechDone(what: String) {
         suppressPauseUntil = 0L
+        ownSpeechEndedAt = if (playingBeforeOwnSpeech) SystemClock.elapsedRealtime() else 0L
         postOwnSpeechCheck(what, 1_500L)
     }
 
@@ -1396,6 +1400,9 @@ class DriveMonitorService : NotificationListenerService() {
 
     private fun schedulePendingPause(stopState: Int) {
         cancelPendingPause()
+        // What else is sounding at the moment of the stop (a Waze prompt? an assistant?): the clue for stops
+        // that come back by themselves or stay unexplained.
+        if (carConnected && SystemClock.elapsedRealtime() >= suppressPauseUntil) logOtherSound()
         val r = Runnable {
             pendingPauseRunnable = null
             val cur = (ytm?.takeIf { isMusic(it) } ?: findYtm())?.playbackState?.state
@@ -1418,7 +1425,14 @@ class DriveMonitorService : NotificationListenerService() {
         if (lastStartedAt > 0 && StartRules.quickRestart(nowMs - firstStartAt, nowMs - lastStartedAt, quickRestarts, startBounceMs)) {
             quickRestarts++; bounceRetried = true; bounceRetryPending = true
             DriveLog.log("Music stopped right after starting - pressing play again in 1.5s (not counted, $quickRestarts of ${StartRules.MAX_QUICK_RESTARTS})")
-            logOtherSound()
+            scheduleResume(1_500L)
+            return
+        }
+        // The same ~1 s stop after YouTube Music comes back by itself when our voice is done (24 Nov 12:16:
+        // back at :18.0, stopped at :19.1, counted as "PAUSE #1, no clues" and 11 s of silence).
+        if (StartRules.afterOwnVoice(nowMs - ownSpeechEndedAt, ownSpeechEndedAt > 0)) {
+            ownSpeechEndedAt = 0L   // once per speech: a second stop is a normal pause
+            DriveLog.log("Music stopped right after our voice finished - pressing play again in 1.5s (not counted)")
             scheduleResume(1_500L)
             return
         }

@@ -31,4 +31,11 @@ class StartRulesTest {
         assertFalse("long after: you pressed play yourself", StartRules.selfRecovered(30_000))
         assertFalse(StartRules.selfRecovered(-1))
     }
+
+    @Test fun stopJustAfterOurVoiceIsTheMusicAppSettling() {
+        // 24 Nov 12:16: voice done at :17.6, music back at :18.0, stopped at :19.1, confirmed at :22.1 (4.5 s).
+        assertTrue(StartRules.afterOwnVoice(4_540, wasPlayingBefore = true))
+        assertFalse("music wasn't playing before we spoke", StartRules.afterOwnVoice(4_540, wasPlayingBefore = false))
+        assertFalse("long after the voice: a real pause", StartRules.afterOwnVoice(StartRules.AFTER_VOICE_MS, wasPlayingBefore = true))
+    }
 }

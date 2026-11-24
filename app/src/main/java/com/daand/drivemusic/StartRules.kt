@@ -17,6 +17,14 @@ object StartRules {
     fun quickRestart(sinceFirstStartMs: Long, sinceLastStartMs: Long, restartsUsed: Int, bounceWindowMs: Long): Boolean =
         bounceWindowMs > 0 && sinceLastStartMs < bounceWindowMs && sinceFirstStartMs < SETTLE_WINDOW_MS && restartsUsed < MAX_QUICK_RESTARTS
 
+    /**
+     * A stop confirmed within this long after our own voice ended (the music had been playing before it):
+     * YouTube Music's ~1 s stop after it comes back by itself, plus the 3 s grace before a stop counts.
+     */
+    const val AFTER_VOICE_MS = 6_000L
+    fun afterOwnVoice(sinceVoiceEndedMs: Long, wasPlayingBefore: Boolean): Boolean =
+        wasPlayingBefore && sinceVoiceEndedMs in 0 until AFTER_VOICE_MS
+
     /** A pause with no clues that plays on by itself this soon (no resume from us) was the music app's hiccup. */
     const val SELF_RECOVER_MS = 10_000L
     fun selfRecovered(sincePauseCountedMs: Long): Boolean = sincePauseCountedMs in 0 until SELF_RECOVER_MS
