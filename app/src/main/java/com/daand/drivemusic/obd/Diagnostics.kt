@@ -30,6 +30,9 @@ object Diagnostics {
         }
     }
 
+    /** Engine off, ignition on: below this the battery is low (same line as the voice warning). */
+    const val LOW_IGNITION_ON_V = CarAlerts.LOW_BATTERY_V
+
     // --- Quick check -------------------------------------------------------------------------------
 
     /**
@@ -97,9 +100,14 @@ object Diagnostics {
             v in 13.2..15.0 -> Check("battery", "Charging", Verdict.WARN, "$t - " + if (v > 14.8) "on the high side" else "on the low side")
             else -> Check("battery", "Charging", Verdict.BAD, "$t - " + if (v > 15.0) "too high (voltage regulator?)" else "too low: the alternator isn't keeping up")
         } else when {
-            v >= 12.5 -> Check("battery", "Battery", Verdict.OK, "$t at rest - well charged")
-            v >= 12.2 -> Check("battery", "Battery", Verdict.WARN, "$t at rest - half charged; a longer drive helps")
-            else -> Check("battery", "Battery", Verdict.BAD, "$t at rest - low; may not start on a cold morning")
+            // Engine off, the car only answers with the ignition ON: lights, fan, screen and fuel pump draw on
+            // it, and the ASX reads ~11.7 V like that (see CarAlerts.LOW_BATTERY_V) - not the 12.4-12.7 V of a
+            // truly resting battery. Judged on that scale, or every check said "low" (audit, 25 Nov).
+            v >= 11.9 -> Check("battery", "Battery", Verdict.OK, "$t with the ignition on - fine")
+            v >= LOW_IGNITION_ON_V -> Check("battery", "Battery", Verdict.WARN,
+                "$t with the ignition on - a little low; a longer drive tops it up")
+            else -> Check("battery", "Battery", Verdict.BAD, "$t with the ignition on - low: may struggle on a cold " +
+                "morning; if it's still low after a long drive, have it tested")
         }
     }
 
@@ -191,10 +199,18 @@ object Diagnostics {
     class FullTest {
         val steps = Step.values().associateWith { Samples() }
         var aborted: String? = null; private set
+        private var moving = 0
 
-        /** One reading during [step]. False (and the test stops) when the car moves. */
+        /**
+         * One reading during [step]. False (and the test stops) when the car moves: two readings in a row,
+         * so one garbled speed value doesn't end a 5-minute test. A moving reading isn't kept.
+         */
         fun add(step: Step, s: CarSnapshot): Boolean {
-            if ((s.speedKmh ?: 0) > 3) { aborted = "the car moved - the full test only runs parked"; return false }
+            if ((s.speedKmh ?: 0) > 3) {
+                if (++moving >= 2) { aborted = "the car moved - the full test only runs parked"; return false }
+                return true
+            }
+            moving = 0
             steps[step]!!.all += s
             return true
         }
@@ -206,15 +222,20 @@ object Diagnostics {
             val warm = (idle.all.lastOrNull()?.coolantC ?: 0) >= 75
             if (idle.all.isNotEmpty() && !warm) out += Check("warm", "Engine temperature", Verdict.INFO,
                 "${idle.all.last().coolantC ?: "?"} °C - best done warm; mixture numbers are only judged above 75 °C")
-            idleSteadiness(idle.rpms)?.let { out += it }
+            // Cold, the engine idles high on purpose: steadiness and air flow are judged warm only.
+            if (warm) idleSteadiness(idle.rpms)?.let { out += it }
+            // Only the readings where 2500 rpm was really held (the first seconds are still at idle).
+            val held = Samples().apply { all += rev.all.filter { (it.rpm ?: 0) >= 2_000 } }
+            if (rev.all.isNotEmpty() && held.all.size < 3) out += Check("rev", "2500 rpm", Verdict.INFO,
+                "not held long enough to measure (keep it around 2500 rpm for the whole 30 s)")
             if (warm) {
-                val idleTrim = trimOf(idle); val revTrim = trimOf(rev)
+                val idleTrim = trimOf(idle); val revTrim = if (held.all.size >= 3) trimOf(held) else null
                 idleTrim?.let { out += trimCheck("trim_idle", "Mixture at idle", it, idle.values(0x07).medianOrNull()) }
-                revTrim?.let { out += trimCheck("trim_2500", "Mixture at 2500 rpm", it, rev.values(0x07).medianOrNull()) }
+                revTrim?.let { out += trimCheck("trim_2500", "Mixture at 2500 rpm", it, held.values(0x07).medianOrNull()) }
                 if (idleTrim != null && revTrim != null) leakCheck(idleTrim, revTrim)?.let { out += it }
                 o2(idle.values(0x14), idle.values(0x15))?.let { out += it }
             }
-            idle.values(0x10).medianOrNull()?.let { maf ->
+            if (warm) idle.values(0x10).medianOrNull()?.let { maf ->
                 out += if (maf in 1.5..4.5) Check("maf", "Air flow at idle", Verdict.OK, "%.1f g/s".format(Locale.US, maf))
                 else Check("maf", "Air flow at idle", Verdict.WARN, "%.1f g/s - expected 1.5-4.5 for a 1.6 (dirty or faulty air flow sensor, or an air leak)".format(Locale.US, maf))
             }
@@ -223,8 +244,10 @@ object Diagnostics {
             return out
         }
 
+        /** Median short + long trim over the readings in closed loop (01-03 = 2, or not reported). */
         private fun trimOf(s: Samples): Double? {
-            val st = s.values(0x06).medianOrNull(); val lt = s.values(0x07).medianOrNull()
+            val closed = s.all.filter { it.extra[0x03].let { f -> f == null || f == 2.0 } }
+            val st = closed.mapNotNull { it.extra[0x06] }.medianOrNull(); val lt = closed.mapNotNull { it.extra[0x07] }.medianOrNull()
             return if (st == null && lt == null) null else (st ?: 0.0) + (lt ?: 0.0)
         }
     }

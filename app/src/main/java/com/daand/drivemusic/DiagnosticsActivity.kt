@@ -135,7 +135,10 @@ class DiagnosticsActivity : Activity() {
             val last = ObdManager.latest ?: snap
             val quick = Diagnostics.quick(last, ObdManager.catalyst, misfires.get()?.takeIf { it.isNotEmpty() })
                 .filter { it.id != "trim" }   // measured per step (idle and 2500 rpm)
-            finish(Diagnostics.Result(System.currentTimeMillis(), true, quick + test.evaluate()))
+            val steps = test.evaluate()
+            // A cold engine: the test's own temperature line says why the mixture wasn't judged - not twice.
+            val merged = if (steps.any { it.id == "warm" }) quick.filter { it.id != "coolant" } + steps else quick + steps
+            finish(Diagnostics.Result(System.currentTimeMillis(), true, merged))
         }
     }
 

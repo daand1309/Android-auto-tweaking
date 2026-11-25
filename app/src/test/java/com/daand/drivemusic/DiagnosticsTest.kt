@@ -52,9 +52,11 @@ class DiagnosticsTest {
     }
 
     @Test fun batteryAtRestAndCharging() {
+        // Engine off = ignition on (lights, fan, screen drawing): the ASX reads ~11.7 V like that.
         assertEquals(Verdict.OK, Diagnostics.battery(12.6, running = false)!!.verdict)
-        assertEquals(Verdict.WARN, Diagnostics.battery(12.3, running = false)!!.verdict)
-        assertEquals(Verdict.BAD, Diagnostics.battery(11.9, running = false)!!.verdict)
+        assertEquals(Verdict.OK, Diagnostics.battery(11.95, running = false)!!.verdict)
+        assertEquals(Verdict.WARN, Diagnostics.battery(11.6, running = false)!!.verdict)
+        assertEquals("24 Nov 20:29: 11.35 V", Verdict.BAD, Diagnostics.battery(11.35, running = false)!!.verdict)
         assertEquals(Verdict.OK, Diagnostics.battery(14.1, running = true)!!.verdict)
         assertEquals(Verdict.WARN, Diagnostics.battery(13.3, running = true)!!.verdict)
         assertEquals(Verdict.BAD, Diagnostics.battery(12.6, running = true)!!.verdict)
@@ -131,7 +133,8 @@ class DiagnosticsTest {
     @Test fun fullTestStopsWhenTheCarMoves() {
         val t = Diagnostics.FullTest()
         assertTrue(t.add(Step.IDLE, snap()))
-        assertFalse(t.add(Step.IDLE, snap(speed = 12)))
+        assertTrue(t.add(Step.IDLE, snap(speed = 12)))    // one reading could be a garbled value
+        assertFalse(t.add(Step.IDLE, snap(speed = 14)))   // two in a row: really driving
         assertNotNull(t.aborted)
     }
 
@@ -168,5 +171,37 @@ class DiagnosticsTest {
     @Test fun openLoopTrimIsNotJudged() {
         val r = Diagnostics.quick(snap(extra = mapOf(0x03 to 4.0, 0x06 to 25.0, 0x07 to 5.0)), null, null)
         assertEquals(Verdict.INFO, r.of("trim").verdict)
+    }
+
+    @Test fun oneOddSpeedReadingDoesNotStopTheTest() {
+        val t = Diagnostics.FullTest()
+        assertTrue(t.add(Step.IDLE, snap(speed = 40)))   // one garbled value
+        assertTrue(t.add(Step.IDLE, snap()))
+        assertTrue(t.add(Step.IDLE, snap(speed = 8)))
+        assertFalse(t.add(Step.IDLE, snap(speed = 9)))
+        assertEquals(1, t.steps[Step.IDLE]!!.all.size)   // moving readings aren't measured
+    }
+
+    @Test fun twoThousandFiveHundredNotHeldIsSaidNotJudged() {
+        val t = Diagnostics.FullTest()
+        repeat(10) { t.add(Step.IDLE, snap(extra = mapOf(0x06 to 12.0, 0x07 to 4.0))) }
+        repeat(10) { t.add(Step.REV, snap(rpm = 800, extra = mapOf(0x06 to 1.0, 0x07 to 2.0))) }   // never revved
+        val r = t.evaluate()
+        assertEquals(Verdict.INFO, r.first { it.id == "rev" }.verdict)
+        assertTrue("no air-leak verdict from idle readings", r.none { it.id == "leak" || it.id == "trim_2500" })
+    }
+
+    @Test fun openLoopReadingsAreLeftOutOfTheMixture() {
+        val t = Diagnostics.FullTest()
+        repeat(6) { t.add(Step.IDLE, snap(extra = mapOf(0x03 to 2.0, 0x06 to 1.0, 0x07 to 1.0))) }
+        repeat(8) { t.add(Step.IDLE, snap(extra = mapOf(0x03 to 4.0, 0x06 to 30.0, 0x07 to 1.0))) }
+        assertEquals(Verdict.OK, t.evaluate().first { it.id == "trim_idle" }.verdict)
+    }
+
+    @Test fun coldIdleIsNotCalledRough() {
+        val t = Diagnostics.FullTest()
+        repeat(10) { i -> t.add(Step.IDLE, snap(coolant = 30, rpm = if (i % 2 == 0) 1050 else 1200, extra = mapOf(0x10 to 5.5))) }
+        val r = t.evaluate()
+        assertTrue(r.none { it.id == "idle" || it.id == "maf" })
     }
 }
