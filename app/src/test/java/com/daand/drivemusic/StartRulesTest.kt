@@ -57,4 +57,12 @@ class StartRulesTest {
         assertTrue("navigation voice" in StartRules.VOICES)
         assertFalse("music" in StartRules.VOICES)
     }
+
+    @Test fun stopThenPlayOnlyFromThePremiumErrorAndOnce() {
+        val err = "Upgrade naar Music Premium om deze functie te gebruiken"
+        assertTrue(StartRules.premiumReset(inError = true, alreadyTried = false, error = err))
+        assertFalse("once per drive", StartRules.premiumReset(inError = true, alreadyTried = true, error = err))
+        assertFalse("paused, not in error", StartRules.premiumReset(inError = false, alreadyTried = false, error = err))
+        assertFalse("another error", StartRules.premiumReset(inError = true, alreadyTried = false, error = "Network error"))
+    }
 }

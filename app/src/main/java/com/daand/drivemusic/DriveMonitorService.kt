@@ -903,15 +903,20 @@ class DriveMonitorService : NotificationListenerService() {
                             // Plain play() did nothing (empty queue?). Ask it to play "anything".
                             DriveLog.log("START: play() didn't work, sending playFromSearch(\"\") (state=${stateName(state)})")
                             c.transportControls.playFromSearch("", null)
-                        } else if (state == PlaybackState.STATE_ERROR && !premiumResetTried &&
-                            StartRules.needsPremium(c.playbackState?.errorMessage?.toString())) {
+                        } else if (StartRules.premiumReset(state == PlaybackState.STATE_ERROR, premiumResetTried,
+                                c.playbackState?.errorMessage?.toString())) {
                             // Drives that started from YouTube Music's "needs Premium" error stopped every few
                             // seconds (24 Nov 12:15, 18:15, 20:28); drives that started from STOPPED played on
                             // (20:47: 35 min, no stops). So from that error: stop first, then play - logged, to compare.
                             premiumResetTried = true
                             DriveLog.log("START: YouTube Music is in its 'needs Premium' error - stopping it first, then play (test)")
                             c.transportControls.stop()
-                            handler.postDelayed({ runCatching { c.transportControls.play() } }, 700L)
+                            // Only if this start is still the one running: the car may have gone, or you
+                            // may have pressed pause or picked the radio in these 0.7 s.
+                            val self = this
+                            handler.postDelayed({
+                                if (startRunnable === self && (!requireCar || carConnected)) runCatching { c.transportControls.play() }
+                            }, 700L)
                         } else {
                             DriveLog.log("START: pressing play (state=${stateName(state)})")
                             c.transportControls.play()
