@@ -38,6 +38,10 @@ object ObdManager {
     @Volatile private var alerts: CarAlerts? = null
     /** The adapter worked at some point this drive (so a missing adapter during a stall is temporary). */
     @Volatile var connectedThisDrive = false; private set
+    /** The adapter itself answered over Bluetooth this drive (even if the car's computer didn't yet). */
+    @Volatile var adapterReachedThisDrive = false; private set
+    /** Car's computer silent at connect (ignition still on ACC, or the engine being started): ask again this often. */
+    const val ECU_WAIT_MS = 5_000L
     /**
      * When the car screen (Android Auto) last went away, 0 while it's connected. The Senzo screen loses power
      * with the ignition, so a quiet ECU right after that is the car switching off - not a stuck adapter.
@@ -210,7 +214,7 @@ object ObdManager {
         running = true
         val myGen = ++gen
         linkedTold = false
-        latest = null; trip = Trip(); lastEcuAnswerAt = 0L; connectedThisDrive = false
+        latest = null; trip = Trip(); lastEcuAnswerAt = 0L; connectedThisDrive = false; adapterReachedThisDrive = false
         // A new drive starts with a clean slate: the same fault happening again next drive is news,
         // and the log is what you read afterwards to see how often something goes wrong.
         lastProblem = null
@@ -282,7 +286,23 @@ object ObdManager {
                 link = l
                 if (!alive(myGen)) { runCatching { l.close() }; break }  // stopped while connecting
                 val session = ObdSession(l, engineLitres, log = { DriveLog.log(it) })
-                val problem = session.start()
+                adapterReachedThisDrive = true
+                var problem = session.start()
+                if (problem != null) {
+                    // The adapter is there, the car's computer isn't answering yet: the key on ACC (the Senzo
+                    // and Android Auto are already on), or the engine being started. 26 Nov 12:26 this used the
+                    // 20 s reconnect tries (6, then "gave up for this drive") and logged it once - the adapter
+                    // never got going. Keep this link and ask again every 5 s instead, as long as the drive lasts.
+                    val waitFrom = System.currentTimeMillis()
+                    status = "Adapter found - waiting for the car to answer"
+                    DriveLog.log("OBD: adapter found, the car isn't answering yet (ignition on?) - asking again every ${ECU_WAIT_MS / 1000} s")
+                    while (problem != null && alive(myGen)) {
+                        sleep(ECU_WAIT_MS)
+                        if (!alive(myGen)) break
+                        problem = session.start()
+                    }
+                    if (problem == null) DriveLog.log("OBD: the car answered after ${(System.currentTimeMillis() - waitFrom) / 1000} s")
+                }
                 if (problem != null) {
                     status = "Adapter found, but $problem"
                     // Each retry gives the same sentence: say it once per episode, not three times a drive.

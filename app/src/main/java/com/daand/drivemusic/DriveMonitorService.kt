@@ -620,7 +620,7 @@ class DriveMonitorService : NotificationListenerService() {
             if (holdingSince == 0L) return
             val since = SystemClock.elapsedRealtime() - holdingSince
             val obd = com.daand.drivemusic.obd.ObdManager
-            when (val d = DriveHold.decide(since, obd.isConnected(), obd.ecuSilentMs(), obd.connectedThisDrive)) {
+            when (val d = DriveHold.decide(since, obd.isConnected(), obd.ecuSilentMs(), obd.connectedThisDrive || obd.adapterReachedThisDrive)) {
                 is DriveHold.Decision.End -> endDrive(d.reason)
                 DriveHold.Decision.Hold -> handler.postDelayed(this, 3_000)
             }
