@@ -25,6 +25,9 @@ object StartRules {
     fun afterSelfRecovery(sinceRecoveredMs: Long, recovered: Boolean): Boolean =
         recovered && sinceRecoveredMs in 0 until AFTER_RECOVERY_MS
 
+    /** A play button press needs the full start (open + retry), not one play(): the player is empty. */
+    fun needsFullStart(state: Int?): Boolean = state == null || state == android.media.session.PlaybackState.STATE_NONE
+
     /** YouTube Music's "Upgrade to Music Premium..." error, in Dutch or English. */
     fun needsPremium(error: String?): Boolean = error != null && error.contains("Premium", ignoreCase = true)
 

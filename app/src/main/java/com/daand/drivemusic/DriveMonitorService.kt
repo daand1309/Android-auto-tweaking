@@ -1151,7 +1151,10 @@ class DriveMonitorService : NotificationListenerService() {
     fun playByUser(where: String) {
         userPausedViaUi = false
         val c = musicController()
-        if (c == null) startMusic("$where play", requireCar = false) else c.transportControls.play()
+        // An empty player (state NONE: YouTube Music closed in the background) ignores a plain play - 26 Nov
+        // 12:18, two taps and nothing. The full start opens it and retries until it really plays.
+        if (c == null || StartRules.needsFullStart(c.playbackState?.state)) startMusic("$where play", requireCar = false)
+        else c.transportControls.play()
         DriveLog.log("$where: play")
     }
 

@@ -65,4 +65,11 @@ class StartRulesTest {
         assertFalse("paused, not in error", StartRules.premiumReset(inError = false, alreadyTried = false, error = err))
         assertFalse("another error", StartRules.premiumReset(inError = true, alreadyTried = false, error = "Network error"))
     }
+
+    @Test fun anEmptyPlayerGetsTheFullStart() {
+        assertTrue(StartRules.needsFullStart(android.media.session.PlaybackState.STATE_NONE))
+        assertTrue(StartRules.needsFullStart(null))
+        assertFalse(StartRules.needsFullStart(android.media.session.PlaybackState.STATE_PAUSED))
+        assertFalse(StartRules.needsFullStart(android.media.session.PlaybackState.STATE_STOPPED))
+    }
 }
