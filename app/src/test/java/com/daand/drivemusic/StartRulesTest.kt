@@ -72,4 +72,13 @@ class StartRulesTest {
         assertFalse(StartRules.needsFullStart(android.media.session.PlaybackState.STATE_PAUSED))
         assertFalse(StartRules.needsFullStart(android.media.session.PlaybackState.STATE_STOPPED))
     }
+
+    @Test fun aStopRightAfterPlayIsABounceNotYou() {
+        // 26 Nov 18:19:08 play -> 18:19:09.97 paused (1.2 s); 20:36:09.17 -> 20:36:10.29 (1.1 s).
+        assertTrue(StartRules.isBounce(1_200, played = true))
+        assertTrue(StartRules.isBounce(1_100, played = true))
+        assertFalse("never played", StartRules.isBounce(1_100, played = false))
+        assertFalse("minutes later: a real stop", StartRules.isBounce(3 * 60_000L, played = true))
+        assertFalse(StartRules.isBounce(StartRules.BOUNCE_MS, played = true))
+    }
 }

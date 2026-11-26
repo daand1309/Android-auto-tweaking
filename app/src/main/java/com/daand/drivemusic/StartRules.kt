@@ -17,6 +17,13 @@ object StartRules {
     fun quickRestart(sinceFirstStartMs: Long, sinceLastStartMs: Long, restartsUsed: Int, bounceWindowMs: Long): Boolean =
         bounceWindowMs > 0 && sinceLastStartMs < bounceWindowMs && sinceFirstStartMs < SETTLE_WINDOW_MS && restartsUsed < MAX_QUICK_RESTARTS
 
+    /** A stop this soon after the music started is YouTube Music undoing the play (it does so ~1.1 s after). */
+    const val BOUNCE_MS = 2_500L
+    const val MAX_BOUNCES = 3
+    const val BOUNCE_WINDOW_MS = 2 * 60_000L
+    fun isBounce(stopAfterPlayMs: Long, played: Boolean, windowMs: Long = BOUNCE_MS): Boolean =
+        played && stopAfterPlayMs in 0 until windowMs
+
     /** Kinds of sound (see DriveMonitorService.logOtherSound) that explain a stop: someone/something talking. */
     val VOICES = setOf("navigation voice", "assistant", "call")
 

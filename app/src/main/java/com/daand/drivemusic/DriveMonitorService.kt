@@ -48,6 +48,8 @@ class DriveMonitorService : NotificationListenerService() {
         private const val SETTLE_MS = 15_000L
         /** A stop this soon after the app started the music is a start bounce, not a real pause (tests set 0). */
         @Volatile var startBounceMs = 6_000L
+        /** A stop this soon after any play is YouTube Music undoing it (see StartRules.BOUNCE_MS); tests set 0. */
+        @Volatile var playBounceMs = StartRules.BOUNCE_MS
         /** See StartRules.DELIBERATE_AFTER_MS; the emulator tests pause on purpose within seconds. */
         @androidx.annotation.VisibleForTesting @Volatile var deliberateAfterMs = StartRules.DELIBERATE_AFTER_MS
         const val ANDROID_AUTO = "com.google.android.projection.gearhead"
@@ -384,6 +386,7 @@ class DriveMonitorService : NotificationListenerService() {
             resumesThisDrive = 0
             briefInterruptions = 0
             premiumHintGiven = false; premiumResetTried = false; selfRecoveredAt = 0L; stopVoice = null
+            bounceTimes.clear(); lastPlayingAt = 0L; lastStopAt = 0L
             lastNotableAudio = ""
             cancelPendingPause()
             resumeTimes.clear()
@@ -1429,6 +1432,7 @@ class DriveMonitorService : NotificationListenerService() {
 
             when (s) {
                 PlaybackState.STATE_PLAYING -> {
+                    lastPlayingAt = SystemClock.elapsedRealtime()
                     userPausedViaUi = false
                     if (pendingPauseRunnable != null) {
                         // It stopped and came right back (the Morphe "Premium" blip, a buffer hiccup):
@@ -1513,6 +1517,7 @@ class DriveMonitorService : NotificationListenerService() {
 
     private fun schedulePendingPause(stopState: Int) {
         cancelPendingPause()
+        lastStopAt = SystemClock.elapsedRealtime()
         // What else is sounding at the moment of the stop (a Waze prompt? an assistant?): the clue for stops
         // that come back by themselves or stay unexplained.
         if (carConnected && SystemClock.elapsedRealtime() >= suppressPauseUntil) logOtherSound()
@@ -1539,6 +1544,18 @@ class DriveMonitorService : NotificationListenerService() {
             quickRestarts++; bounceRetried = true; bounceRetryPending = true
             DriveLog.log("Music stopped right after starting - pressing play again in 1.5s (not counted, $quickRestarts of ${StartRules.MAX_QUICK_RESTARTS})")
             scheduleResume(1_500L)
+            return
+        }
+        // YouTube Music stops ~1.1 s after almost every play - ours, auto-resume's and yours (26 Nov 18:19:08
+        // car-screen play -> paused 18:19:09.97). That is it undoing the play, not you: press play again in
+        // 1.5 s, not counted, never "deliberate", even with auto-resume off (the music was meant to be on).
+        // At most [StartRules.MAX_BOUNCES] per [StartRules.BOUNCE_WINDOW_MS], so it can't fight forever.
+        while (bounceTimes.isNotEmpty() && nowMs - bounceTimes.first() > StartRules.BOUNCE_WINDOW_MS) bounceTimes.removeFirst()
+        if (StartRules.isBounce(lastStopAt - lastPlayingAt, lastPlayingAt > 0, playBounceMs) && bounceTimes.size < StartRules.MAX_BOUNCES) {
+            bounceTimes.addLast(nowMs)
+            DriveLog.log("Music stopped ${(lastStopAt - lastPlayingAt) / 100 / 10.0}s after it started - pressing play again in 1.5s " +
+                "(not counted, ${bounceTimes.size} of ${StartRules.MAX_BOUNCES})")
+            replayAfterBounce()
             return
         }
         // YouTube Music (Morphe) often stops once more ~1 s after it came back by itself (24 Nov 18:19, 18:38,
@@ -1573,7 +1590,9 @@ class DriveMonitorService : NotificationListenerService() {
         unexplainedPauseAt = if (clues.isEmpty() || clues.all { it.endsWith(VOICE_CLUE) }) SystemClock.elapsedRealtime() else 0L
         val sinceResume = SystemClock.elapsedRealtime() - lastAutoResumeAt
         val sinceFirstStart = if (firstStartAt > 0) SystemClock.elapsedRealtime() - firstStartAt else Long.MAX_VALUE
-        if (lastAutoResumeAt > 0 && StartRules.looksDeliberate(sinceResume, clues.isEmpty(), sinceFirstStart, deliberateAfterMs) && !resumeOffThisDrive) {
+        // Never "deliberate" when it stopped right after starting (that's YouTube Music, see the bounce above).
+        if (lastAutoResumeAt > 0 && !StartRules.isBounce(lastStopAt - lastPlayingAt, lastPlayingAt > 0, playBounceMs) &&
+            StartRules.looksDeliberate(sinceResume, clues.isEmpty(), sinceFirstStart, deliberateAfterMs) && !resumeOffThisDrive) {
             resumeOffThisDrive = true
             DriveLog.log("You paused again ${sinceResume / 1000}s after an auto-resume - looks deliberate. Auto-resume OFF until the next drive.")
         }
@@ -1586,6 +1605,22 @@ class DriveMonitorService : NotificationListenerService() {
     }
 
     // ---------------------------------------------------------------- auto resume
+
+    /** See [onConfirmedPause]: when the music last started playing / last stopped, and recent bounce replays. */
+    private var lastPlayingAt = 0L
+    private var lastStopAt = 0L
+    private val bounceTimes = ArrayDeque<Long>()
+
+    /** Play again after YouTube Music undid a play - not an auto-resume (no resume settings, not counted). */
+    private fun replayAfterBounce() {
+        cancelResume()
+        val gen = connectGen
+        handler.postDelayed({
+            if (!carConnected || gen != connectGen || userPausedViaUi || RadioPlayer.on) return@postDelayed
+            val c = findYtm() ?: return@postDelayed
+            if (c.playbackState?.state != PlaybackState.STATE_PLAYING) runCatching { c.transportControls.play() }
+        }, 1_500L)
+    }
 
     private fun scheduleResume(delayOverrideMs: Long? = null) {
         if (RadioPlayer.on) { DriveLog.log("The radio is on - leaving YouTube Music paused"); return }

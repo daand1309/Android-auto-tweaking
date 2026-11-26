@@ -65,6 +65,7 @@ class DriveFlowTest {
         // Old tests expect "left the car" right away; the stall test sets its own hold.
         DriveHold.holdWithoutObdMs = 0L
         DriveMonitorService.startBounceMs = 0L   // most tests pause right after starting on purpose
+        DriveMonitorService.playBounceMs = 0L
         DriveMonitorService.deliberateAfterMs = 0L   // ...and pause again right away on purpose (no settle minute)
 
         val component = ComponentName(ctx, DriveMonitorService::class.java)
@@ -617,6 +618,28 @@ class DriveFlowTest {
         SystemClock.sleep(500)
         onMain { setState(PlaybackState.STATE_PAUSED) }
         waitFor("the fourth stop counted as a pause", 8_000) { log().contains("PAUSE #1") }
+    }
+
+    @Test
+    fun aStopRightAfterAnyPlayIsPlayedAgainAndNeverDeliberate() {
+        // 26 Nov: YouTube Music paused ~1.1 s after almost every play, and the app took the second one as
+        // "you paused again - deliberate" and switched auto-resume off for the drive.
+        DriveMonitorService.playBounceMs = StartRules.BOUNCE_MS
+        connectCar()
+        SystemClock.sleep(StartRules.BOUNCE_MS + 1_000)   // well after the start: these are plays mid-drive
+        repeat(2) { n ->
+            // A short blip first, so there is a fresh "started playing" to measure from (the state was already PLAYING).
+            onMain { setState(PlaybackState.STATE_PAUSED) }
+            SystemClock.sleep(200)
+            onMain { setState(PlaybackState.STATE_PLAYING) }
+            SystemClock.sleep(1_100)
+            onMain { setState(PlaybackState.STATE_PAUSED) }
+            waitFor("played again after bounce ${n + 1}", 9_000) {
+                currentState == PlaybackState.STATE_PLAYING && log().contains("${n + 1} of ${StartRules.MAX_BOUNCES}")
+            }
+        }
+        assertTrue("not counted as pauses", !log().contains("PAUSE #"))
+        assertTrue("never deliberate", !log().contains("looks deliberate"))
     }
 
     @Test
