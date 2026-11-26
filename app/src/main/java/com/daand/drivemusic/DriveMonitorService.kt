@@ -377,6 +377,8 @@ class DriveMonitorService : NotificationListenerService() {
             return
         }
         if (nowConnected) {
+            handler.removeCallbacks(musicMinute)
+            handler.postDelayed(musicMinute, MusicStatus.EVERY_MS)
             carConnectedAt = SystemClock.elapsedRealtime()
             driveEnded = false
             driveModeShown = false
@@ -695,6 +697,7 @@ class DriveMonitorService : NotificationListenerService() {
         pausedAtDrop = false
         handler.removeCallbacks(holdCheck)
         handler.removeCallbacks(ignitionCheck)
+        handler.removeCallbacks(musicMinute)
         prefs.lastCarState = "not connected"
         if (alreadyEnded) return   // wrapped up already: only the state above still needs fixing
         val mins = (SystemClock.elapsedRealtime() - carConnectedAt) / 60000
@@ -778,6 +781,32 @@ class DriveMonitorService : NotificationListenerService() {
     // ---------------------------------------------------------------- updates during the drive
 
     /** Every so often during a drive: weather/road changes and breaking news (silent if nothing). */
+    /** Once a minute during a drive: is there music, and if not, why (see [MusicStatus]). */
+    private val musicMinute = object : Runnable {
+        override fun run() {
+            if (!inDrive || driveEnded) return
+            runCatching {
+                val c = ytm?.takeIf { isMusic(it) } ?: findYtm()
+                val now = SystemClock.elapsedRealtime()
+                val recentResumes = resumeTimes.count { now - it <= RESUME_WINDOW_MS }
+                DriveLog.log(MusicStatus.line(MusicStatus.Facts(
+                    radio = RadioPlayer.station?.name?.takeIf { RadioPlayer.on },
+                    ytState = stateName(c?.playbackState?.state ?: PlaybackState.STATE_NONE),
+                    song = currentSong()?.let { "${it.title} - ${it.artist}".trimEnd(' ', '-') },
+                    youPaused = userPausedViaUi,
+                    autoResumeSetting = prefs.autoResume,
+                    autoResumeThisDrive = resumeThisDrive,
+                    resumePending = resumeRunnable != null,
+                    checkingStop = pendingPauseRunnable != null,
+                    resumeLimitReached = recentResumes >= RESUME_MAX_IN_WINDOW,
+                    otherSound = activeUsages().takeIf { it.isNotEmpty() }?.joinToString { usageName(it) },
+                    carScreenGone = !carConnected && holdingSince > 0,
+                )))
+            }
+            handler.postDelayed(this, MusicStatus.EVERY_MS)
+        }
+    }
+
     private val driveUpdate = object : Runnable {
         override fun run() {
             if (!carConnected) return
