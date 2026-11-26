@@ -257,6 +257,7 @@ class DriveMonitorService : NotificationListenerService() {
         handler.removeCallbacksAndMessages(null)  // includes updateCheck and any delayed greeting/start
         carConnection?.type?.removeObserver(carObserver)
         carConnection = null
+        runCatching { carCheckExecutor.shutdownNow() }
         runCatching { sessions.removeOnActiveSessionsChangedListener(sessionsListener) }
         runCatching { audio.unregisterAudioPlaybackCallback(playbackConfigCallback) }
         runCatching { connectivity.unregisterNetworkCallback(networkCallback) }
@@ -307,6 +308,48 @@ class DriveMonitorService : NotificationListenerService() {
     /** Set by [simulateMonitorRestartForTest], consumed by the next [simulateCarStateForTest]. */
     private var simulatedRestart = false
 
+    // ------------------------------------------------- backup: ask Android Auto directly after a drop
+
+    /**
+     * 26 Nov 12:26: Android Auto dropped as the engine started (the Senzo restarts), came back and played
+     * music the whole drive - but never announced it, so the app ended the drive after 90 s and did nothing.
+     * (Android Auto had just updated to 18.1.) The connection state can also be asked for directly - the
+     * same question CarConnection asks after an announcement - so after a drop it's asked every
+     * [CarCheck.EVERY_MS] for [CarCheck.FOR_MS]; a "connected" answer brings the drive back.
+     */
+    private var carCheckSince = 0L
+    private val carCheckExecutor by lazy { java.util.concurrent.Executors.newSingleThreadExecutor() }
+    private val carCheck = object : Runnable {
+        override fun run() {
+            if (carConnected || !CarCheck.keepAsking(SystemClock.elapsedRealtime() - carCheckSince)) { carCheckSince = 0L; return }
+            carCheckExecutor.execute {
+                val type = queryCarState()
+                handler.post {
+                    if (type != null && CarCheck.isConnected(type) && !carConnected && carCheckSince > 0) {
+                        DriveLog.log("CAR: Android Auto is connected (asked it directly) - its announcement never came; carrying on")
+                        onCarState(type)
+                    }
+                }
+            }
+            handler.postDelayed(this, CarCheck.EVERY_MS)
+        }
+    }
+
+    private fun startCarCheck() {
+        carCheckSince = SystemClock.elapsedRealtime()
+        handler.removeCallbacks(carCheck)
+        handler.postDelayed(carCheck, CarCheck.EVERY_MS)
+    }
+
+    private fun stopCarCheck() { carCheckSince = 0L; handler.removeCallbacks(carCheck) }
+
+    /** Android Auto's own answer (androidx.car.app.connection, column CarConnectionState); null if it can't say. */
+    private fun queryCarState(): Int? = runCatching {
+        contentResolver.query(CarCheck.URI, arrayOf(CarCheck.COLUMN), null, null, null)?.use { c ->
+            if (c.moveToNext()) c.getInt(c.getColumnIndexOrThrow(CarCheck.COLUMN)) else null
+        }
+    }.getOrNull()
+
     private fun onCarState(type: Int) {
         val name = when (type) {
             CarConnection.CONNECTION_TYPE_PROJECTION -> "Android Auto connected"
@@ -325,6 +368,7 @@ class DriveMonitorService : NotificationListenerService() {
         carConnected = nowConnected
         com.daand.drivemusic.obd.ObdManager.carScreenLostAt = if (nowConnected) 0L else System.currentTimeMillis()
         val gen = ++connectGen
+        if (nowConnected) stopCarCheck() else startCarCheck()
 
         if (nowConnected && holdingSince > 0) {
             resumeHeldDrive(name)

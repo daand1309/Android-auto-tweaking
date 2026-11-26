@@ -103,6 +103,12 @@ per section, and long explanations folded to their first sentence ("More ›" op
 warnings, the setup checklist or the Help page). Back on any page returns to Home. New features and themes are one entry each (`HomeFeatures`,
 `Style.ALL_THEMES`).
 
+**Backup car check:** the drive starts and ends on Android Auto's "connected / not connected" announcement
+(CarConnection). After a drop the app also asks Android Auto directly (content://androidx.car.app.connection,
+the same question CarConnection asks) every 20 s for 30 minutes, and a "connected" answer brings the drive back
+- 26 Nov 12:26 Android Auto (just updated to 18.1) reconnected after the engine start without announcing it,
+and the app sat out the whole drive.
+
 **Diagnostics** (home grid, and a button on Car data): health checks on demand through the OBD adapter,
 read-only like everything else (the ReadOnly allow-list is unchanged; mode 06 questions were already on it).
 - *Quick check* (~30 s, ignition on or engine running): one reading of every value plus the fault codes
