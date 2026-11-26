@@ -653,7 +653,8 @@ class DriveFlowTest {
         // Really leaving: the drive ends once the hold runs out.
         DriveHold.holdWithoutObdMs = 0L
         onMain { service().simulateCarStateForTest(CarConnection.CONNECTION_TYPE_NOT_CONNECTED) }
-        waitFor("drive to end", 10_000) { log().contains("drive ended") }
+        // The summary line, not any "drive ended": "GREETING: cancelled (the drive ended)" is logged first.
+        waitFor("drive to end", 10_000) { log().contains("=== CAR: drive ended") }
         assertEquals("not connected", prefs.lastCarState)
     }
 

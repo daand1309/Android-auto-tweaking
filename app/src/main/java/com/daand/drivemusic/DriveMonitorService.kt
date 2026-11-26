@@ -665,6 +665,8 @@ class DriveMonitorService : NotificationListenerService() {
     private fun endDrive(reason: String) {
         val alreadyEnded = driveEnded
         driveEnded = true
+        // First, before anything below logs "(the drive ended)": whoever reads the state then sees it ended.
+        prefs.lastCarState = "not connected"
         // Whatever is being said belongs to this drive. Stopping also runs the continuation (the
         // WelcomeAnnouncer/media-menu release); startAction refuses the music because driveEnded is
         // set. Idempotent, so the disconnect path and the skip button are not disturbed.
