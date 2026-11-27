@@ -379,6 +379,9 @@ class DriveMonitorService : NotificationListenerService() {
         if (nowConnected) {
             handler.removeCallbacks(musicMinute)
             handler.postDelayed(musicMinute, MusicStatus.EVERY_MS)
+            handler.removeCallbacks(musicWatch)
+            watchSilentLooks = 0; watchPlays.clear(); watchGaveUpTold = false
+            handler.postDelayed(musicWatch, MusicStatus.WATCH_EVERY_MS)
             carConnectedAt = SystemClock.elapsedRealtime()
             driveEnded = false
             driveModeShown = false
@@ -698,6 +701,7 @@ class DriveMonitorService : NotificationListenerService() {
         handler.removeCallbacks(holdCheck)
         handler.removeCallbacks(ignitionCheck)
         handler.removeCallbacks(musicMinute)
+        handler.removeCallbacks(musicWatch)
         prefs.lastCarState = "not connected"
         if (alreadyEnded) return   // wrapped up already: only the state above still needs fixing
         val mins = (SystemClock.elapsedRealtime() - carConnectedAt) / 60000
@@ -785,25 +789,58 @@ class DriveMonitorService : NotificationListenerService() {
     private val musicMinute = object : Runnable {
         override fun run() {
             if (!inDrive || driveEnded) return
-            runCatching {
-                val c = ytm?.takeIf { isMusic(it) } ?: findYtm()
-                val now = SystemClock.elapsedRealtime()
-                val recentResumes = resumeTimes.count { now - it <= RESUME_WINDOW_MS }
-                DriveLog.log(MusicStatus.line(MusicStatus.Facts(
-                    radio = RadioPlayer.station?.name?.takeIf { RadioPlayer.on },
-                    ytState = stateName(c?.playbackState?.state ?: PlaybackState.STATE_NONE),
-                    song = currentSong()?.let { "${it.title} - ${it.artist}".trimEnd(' ', '-') },
-                    youPaused = userPausedViaUi,
-                    autoResumeSetting = prefs.autoResume,
-                    autoResumeThisDrive = resumeThisDrive,
-                    resumePending = resumeRunnable != null,
-                    checkingStop = pendingPauseRunnable != null,
-                    resumeLimitReached = recentResumes >= RESUME_MAX_IN_WINDOW,
-                    otherSound = activeUsages().takeIf { it.isNotEmpty() }?.joinToString { usageName(it) },
-                    carScreenGone = !carConnected && holdingSince > 0,
-                )))
-            }
+            runCatching { DriveLog.log(MusicStatus.line(musicFacts())) }
             handler.postDelayed(this, MusicStatus.EVERY_MS)
+        }
+    }
+
+    private fun musicFacts(): MusicStatus.Facts {
+        val c = ytm?.takeIf { isMusic(it) } ?: findYtm()
+        val now = SystemClock.elapsedRealtime()
+        val recentResumes = resumeTimes.count { now - it <= RESUME_WINDOW_MS }
+        return MusicStatus.Facts(
+            radio = RadioPlayer.station?.name?.takeIf { RadioPlayer.on },
+            ytState = stateName(c?.playbackState?.state ?: PlaybackState.STATE_NONE),
+            song = currentSong()?.let { "${it.title} - ${it.artist}".trimEnd(' ', '-') },
+            youPaused = userPausedViaUi,
+            autoResumeSetting = prefs.autoResume,
+            autoResumeThisDrive = resumeThisDrive,
+            resumePending = resumeRunnable != null || startRunnable != null,
+            checkingStop = pendingPauseRunnable != null,
+            resumeLimitReached = recentResumes >= RESUME_MAX_IN_WINDOW,
+            otherSound = activeUsages().takeIf { it.isNotEmpty() }?.joinToString { usageName(it) },
+            carScreenGone = !carConnected && holdingSince > 0,
+        )
+    }
+
+    /**
+     * The safety net under every other rule (see [MusicStatus.watchdogShouldPlay]): music meant to be on,
+     * silent for ~20 s with nothing explaining it -> press play. Not while we speak or before the music has
+     * started this drive (the greeting decides when it starts).
+     */
+    private var watchSilentLooks = 0
+    private val watchPlays = ArrayDeque<Long>()
+    private var watchGaveUpTold = false
+    private val musicWatch = object : Runnable {
+        override fun run() {
+            if (!inDrive || driveEnded) return
+            runCatching {
+                val now = SystemClock.elapsedRealtime()
+                val quietNow = carConnected && musicStartedThisDrive && !Voice.speaking && now >= suppressPauseUntil &&
+                    MusicStatus.unexplainedSilence(musicFacts())
+                watchSilentLooks = if (quietNow) watchSilentLooks + 1 else 0
+                while (watchPlays.isNotEmpty() && now - watchPlays.first() > MusicStatus.WATCH_WINDOW_MS) watchPlays.removeFirst()
+                if (MusicStatus.watchdogShouldPlay(watchSilentLooks, watchPlays.size)) {
+                    watchPlays.addLast(now); watchSilentLooks = 0; watchGaveUpTold = false
+                    DriveLog.log("MUSIC: silent ~${MusicStatus.WATCH_SILENT_LOOKS * MusicStatus.WATCH_EVERY_MS / 1000}s with nothing " +
+                        "bringing it back - pressing play (watchdog, ${watchPlays.size} of ${MusicStatus.WATCH_MAX} in 10 min)")
+                    startMusic("watchdog")
+                } else if (quietNow && watchPlays.size >= MusicStatus.WATCH_MAX && !watchGaveUpTold) {
+                    watchGaveUpTold = true
+                    DriveLog.log("MUSIC: watchdog pressed play ${MusicStatus.WATCH_MAX} times in 10 min - YouTube Music keeps stopping; leaving it for now")
+                }
+            }
+            handler.postDelayed(this, MusicStatus.WATCH_EVERY_MS)
         }
     }
 

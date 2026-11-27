@@ -37,4 +37,28 @@ object MusicStatus {
         }
         return "MUSIC: SILENT (YouTube Music ${f.ytState}) - $why" + (f.otherSound?.let { "; also playing: $it" } ?: "")
     }
+
+    // --- Watchdog: the safety net under every other rule ---------------------------------------------
+
+    /** How often the watchdog looks, and how many silent looks in a row before it acts (~20 s). */
+    const val WATCH_EVERY_MS = 10_000L
+    const val WATCH_SILENT_LOOKS = 2
+    /** At most this many watchdog plays per [WATCH_WINDOW_MS], so it can't fight forever. */
+    const val WATCH_MAX = 5
+    const val WATCH_WINDOW_MS = 10 * 60_000L
+
+    /**
+     * Press play? Only after [WATCH_SILENT_LOOKS] looks in a row of silence that nothing explains (see
+     * [Facts] - the same reasons the minute line gives) and while under [WATCH_MAX] in the window.
+     * 27 Nov 10:03:41: a stop during our own black-ice warning, then 5 silent minutes - every rule had a reason
+     * to leave it, none brought it back.
+     */
+    fun watchdogShouldPlay(silentLooks: Int, recentPlays: Int): Boolean =
+        silentLooks >= WATCH_SILENT_LOOKS && recentPlays < WATCH_MAX
+
+    /** Silence that nothing explains: the "nothing is bringing it back" case of [line]. */
+    fun unexplainedSilence(f: Facts): Boolean =
+        f.radio == null && f.ytState != "PLAYING" && f.ytState != "BUFFERING" && f.ytState != "CONNECTING" &&
+            !f.carScreenGone && !f.youPaused && !f.checkingStop && !f.resumePending &&
+            f.autoResumeThisDrive != false && f.autoResumeSetting && f.otherSound == null
 }

@@ -25,4 +25,23 @@ class MusicStatusTest {
         // You pausing explains the silence even with auto-resume off.
         assertTrue(MusicStatus.line(Facts(ytState = "PAUSED", youPaused = true, autoResumeThisDrive = false)).contains("you paused it"))
     }
+
+    @Test fun watchdogActsOnlyOnUnexplainedSilence() {
+        // 27 Nov 10:03:41 -> 10:08: PAUSED, nothing explaining it, five silent minutes.
+        assertTrue(MusicStatus.unexplainedSilence(Facts(ytState = "PAUSED")))
+        assertTrue(!MusicStatus.unexplainedSilence(Facts(ytState = "PLAYING")))
+        assertTrue("you paused it", !MusicStatus.unexplainedSilence(Facts(ytState = "PAUSED", youPaused = true)))
+        assertTrue("auto-resume off", !MusicStatus.unexplainedSilence(Facts(ytState = "PAUSED", autoResumeSetting = false)))
+        assertTrue("off this drive", !MusicStatus.unexplainedSilence(Facts(ytState = "PAUSED", autoResumeThisDrive = false)))
+        assertTrue("Waze talking", !MusicStatus.unexplainedSilence(Facts(ytState = "PAUSED", otherSound = "navigation voice")))
+        assertTrue("radio on", !MusicStatus.unexplainedSilence(Facts(ytState = "PAUSED", radio = "Qmusic")))
+        assertTrue("already on it", !MusicStatus.unexplainedSilence(Facts(ytState = "PAUSED", resumePending = true)))
+    }
+
+    @Test fun watchdogWaitsTwoLooksAndStopsAfterFive() {
+        assertTrue(!MusicStatus.watchdogShouldPlay(silentLooks = 1, recentPlays = 0))
+        assertTrue(MusicStatus.watchdogShouldPlay(silentLooks = 2, recentPlays = 0))
+        assertTrue(MusicStatus.watchdogShouldPlay(silentLooks = 2, recentPlays = MusicStatus.WATCH_MAX - 1))
+        assertTrue(!MusicStatus.watchdogShouldPlay(silentLooks = 5, recentPlays = MusicStatus.WATCH_MAX))
+    }
 }
